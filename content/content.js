@@ -946,33 +946,39 @@
     // 1. Abrir chat
     const chatResult = await openChatViaDom(phoneNumber);
     
-    // Se não achou resultados no campo de busca, tentar fallback URL
+    // Se não achou resultados no campo de busca, tentar novamente com mais tempo
     if (!chatResult.hasResults) {
-      console.log('[WHL] ❌ FALHA DOM: Nenhum resultado encontrado no campo de busca');
+      console.log('[WHL] ⚠️ PRIMEIRA TENTATIVA FALHOU: Nenhum resultado encontrado');
+      console.log('[WHL] 🔄 TENTANDO NOVAMENTE com mais tempo...');
       
-      // Verificar se fallback está habilitado
-      const st = await getState();
-      if (st.fallbackMode) {
-        console.log('[WHL] 🔄 TENTANDO FALLBACK URL...');
-        await clearSearchField();
+      // Limpar campo
+      await clearSearchField();
+      
+      // Aguardar um pouco antes de tentar novamente
+      await new Promise(r => setTimeout(r, 1000));
+      
+      // Segunda tentativa com mais tempo
+      const chatResult2 = await openChatViaDom(phoneNumber);
+      
+      if (!chatResult2.hasResults) {
+        console.log('[WHL] ❌ SEGUNDA TENTATIVA FALHOU: Nenhum resultado encontrado');
+        console.log('[WHL] 💡 Possíveis causas:');
+        console.log('[WHL]    - Número não está no WhatsApp');
+        console.log('[WHL]    - Número não está salvo nos contatos');
+        console.log('[WHL]    - Seletores do WhatsApp Web mudaram');
+        console.log('[WHL]    - Conexão com WhatsApp Web instável');
         
-        // Tentar enviar via URL
-        const urlSuccess = await sendMessageViaUrl(phoneNumber, message);
-        if (urlSuccess) {
-          console.log('[WHL] ✅ Sucesso via fallback URL');
-          return true;
-        } else {
-          console.log('[WHL] ❌ Fallback URL também falhou');
-          return false;
-        }
-      } else {
-        console.log('[WHL] ⚠️ Fallback URL desabilitado, marcando como falha');
         await clearSearchField();
         return false;
       }
-    }
-    
-    if (!chatResult.success) {
+      
+      // Segunda tentativa teve sucesso, continuar com chatResult2
+      if (!chatResult2.success) {
+        console.log('[WHL] ❌ FALHA: Não conseguiu abrir o chat na segunda tentativa');
+        await clearSearchField();
+        return false;
+      }
+    } else if (!chatResult.success) {
       console.log('[WHL] ❌ FALHA: Não conseguiu abrir o chat');
       await clearSearchField();
       return false;
@@ -1184,56 +1190,17 @@
 
   // ===== OLD FUNCTIONS (DEPRECATED - Kept for fallback) =====
 
-  // Função para enviar via URL (FALLBACK) - Abre em nova aba ou mesmo tab
+  // Função para enviar via URL (FALLBACK) - NOTA: Não usado atualmente pois causa reload
+  // Mantido para referência futura
   async function sendMessageViaUrl(phoneNumber, message) {
     console.log('[WHL] ════════════════════════════════════════');
     console.log('[WHL] ═══ ENVIANDO VIA URL (FALLBACK) ═══');
     console.log('[WHL] ════════════════════════════════════════');
-    console.log('[WHL] Para:', phoneNumber);
-    console.log('[WHL] Mensagem:', message.substring(0, 50) + '...');
+    console.log('[WHL] ⚠️ NOTA: URL fallback não implementado pois causa reload de página');
+    console.log('[WHL] ⚠️ Isso quebraria o fluxo da campanha automática');
+    console.log('[WHL] 💡 Use a segunda tentativa DOM ou configure retry para números que falham');
     
-    try {
-      // Construir URL do WhatsApp com número e mensagem
-      const url = chatUrl(phoneNumber, message);
-      console.log('[WHL] 🔗 URL:', url);
-      
-      // Navegar para a URL diretamente (sem reload da página principal)
-      window.location.href = url;
-      
-      console.log('[WHL] ✅ Navegando para URL do WhatsApp');
-      
-      // Aguardar página carregar
-      await new Promise(r => setTimeout(r, 5000));
-      
-      // Verificar se o chat abriu
-      const msgInput = getMessageInput();
-      if (msgInput) {
-        console.log('[WHL] ✅ Chat aberto via URL');
-        
-        // Aguardar um pouco mais
-        await new Promise(r => setTimeout(r, 2000));
-        
-        // Tentar enviar usando Enter
-        msgInput.focus();
-        msgInput.dispatchEvent(new KeyboardEvent('keydown', {
-          key: 'Enter',
-          code: 'Enter',
-          keyCode: 13,
-          bubbles: true
-        }));
-        
-        console.log('[WHL] ✅ Mensagem enviada via URL fallback');
-        await new Promise(r => setTimeout(r, 2000));
-        
-        return true;
-      } else {
-        console.log('[WHL] ❌ Campo de mensagem não encontrado após URL');
-        return false;
-      }
-    } catch (error) {
-      console.error('[WHL] ❌ Erro no fallback URL:', error);
-      return false;
-    }
+    return false;
   }
 
   // Função para enviar usando Enter no campo de mensagem
