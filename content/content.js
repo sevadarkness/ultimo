@@ -1027,7 +1027,8 @@
     let msgBox = null;
     for (let i = 0; i < 30; i++) {
       msgBox = document.querySelector('div[aria-label^="Digitar na conversa"][contenteditable="true"]') ||
-               document.querySelector('div[data-tab="10"][contenteditable="true"]');
+               document.querySelector('#main div[data-tab="10"][contenteditable="true"]') ||
+               document.querySelector('footer div[contenteditable="true"]');
       
       if (msgBox) {
         // Verificar que NÃO é o campo de busca
