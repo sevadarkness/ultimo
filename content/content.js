@@ -748,17 +748,76 @@
                       document.querySelector('div[data-tab="3"][contenteditable="true"]');
     
     if (searchBox) {
-      searchBox.focus();
-      await new Promise(r => setTimeout(r, 100));
-      document.execCommand('selectAll', false, null);
-      document.execCommand('delete', false, null);
-      searchBox.textContent = '';
-      searchBox.dispatchEvent(new Event('input', { bubbles: true }));
-      await new Promise(r => setTimeout(r, 200));
-      console.log('[WHL] ✅ Campo de pesquisa limpo');
-      return true;
+      // Tentar limpar até 3 vezes
+      for (let attempt = 0; attempt < 3; attempt++) {
+        searchBox.focus();
+        await new Promise(r => setTimeout(r, 100));
+        
+        // Método 1: SelectAll + Delete
+        document.execCommand('selectAll', false, null);
+        document.execCommand('delete', false, null);
+        
+        // Método 2: Limpar textContent diretamente
+        searchBox.textContent = '';
+        searchBox.innerText = '';
+        
+        // Método 3: Disparar eventos
+        searchBox.dispatchEvent(new Event('input', { bubbles: true }));
+        searchBox.dispatchEvent(new Event('change', { bubbles: true }));
+        
+        await new Promise(r => setTimeout(r, 200));
+        
+        // Verificar se realmente está limpo
+        const currentText = (searchBox.textContent || '').trim();
+        if (currentText.length === 0) {
+          console.log('[WHL] ✅ Campo de pesquisa limpo (tentativa', attempt + 1, ')');
+          return true;
+        }
+        
+        console.log('[WHL] ⚠️ Campo ainda contém texto:', currentText, '(tentativa', attempt + 1, ')');
+      }
+      
+      console.log('[WHL] ⚠️ Não foi possível limpar completamente o campo');
+      return false;
     }
     return false;
+  }
+
+  // Função auxiliar para aguardar resultados de busca com polling
+  async function waitForSearchResults(maxWaitMs = 5000) {
+    const startTime = Date.now();
+    const checkInterval = 300; // Verificar a cada 300ms
+    
+    // Seletores alternativos para resultados de busca
+    const resultSelectors = [
+      'div[role="option"][data-testid="cell-frame-container"]',
+      '[data-testid="cell-frame-container"]',
+      'div[role="option"]',
+      'div[data-testid="chat-list"] [role="listitem"]',
+      '[role="listitem"][data-id]'
+    ];
+    
+    while (Date.now() - startTime < maxWaitMs) {
+      // Tentar todos os seletores
+      for (const selector of resultSelectors) {
+        const result = document.querySelector(selector);
+        if (result) {
+          console.log('[WHL] ✅ Resultado encontrado com seletor:', selector);
+          return result;
+        }
+      }
+      
+      // Log de progresso a cada segundo
+      const elapsed = Date.now() - startTime;
+      if (elapsed % 1000 < checkInterval) {
+        console.log(`[WHL] Aguardando resultados... ${Math.round(elapsed/1000)}s`);
+      }
+      
+      await new Promise(r => setTimeout(r, checkInterval));
+    }
+    
+    console.log('[WHL] ⏱️ Timeout: Nenhum resultado encontrado após', maxWaitMs, 'ms');
+    return null;
   }
 
   // Função para abrir chat via DOM (sem reload!)
@@ -789,15 +848,30 @@
     }
     console.log('[WHL] ✅ Número digitado:', phoneNumber);
     
-    // 3. Aguardar resultados aparecerem
-    console.log('[WHL] Aguardando resultados...');
-    await new Promise(r => setTimeout(r, 2500));
+    // 3. Aguardar resultados aparecerem com polling (3-5 segundos)
+    console.log('[WHL] Aguardando resultados com polling...');
+    const result = await waitForSearchResults(5000);
     
     // 4. Verificar se há resultados no campo de busca
-    const result = document.querySelector('div[role="option"][data-testid="cell-frame-container"]');
-    
     if (!result) {
       console.log('[WHL] ❌ NENHUM RESULTADO ENCONTRADO no campo de busca');
+      console.log('[WHL] 💡 Tentando seletores alternativos para debug...');
+      
+      // Debug: tentar encontrar qualquer elemento que pareça um resultado
+      const debugSelectors = [
+        'div[role="listitem"]',
+        '[data-testid^="cell"]',
+        'div[data-id]',
+        'span[dir="auto"][title]'
+      ];
+      
+      for (const selector of debugSelectors) {
+        const elements = document.querySelectorAll(selector);
+        if (elements.length > 0) {
+          console.log('[WHL] 🔍 Debug: Encontrados', elements.length, 'elementos com seletor:', selector);
+        }
+      }
+      
       await clearSearchField();
       return { success: false, hasResults: false };
     }
@@ -872,11 +946,30 @@
     // 1. Abrir chat
     const chatResult = await openChatViaDom(phoneNumber);
     
-    // Se não achou resultados no campo de busca, registrar falha
+    // Se não achou resultados no campo de busca, tentar fallback URL
     if (!chatResult.hasResults) {
-      console.log('[WHL] ❌ FALHA: Nenhum resultado encontrado no campo de busca');
-      await clearSearchField();
-      return false;
+      console.log('[WHL] ❌ FALHA DOM: Nenhum resultado encontrado no campo de busca');
+      
+      // Verificar se fallback está habilitado
+      const st = await getState();
+      if (st.fallbackMode) {
+        console.log('[WHL] 🔄 TENTANDO FALLBACK URL...');
+        await clearSearchField();
+        
+        // Tentar enviar via URL
+        const urlSuccess = await sendMessageViaUrl(phoneNumber, message);
+        if (urlSuccess) {
+          console.log('[WHL] ✅ Sucesso via fallback URL');
+          return true;
+        } else {
+          console.log('[WHL] ❌ Fallback URL também falhou');
+          return false;
+        }
+      } else {
+        console.log('[WHL] ⚠️ Fallback URL desabilitado, marcando como falha');
+        await clearSearchField();
+        return false;
+      }
     }
     
     if (!chatResult.success) {
@@ -1097,14 +1190,50 @@
     console.log('[WHL] ═══ ENVIANDO VIA URL (FALLBACK) ═══');
     console.log('[WHL] ════════════════════════════════════════');
     console.log('[WHL] Para:', phoneNumber);
-    console.log('[WHL] ⚠️ URL fallback requer navegação de página');
-    console.log('[WHL] ⚠️ Funcionalidade simplificada - marcando como falha');
+    console.log('[WHL] Mensagem:', message.substring(0, 50) + '...');
     
-    // Por enquanto, apenas marcar como falha já que URL requer reload
-    // Em uma versão futura, isso pode abrir uma nova aba
-    // ou usar um método mais sofisticado
-    
-    return false; // Marca como falha para não travar o fluxo
+    try {
+      // Construir URL do WhatsApp com número e mensagem
+      const url = chatUrl(phoneNumber, message);
+      console.log('[WHL] 🔗 URL:', url);
+      
+      // Navegar para a URL diretamente (sem reload da página principal)
+      window.location.href = url;
+      
+      console.log('[WHL] ✅ Navegando para URL do WhatsApp');
+      
+      // Aguardar página carregar
+      await new Promise(r => setTimeout(r, 5000));
+      
+      // Verificar se o chat abriu
+      const msgInput = getMessageInput();
+      if (msgInput) {
+        console.log('[WHL] ✅ Chat aberto via URL');
+        
+        // Aguardar um pouco mais
+        await new Promise(r => setTimeout(r, 2000));
+        
+        // Tentar enviar usando Enter
+        msgInput.focus();
+        msgInput.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'Enter',
+          code: 'Enter',
+          keyCode: 13,
+          bubbles: true
+        }));
+        
+        console.log('[WHL] ✅ Mensagem enviada via URL fallback');
+        await new Promise(r => setTimeout(r, 2000));
+        
+        return true;
+      } else {
+        console.log('[WHL] ❌ Campo de mensagem não encontrado após URL');
+        return false;
+      }
+    } catch (error) {
+      console.error('[WHL] ❌ Erro no fallback URL:', error);
+      return false;
+    }
   }
 
   // Função para enviar usando Enter no campo de mensagem
