@@ -629,21 +629,21 @@
     return null;
   }
 
-  // ===== DOM SELECTORS =====
+  // ===== DOM SELECTORS (UPDATED WITH CORRECT WHATSAPP WEB STRUCTURE) =====
   
-  // Campo de busca para pesquisar contato/número
+  // Campo de busca para pesquisar contato/número (SELETORES CORRETOS)
   function getSearchInput() {
     return (
-      document.querySelector('div[aria-label="Caixa de texto de pesquisa"][contenteditable="true"]') ||
-      document.querySelector('div[data-tab="3"][contenteditable="true"]')
+      document.querySelector('div[contenteditable="true"][data-tab="3"]') ||
+      document.querySelector('div[contenteditable="true"][role="textbox"]')
     );
   }
 
-  // Campo de mensagem para digitar
+  // Campo de mensagem para digitar (SELETORES CORRETOS)
   function getMessageInput() {
     return (
-      document.querySelector('div[aria-label^="Digitar na conversa"][contenteditable="true"]') ||
-      document.querySelector('div[data-tab="10"][contenteditable="true"]')
+      document.querySelector('div.lexical-rich-text-input p._aupe') ||
+      document.querySelector('div[contenteditable="true"][role="textbox"]')
     );
   }
 
@@ -657,9 +657,144 @@
     );
   }
 
-  // Resultado da busca (item clicável)
-  function getSearchResult() {
-    return document.querySelector('div[role="option"][data-testid="cell-frame-container"]');
+  // Resultado da busca (ESTRUTURA CORRETA)
+  function getSearchResults() {
+    return document.querySelectorAll('#pane-side div[role="grid"] div[role="row"]');
+  }
+
+  // ===== NEW CORE FUNCTIONS (CORRECT WHATSAPP WEB IMPLEMENTATION) =====
+
+  /**
+   * Abre um chat via busca DOM com os seletores corretos
+   * Implementa polling para aguardar resultados aparecerem
+   */
+  async function openChatBySearch(numero, options = {}) {
+    const {
+      timeout = 6000,
+      interval = 150,
+      debug = true
+    } = options;
+
+    const log = (...args) => debug && console.log('[WHL]', ...args);
+
+    const cleanNumber = String(numero).replace(/\D/g, '');
+    if (!cleanNumber) {
+      log('❌ Número inválido');
+      return false;
+    }
+
+    const searchInput = getSearchInput();
+    if (!searchInput) {
+      log('❌ Campo de busca não encontrado');
+      return false;
+    }
+
+    // Limpa busca
+    searchInput.focus();
+    document.execCommand('selectAll', false, null);
+    document.execCommand('delete', false, null);
+
+    // Digita o número
+    document.execCommand('insertText', false, cleanNumber);
+    log('✅ Número digitado na busca:', cleanNumber);
+
+    const start = Date.now();
+
+    return new Promise((resolve) => {
+      const timer = setInterval(() => {
+        if (Date.now() - start > timeout) {
+          clearInterval(timer);
+          log('❌ Timeout: nenhum resultado encontrado');
+          resolve(false);
+          return;
+        }
+
+        const resultados = [...getSearchResults()]
+          .map(row => {
+            const clickable = row.querySelector('div._ak72');
+            if (!clickable) return null;
+
+            const texto = row.innerText.replace(/\s+/g, ' ').trim();
+            if (!texto || texto === 'Conversas' || texto === 'Mensagens') return null;
+
+            return { texto, elemento: clickable };
+          })
+          .filter(Boolean);
+
+        if (!resultados.length) return;
+
+        const contato =
+          resultados.find(r => r.texto.includes(cleanNumber)) ||
+          resultados[0];
+
+        if (contato) {
+          clearInterval(timer);
+          contato.elemento.click();
+          log('✅ Contato aberto:', contato.texto);
+          resolve(true);
+        }
+      }, interval);
+    });
+  }
+
+  /**
+   * Envia mensagem de texto usando ENTER
+   */
+  async function sendTextMessage(texto) {
+    const input = getMessageInput();
+
+    if (!input) {
+      console.log('[WHL] ❌ Campo de texto não encontrado');
+      return false;
+    }
+
+    input.focus();
+    document.execCommand('selectAll', false, null);
+    document.execCommand('delete', false, null);
+    document.execCommand('insertText', false, texto);
+
+    // ENTER envia texto
+    input.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter',
+      code: 'Enter',
+      keyCode: 13,
+      which: 13,
+      bubbles: true
+    }));
+
+    console.log('[WHL] ✅ Mensagem enviada via ENTER');
+    return true;
+  }
+
+  /**
+   * Fecha popup de número inválido
+   */
+  function closeInvalidNumberPopup() {
+    const okBtn = [...document.querySelectorAll('button')]
+      .find(b => b.innerText.trim().toUpperCase() === 'OK');
+
+    if (okBtn) {
+      okBtn.click();
+      console.log('[WHL] ✅ Popup de número inválido fechado');
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Limpa o campo de pesquisa (NOVA IMPLEMENTAÇÃO)
+   */
+  async function clearSearchFieldNew() {
+    const searchInput = getSearchInput();
+
+    if (searchInput) {
+      searchInput.focus();
+      document.execCommand('selectAll', false, null);
+      document.execCommand('delete', false, null);
+      console.log('[WHL] ✅ Campo de pesquisa limpo');
+      return true;
+    }
+    return false;
   }
 
   // ===== DOM MANIPULATION FUNCTIONS =====
@@ -744,8 +879,7 @@
 
   // Função para limpar campo de pesquisa
   async function clearSearchField() {
-    const searchBox = document.querySelector('div[aria-label="Caixa de texto de pesquisa"][contenteditable="true"]') ||
-                      document.querySelector('div[data-tab="3"][contenteditable="true"]');
+    const searchBox = getSearchInput();
     
     if (searchBox) {
       // Tentar limpar até 3 vezes
@@ -820,71 +954,34 @@
     return null;
   }
 
-  // Função para abrir chat via DOM (sem reload!)
+  // Função para abrir chat via DOM (sem reload!) - UPDATED WITH NEW IMPLEMENTATION
   async function openChatViaDom(phoneNumber) {
     console.log('[WHL] ========================================');
-    console.log('[WHL] ABRINDO CHAT VIA DOM');
+    console.log('[WHL] ABRINDO CHAT VIA DOM (NEW IMPLEMENTATION)');
     console.log('[WHL] Número:', phoneNumber);
     console.log('[WHL] ========================================');
     
-    // 0. LIMPAR campo de pesquisa antes de digitar
+    // Limpar campo de pesquisa antes de começar
     await clearSearchField();
     
-    // 1. Encontrar campo de busca
-    const searchBox = document.querySelector('div[aria-label="Caixa de texto de pesquisa"][contenteditable="true"]') ||
-                      document.querySelector('div[data-tab="3"][contenteditable="true"]');
+    // Usar a nova função openChatBySearch
+    const success = await openChatBySearch(phoneNumber, {
+      timeout: 6000,
+      interval: 150,
+      debug: true
+    });
     
-    if (!searchBox) {
-      console.log('[WHL] ❌ Campo de busca não encontrado');
-      return { success: false, hasResults: false };
-    }
-    console.log('[WHL] ✅ Campo de busca encontrado');
-    
-    // 2. Digitar o número usando execCommand (FUNCIONA!)
-    const typed = await typeInField(searchBox, phoneNumber);
-    if (!typed) {
-      console.log('[WHL] ❌ Falha ao digitar número');
-      return { success: false, hasResults: false };
-    }
-    console.log('[WHL] ✅ Número digitado:', phoneNumber);
-    
-    // 3. Aguardar resultados aparecerem com polling (3-5 segundos)
-    console.log('[WHL] Aguardando resultados com polling...');
-    const result = await waitForSearchResults(5000);
-    
-    // 4. Verificar se há resultados no campo de busca
-    if (!result) {
-      console.log('[WHL] ❌ NENHUM RESULTADO ENCONTRADO no campo de busca');
-      console.log('[WHL] 💡 Tentando seletores alternativos para debug...');
-      
-      // Debug: tentar encontrar qualquer elemento que pareça um resultado
-      const debugSelectors = [
-        'div[role="listitem"]',
-        '[data-testid^="cell"]',
-        'div[data-id]',
-        'span[dir="auto"][title]'
-      ];
-      
-      for (const selector of debugSelectors) {
-        const elements = document.querySelectorAll(selector);
-        if (elements.length > 0) {
-          console.log('[WHL] 🔍 Debug: Encontrados', elements.length, 'elementos com seletor:', selector);
-        }
-      }
-      
+    if (success) {
+      // Aguardar chat carregar
+      console.log('[WHL] Aguardando chat carregar...');
+      await new Promise(r => setTimeout(r, 2000));
+      return { success: true, hasResults: true };
+    } else {
+      // Tentar fechar popup de número inválido se existir
+      closeInvalidNumberPopup();
       await clearSearchField();
       return { success: false, hasResults: false };
     }
-    
-    // 5. Clicar no resultado encontrado
-    console.log('[WHL] ✅ Resultado encontrado, clicando...');
-    result.click();
-    
-    // 6. Aguardar chat carregar
-    console.log('[WHL] Aguardando chat carregar...');
-    await new Promise(r => setTimeout(r, 3000));
-    
-    return { success: true, hasResults: true };
   }
 
   // Função para digitar mensagem via DOM
@@ -935,7 +1032,7 @@
     return true;
   }
 
-  // Função principal de envio via DOM (sem reload!)
+  // Função principal de envio via DOM (sem reload!) - UPDATED WITH NEW FLOW
   async function sendMessageViaDom(phoneNumber, message) {
     console.log('[WHL] ████████████████████████████████████████');
     console.log('[WHL] ███ ENVIANDO MENSAGEM VIA DOM ███');
@@ -943,57 +1040,16 @@
     console.log('[WHL] Para:', phoneNumber);
     console.log('[WHL] Mensagem:', message.substring(0, 50) + '...');
     
-    // 1. Abrir chat
+    // 1. Abrir chat via busca DOM
     const chatResult = await openChatViaDom(phoneNumber);
     
-    // Se não achou resultados no campo de busca, tentar novamente com mais tempo
-    if (!chatResult.hasResults) {
-      console.log('[WHL] ⚠️ PRIMEIRA TENTATIVA FALHOU: Nenhum resultado encontrado');
-      console.log('[WHL] 🔄 TENTANDO NOVAMENTE com mais tempo...');
-      
-      // Limpar campo
-      await clearSearchField();
-      
-      // Aguardar um pouco antes de tentar novamente
-      await new Promise(r => setTimeout(r, 1000));
-      
-      // Segunda tentativa com mais tempo
-      const chatResult2 = await openChatViaDom(phoneNumber);
-      
-      if (!chatResult2.hasResults) {
-        console.log('[WHL] ❌ SEGUNDA TENTATIVA FALHOU: Nenhum resultado encontrado');
-        console.log('[WHL] 💡 Possíveis causas:');
-        console.log('[WHL]    - Número não está no WhatsApp');
-        console.log('[WHL]    - Número não está salvo nos contatos');
-        console.log('[WHL]    - Seletores do WhatsApp Web mudaram');
-        console.log('[WHL]    - Conexão com WhatsApp Web instável');
-        
-        await clearSearchField();
-        return false;
-      }
-      
-      // Segunda tentativa teve sucesso, continuar com chatResult2
-      if (!chatResult2.success) {
-        console.log('[WHL] ❌ FALHA: Não conseguiu abrir o chat na segunda tentativa');
-        await clearSearchField();
-        return false;
-      }
-    } else if (!chatResult.success) {
+    if (!chatResult.hasResults || !chatResult.success) {
       console.log('[WHL] ❌ FALHA: Não conseguiu abrir o chat');
       await clearSearchField();
       return false;
     }
     
-    // 2. Validar que o chat aberto corresponde ao número correto
-    const chatValid = await validateOpenChat(phoneNumber);
-    if (!chatValid) {
-      console.log('[WHL] ❌ VALIDAÇÃO FALHOU: Chat aberto não corresponde ao número esperado:', phoneNumber);
-      await clearSearchField();
-      return false;
-    }
-    console.log('[WHL] ✅ VALIDAÇÃO: Chat confirmado para o número:', phoneNumber);
-    
-    // 3. Se tem imagem, enviar a imagem
+    // 2. Se tem imagem, enviar a imagem
     const st = await getState();
     if (st.imageData) {
       const imgRes = await sendImage(st.imageData, message, !!st.typingEffect);
@@ -1010,28 +1066,29 @@
       }
     }
     
-    // 4. Digitar mensagem
-    const messageTyped = await typeMessageViaDom(message);
-    if (!messageTyped) {
-      console.log('[WHL] ❌ FALHA: Não conseguiu digitar a mensagem');
+    // 3. Aguardar campo de mensagem aparecer
+    let attempts = 0;
+    let msgInput = null;
+    while (attempts < 30 && !msgInput) {
+      msgInput = getMessageInput();
+      if (!msgInput) {
+        await new Promise(r => setTimeout(r, 500));
+        attempts++;
+      }
+    }
+    
+    if (!msgInput) {
+      console.log('[WHL] ❌ FALHA: Campo de mensagem não encontrado');
       await clearSearchField();
       return false;
     }
-
-    // 5. Enviar mensagem usando ENTER
+    
+    // 4. Enviar mensagem usando a nova função sendTextMessage
     await new Promise(r => setTimeout(r, 300));
-    const msgInput = getMessageInput();
-    if (msgInput) {
-      msgInput.focus();
-      msgInput.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'Enter',
-        code: 'Enter',
-        keyCode: 13,
-        bubbles: true
-      }));
-      console.log('[WHL] ✅ Enviou mensagem via ENTER');
-    } else {
-      console.log('[WHL] ❌ Não encontrou campo de mensagem para enviar');
+    const sent = await sendTextMessage(message);
+    
+    if (!sent) {
+      console.log('[WHL] ❌ FALHA: Não conseguiu enviar a mensagem');
       await clearSearchField();
       return false;
     }
