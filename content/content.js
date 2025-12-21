@@ -1,0 +1,1842 @@
+
+(() => {
+  'use strict';
+  if (window.__WHL_SINGLE_TAB__) return;
+  window.__WHL_SINGLE_TAB__ = true;
+
+  const KEY = 'whl_campaign_state_v1';
+
+  const normalize = (v) => String(v || '').replace(/\D/g, '');
+  const enc = (t) => encodeURIComponent(String(t || ''));
+  const chatUrl = (phone, msg) => `https://web.whatsapp.com/send?phone=${phone}&text=${enc(msg)}`;
+
+  let campaignInterval = null;
+
+  async function getState() {
+    const res = await chrome.storage.local.get([KEY]);
+    return res[KEY] || {
+      numbersText: '',
+      message: '',
+      queue: [],
+      index: 0,
+      openInNewTab: false,
+      panelVisible: true,
+      isRunning: false,
+      isPaused: false,
+      delayMin: 5,
+      delayMax: 10,
+      continueOnError: true,
+      imageData: null,
+      retryMax: 2,
+      scheduleAt: '',
+      typingEffect: true,
+      typingDelayMs: 35,
+      overlayMode: true,
+      fallbackMode: true,
+      drafts: {},
+      lastReport: null,
+      selectorHealth: { ok: true, issues: [] },
+      stats: { sent: 0, failed: 0, pending: 0 }
+    };
+  }
+  async function setState(next) {
+    await chrome.storage.local.set({ [KEY]: next });
+    return next;
+  }
+
+  function ensurePanel() {
+    let panel = document.getElementById('whlPanel');
+    if (panel) return panel;
+
+    const style = document.createElement('style');
+    style.id = 'whlStyle';
+    style.textContent = `
+      #whlPanel{position:fixed;top:80px;right:16px;width:480px;max-height:78vh;overflow:auto;
+        background:rgba(8,6,20,.96);color:#fff;border-radius:18px;padding:12px;z-index:999999;
+        font-family:system-ui;box-shadow:0 22px 55px rgba(0,0,0,.6);border:1px solid rgba(111,0,255,.35)}
+      #whlPanel .topbar{display:flex;align-items:center;justify-content:space-between;gap:10px}
+      #whlPanel .title{font-weight:900}
+      #whlPanel .muted{opacity:.75;font-size:12px;line-height:1.35}
+      #whlPanel input,#whlPanel textarea{width:100%;margin-top:6px;padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.12);
+        background:rgba(255,255,255,.06);color:#fff;outline:none}
+      #whlPanel textarea{min-height:84px;resize:vertical}
+      #whlPanel button{margin-top:8px;padding:10px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.12);
+        background:rgba(255,255,255,.06);color:#fff;font-weight:900;cursor:pointer}
+      #whlPanel button.primary{background:linear-gradient(180deg, rgba(111,0,255,.95), rgba(78,0,190,.95));
+        box-shadow:0 14px 30px rgba(111,0,255,.25)}
+      #whlPanel button.danger{border-color:rgba(255,120,120,.35);background:rgba(255,80,80,.10)}
+      #whlPanel button.success{background:linear-gradient(180deg, rgba(0,200,100,.85), rgba(0,150,80,.85))}
+      #whlPanel button.warning{background:linear-gradient(180deg, rgba(255,200,0,.75), rgba(200,150,0,.75))}
+      #whlPanel .row{display:flex;gap:10px}
+      #whlPanel .card{margin-top:12px;padding:12px;border-radius:16px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10)}
+      #whlPanel table{width:100%;font-size:12px;margin-top:10px;border-collapse:collapse}
+      #whlPanel th,#whlPanel td{padding:6px;border-bottom:1px solid rgba(255,255,255,.08);vertical-align:top}
+      #whlPanel th{opacity:.75;text-align:left}
+      #whlPanel .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:800}
+      #whlPanel .pill.pending{background:rgba(0,255,255,.10);border:1px solid rgba(0,255,255,.25)}
+      #whlPanel .pill.opened{background:rgba(111,0,255,.10);border:1px solid rgba(111,0,255,.25)}
+      #whlPanel .pill.sent{background:rgba(120,255,160,.10);border:1px solid rgba(120,255,160,.25)}
+      #whlPanel .pill.failed{background:rgba(255,80,80,.10);border:1px solid rgba(255,80,80,.25)}
+      #whlPanel .tiny{font-size:11px;opacity:.72}
+      #whlPanel .iconbtn{width:36px;height:36px;border-radius:14px;margin-top:0}
+      #whlPanel .progress-bar{width:100%;height:24px;background:rgba(255,255,255,.08);border-radius:12px;overflow:hidden;margin-top:10px}
+      #whlPanel .progress-fill{height:100%;background:linear-gradient(90deg, rgba(111,0,255,.85), rgba(78,0,190,.85));transition:width 0.3s ease}
+      #whlPanel .stats{display:flex;gap:12px;margin-top:10px;font-size:12px}
+      #whlPanel .stat-item{padding:8px 12px;border-radius:10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);flex:1;text-align:center}
+      #whlPanel .stat-value{font-size:18px;font-weight:900;display:block;margin-top:4px}
+      #whlPanel .status-badge{display:inline-block;padding:4px 12px;border-radius:999px;font-size:11px;font-weight:800;margin-left:8px}
+      #whlPanel .status-badge.running{background:rgba(120,255,160,.10);border:1px solid rgba(120,255,160,.35);color:rgba(120,255,160,1)}
+      #whlPanel .status-badge.paused{background:rgba(255,200,0,.10);border:1px solid rgba(255,200,0,.35);color:rgba(255,200,0,1)}
+      #whlPanel .status-badge.stopped{background:rgba(255,80,80,.10);border:1px solid rgba(255,80,80,.35);color:rgba(255,80,80,1)}
+      #whlPanel input[type="number"]{width:80px}
+
+      
+      /* ===== Automation settings layout (clean) ===== */
+      #whlPanel .settings-grid{
+        display:grid;
+        grid-template-columns:1fr 1fr;
+        gap:12px;
+        margin-top:12px;
+      }
+      #whlPanel .settings-grid .cell{
+        padding:12px;
+        border-radius:14px;
+        background:rgba(255,255,255,.05);
+        border:1px solid rgba(255,255,255,.12);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+      }
+      #whlPanel .settings-grid .label{
+        opacity:.85;
+        font-size:12px;
+        margin-bottom:8px;
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:10px;
+      }
+      #whlPanel .settings-grid input[type="number"],
+      #whlPanel .settings-grid input[type="datetime-local"]{
+        width:100% !important;
+        margin:0;
+      }
+      #whlPanel .settings-toggles{
+        display:grid;
+        grid-template-columns:1fr;
+        gap:10px;
+        margin-top:12px;
+        padding-top:12px;
+        border-top:1px solid rgba(255,255,255,.10);
+      }
+      #whlPanel .settings-toggles label{
+        padding:10px 12px;
+        border-radius:14px;
+        background:rgba(255,255,255,.04);
+        border:1px solid rgba(255,255,255,.10);
+      }
+      #whlPanel .settings-toggles input{transform:scale(1.05)}
+      #whlPanel .settings-footer{
+        margin-top:12px;
+        padding-top:10px;
+        border-top:1px solid rgba(255,255,255,.10);
+      }
+      @media (max-width: 520px){
+        #whlPanel .settings-grid{grid-template-columns:1fr}
+      }
+
+
+      /* Additions */
+      #whlPanel .tip{position:relative;display:inline-block}
+      #whlPanel .tip[data-tip]::after{content:attr(data-tip);position:absolute;left:0;top:120%;
+        background:rgba(5,4,18,.96);border:1px solid rgba(0,255,255,.22);color:#fff;
+        padding:8px 10px;border-radius:12px;font-size:12px;line-height:1.35;min-width:220px;max-width:360px;
+        opacity:0;pointer-events:none;transform:translateY(-4px);transition:opacity .12s ease,transform .12s ease;z-index:999999;
+        box-shadow:0 18px 40px rgba(0,0,0,.6)}
+      #whlPanel .tip:hover::after{opacity:1;transform:translateY(0)}
+      #whlPanel .wa-preview{display:flex;justify-content:flex-end}
+      #whlPanel .wa-bubble{max-width:92%;padding:10px 12px;border-radius:18px 18px 6px 18px;
+        background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.10);white-space:pre-wrap}
+      #whlPanel .wa-meta{margin-top:6px;text-align:right;font-size:11px;opacity:.75}
+
+
+      /* ===== Automation settings FINAL (aligned & separated) ===== */
+      #whlPanel .settings-wrap{margin-top:10px}
+      #whlPanel .settings-section-title{
+        font-size:12px;
+        opacity:.78;
+        letter-spacing:.2px;
+        margin:10px 0 8px;
+      }
+      #whlPanel .settings-table{
+        border-radius:16px;
+        overflow:hidden;
+        border:1px solid rgba(255,255,255,.14);
+        background:rgba(255,255,255,.03);
+      }
+      #whlPanel .settings-row{
+        display:grid;
+        grid-template-columns: 1fr 180px;
+        gap:14px;
+        align-items:center;
+        padding:12px 12px;
+      }
+      #whlPanel .settings-row + .settings-row{border-top:1px solid rgba(255,255,255,.10)}
+      #whlPanel .settings-label{display:flex;flex-direction:column;gap:3px}
+      #whlPanel .settings-label .k{font-weight:900;font-size:12px}
+      #whlPanel .settings-label .d{font-size:11px;opacity:.70;line-height:1.25}
+      #whlPanel .settings-control{display:flex;justify-content:flex-end;align-items:center}
+      #whlPanel .settings-control input[type="number"],
+      #whlPanel .settings-control input[type="datetime-local"]{
+        width:180px !important;
+        margin:0 !important;
+      }
+      #whlPanel .settings-row.toggle{grid-template-columns: 1fr 48px}
+      #whlPanel .settings-row.toggle .settings-control{justify-content:flex-end}
+      #whlPanel .settings-row.toggle input[type="checkbox"]{width:18px;height:18px}
+      #whlPanel .settings-footer{
+        margin-top:12px;
+        padding-top:10px;
+        border-top:1px solid rgba(255,255,255,.10);
+      }
+      @media (max-width:520px){
+        #whlPanel .settings-row{grid-template-columns:1fr}
+        #whlPanel .settings-control{justify-content:flex-start}
+        #whlPanel .settings-control input[type="number"],
+        #whlPanel .settings-control input[type="datetime-local"]{width:100% !important}
+        #whlPanel .settings-row.toggle{grid-template-columns:1fr 48px}
+      }
+
+
+      /* ===== Preview WhatsApp FINAL ===== */
+      #whlPanel .wa-chat{
+        margin-top:10px;
+        padding:14px;
+        border-radius:16px;
+        background:
+          radial-gradient(160px 160px at 20% 20%, rgba(111,0,255,.10), transparent 60%),
+          radial-gradient(200px 200px at 80% 10%, rgba(0,255,255,.08), transparent 60%),
+          rgba(0,0,0,.18);
+        border:1px solid rgba(255,255,255,.10);
+        display:flex;
+        justify-content:flex-end;
+      }
+      #whlPanel .wa-chat .wa-bubble{
+        position:relative;
+        max-width:92%;
+        padding:10px 12px 8px;
+        border-radius:18px 18px 6px 18px;
+        background:rgba(0, 92, 75, .86);
+        border:1px solid rgba(120,255,160,.22);
+        box-shadow:0 14px 30px rgba(0,0,0,.38);
+        color:#e9edef;
+      }
+      #whlPanel .wa-chat .wa-bubble::after{
+        content:"";
+        position:absolute;
+        right:-6px;
+        bottom:0;
+        width:12px;height:12px;
+        background:rgba(0, 92, 75, .86);
+        border-right:1px solid rgba(120,255,160,.22);
+        border-bottom:1px solid rgba(120,255,160,.22);
+        transform:skewX(-20deg) rotate(45deg);
+        border-bottom-right-radius:4px;
+      }
+      #whlPanel .wa-chat .wa-time{
+        margin-top:6px;
+        text-align:right;
+        font-size:11px;
+        opacity:.75;
+        display:flex;
+        justify-content:flex-end;
+        align-items:center;
+        gap:6px;
+      }
+      #whlPanel .wa-chat .wa-ticks{font-size:12px;opacity:.9}
+
+    `;
+    document.head.appendChild(style);
+
+    panel = document.createElement('div');
+    panel.id = 'whlPanel';
+    panel.innerHTML = `
+      <div class="topbar">
+        <div>
+          <div class="title">WhatsHybrid Lite <span class="status-badge stopped" id="whlStatusBadge">Parado</span></div>
+          <div class="muted">Modo <b>automático</b>: configure e inicie a campanha. A extensão envia tudo sozinha!</div>
+        </div>
+        <button class="iconbtn" id="whlHide" title="Ocultar">—</button>
+      </div>
+
+      <div class="card">
+        <div class="title" style="font-size:13px">⚙️ Configurações de Automação</div>
+
+        <div class="settings-wrap">
+          <div class="settings-section-title">Parâmetros</div>
+          <div class="settings-table">
+            <div class="settings-row">
+              <div class="settings-label">
+                <div class="k">🕐 Delay mínimo</div>
+                <div class="d">Tempo mínimo entre envios (seg)</div>
+              </div>
+              <div class="settings-control">
+                <input type="number" id="whlDelayMin" min="1" max="120" value="5" />
+              </div>
+            </div>
+
+            <div class="settings-row">
+              <div class="settings-label">
+                <div class="k">🕐 Delay máximo</div>
+                <div class="d">Tempo máximo entre envios (seg)</div>
+              </div>
+              <div class="settings-control">
+                <input type="number" id="whlDelayMax" min="1" max="120" value="10" />
+              </div>
+            </div>
+
+            <div class="settings-row">
+              <div class="settings-label">
+                <div class="k">🔄 Retry</div>
+                <div class="d">Tentativas extras em falha</div>
+              </div>
+              <div class="settings-control">
+                <input type="number" id="whlRetryMax" min="0" max="5" value="2" />
+              </div>
+            </div>
+
+            <div class="settings-row">
+              <div class="settings-label">
+                <div class="k">📅 Agendamento</div>
+                <div class="d">Inicia no horário definido</div>
+              </div>
+              <div class="settings-control">
+                <input type="datetime-local" id="whlScheduleAt" />
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-section-title" style="margin-top:14px">Opções</div>
+          <div class="settings-table">
+            <div class="settings-row toggle">
+              <div class="settings-label">
+                <div class="k">✅ Continuar em erros</div>
+                <div class="d">Não interromper campanha</div>
+              </div>
+              <div class="settings-control">
+                <input type="checkbox" id="whlContinueOnError" checked />
+              </div>
+            </div>
+
+            <div class="settings-row toggle">
+              <div class="settings-label">
+                <div class="k">⌨️ Efeito digitação</div>
+                <div class="d">Simula digitação humana</div>
+              </div>
+              <div class="settings-control">
+                <input type="checkbox" id="whlTypingEffect" checked />
+              </div>
+            </div>
+
+            <div class="settings-row toggle">
+              <div class="settings-label">
+                <div class="k">🎭 Overlay busca</div>
+                <div class="d">Destaque no campo de pesquisa</div>
+              </div>
+              <div class="settings-control">
+                <input type="checkbox" id="whlOverlayMode" checked />
+              </div>
+            </div>
+
+            <div class="settings-row toggle">
+              <div class="settings-label">
+                <div class="k">🧠 Fallback DOM→URL</div>
+                <div class="d">Tentar URL se DOM falhar</div>
+              </div>
+              <div class="settings-control">
+                <input type="checkbox" id="whlFallbackMode" checked />
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-footer tiny" id="whlSelectorHealth"></div>
+        </div>
+      </div>
+
+      
+<div class="card" id="whlExtractCard">
+  <div class="title" style="font-size:13px">Extrair contatos</div>
+  <div class="muted">Coleta números disponíveis no WhatsApp Web e lista aqui (1 por linha).</div>
+
+  <div class="row" style="margin-top:10px">
+    <button class="success" style="flex:1" id="whlExtractContacts">📥 Extrair contatos</button>
+    <button style="width:150px" id="whlCopyExtracted">🔁 Copiar → Números</button>
+  </div>
+
+  <textarea id="whlExtractedNumbers" placeholder="Clique em 'Extrair contatos'…" style="margin-top:10px;min-height:140px"></textarea>
+  <div class="tiny" id="whlExtractStatus" style="margin-top:6px;opacity:.8"></div>
+</div>
+
+<div class="card">
+        <div class="title" style="font-size:13px">Números (um por linha)</div>
+        <div class="muted">Cole sua lista aqui. Ex: 5511999998888</div>
+        <textarea id="whlNumbers" placeholder="5511999998888
+5511988887777"></textarea>
+
+        <div class="title" style="font-size:13px;margin-top:10px">Mensagem padrão</div>
+        <textarea id="whlMsg" placeholder="Digite sua mensagem…"></textarea>
+        <div style="margin-top:10px">
+          <div class="muted">📊 Importar CSV (phone,message opcional)</div>
+          <input id="whlCsv" type="file" accept=".csv,text/csv" />
+        </div>
+
+        <div style="margin-top:10px">
+          <div class="muted">📸 Selecionar imagem (será enviada automaticamente)</div>
+          <input id="whlImage" type="file" accept="image/*" />
+          <div class="tiny" id="whlImageHint"></div>
+        </div>
+
+        <div class="row" style="margin-top:10px">
+          <button style="flex:1" id="whlSaveDraft">💾 Salvar</button>
+          <button style="flex:1" id="whlLoadDraft">📂 Carregar</button>
+        </div>
+
+        <div class="card" style="margin-top:10px">
+          <div class="title" style="font-size:13px">📱 Preview (WhatsApp)</div>
+          <div class="muted">Como vai aparecer no WhatsApp:</div>
+          <div class="wa-chat">
+            <div class="wa-bubble">
+              <img id="whlPreviewImg" alt="preview" style="display:none;width:100%;max-width:260px;border-radius:12px;margin-bottom:8px;border:1px solid rgba(255,255,255,.10)" />
+              <div id="whlPreviewText" style="white-space:pre-wrap"></div>
+              <div class="wa-time"><span id="whlPreviewMeta"></span><span class="wa-ticks">✓✓</span></div>
+            </div>
+          </div>
+        </div>
+
+
+        <div class="row">
+          <button class="primary" style="flex:1" id="whlBuild">Gerar tabela</button>
+          <button style="width:170px" id="whlClear">Limpar</button>
+        </div>
+
+        <div class="tiny" id="whlHint"></div>
+      </div>
+
+      <div class="card">
+        <div class="title" style="font-size:13px">📊 Progresso da Campanha</div>
+        
+        <div class="stats">
+          <div class="stat-item">
+            <div class="muted">Enviados</div>
+            <span class="stat-value" id="whlStatSent">0</span>
+          </div>
+          <div class="stat-item">
+            <div class="muted">Falhas</div>
+            <span class="stat-value" id="whlStatFailed">0</span>
+          </div>
+          <div class="stat-item">
+            <div class="muted">Pendentes</div>
+            <span class="stat-value" id="whlStatPending">0</span>
+          </div>
+        </div>
+
+        <div class="progress-bar">
+          <div class="progress-fill" id="whlProgressFill" style="width:0%"></div>
+        </div>
+        <div class="tiny" style="margin-top:6px;text-align:center" id="whlProgressText">0%</div>
+
+        <div class="row" style="margin-top:10px">
+          <button class="success" style="flex:1" id="whlStartCampaign">▶️ Iniciar Campanha</button>
+          <button class="warning" style="width:100px" id="whlPauseCampaign">⏸️ Pausar</button>
+          <button class="danger" style="width:100px" id="whlStopCampaign">⏹️ Parar</button>
+        </div>
+      </div>
+
+      
+        <div class="row" style="margin-top:10px">
+          <button style="flex:1" id="whlExportReport">📈 Exportar relatório</button>
+          <button style="flex:1" id="whlCopyFailed">📋 Copiar falhas</button>
+        </div>
+        <div class="tiny" id="whlReportHint" style="margin-top:6px"></div>
+
+      <div class="card">
+        <div class="title" style="font-size:13px">Tabela / Fila</div>
+        <div class="muted" id="whlMeta">0 contato(s)</div>
+
+        <table>
+          <thead><tr><th>#</th><th>Número</th><th>Status</th><th>Ações</th></tr></thead>
+          <tbody id="whlTable"></tbody>
+        </table>
+
+        <div class="row" style="margin-top:8px">
+          <button style="flex:1" id="whlSkip">Pular atual</button>
+          <button class="danger" style="width:170px" id="whlWipe">Zerar fila</button>
+        </div>
+
+        <div class="tiny" id="whlStatus" style="margin-top:8px"></div>
+      </div>
+    `;
+    document.body.appendChild(panel);
+    return panel;
+  }
+
+
+  // ===== WHL FEATURES =====
+  const whlSanitize = (t) => String(t||'').replace(/\D/g,'');
+  const whlIsValidPhone = (t) => {
+    const s = whlSanitize(t);
+    return s.length >= 8 && s.length <= 15;
+  };
+
+  function whlCsvToRows(text) {
+    const lines = String(text||'').replace(/\r/g,'').split('\n').filter(l=>l.trim().length);
+    const rows = [];
+    for (const line of lines) {
+      const sep = (line.includes(';') && !line.includes(',')) ? ';' : ',';
+      // minimal quoted handling
+      const parts = [];
+      let cur = '', inQ = false;
+      for (let i=0;i<line.length;i++){
+        const ch=line[i];
+        if (ch === '"') { inQ = !inQ; continue; }
+        if (!inQ && ch === sep) { parts.push(cur.trim()); cur=''; continue; }
+        cur += ch;
+      }
+      parts.push(cur.trim());
+      rows.push(parts);
+    }
+    return rows;
+  }
+
+  async function whlUpdateSelectorHealth() {
+    const issues = [];
+    if (!getSearchInput()) issues.push('Campo de busca não encontrado');
+    const st = await getState();
+    st.selectorHealth = { ok: issues.length===0, issues };
+    await setState(st);
+  }
+
+  function whlEnsureOverlay() {
+    let ov = document.getElementById('whlOverlay');
+    if (ov) return ov;
+    ov = document.createElement('div');
+    ov.id = 'whlOverlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:999998;pointer-events:none;background:rgba(0,0,0,.55);display:none';
+    document.body.appendChild(ov);
+    return ov;
+  }
+  function whlOverlayOn(el) {
+    const st = window.__whl_cached_state__ || null;
+    if (st && !st.overlayMode) return;
+    const ov = whlEnsureOverlay();
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    ov.innerHTML = `<div style="position:absolute;left:${r.left-6}px;top:${r.top-6}px;width:${r.width+12}px;height:${r.height+12}px;border:2px solid rgba(0,255,255,.6);border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,.55)"></div>`;
+    ov.style.display = 'block';
+  }
+  function whlOverlayOff() {
+    const ov = document.getElementById('whlOverlay');
+    if (ov) ov.style.display = 'none';
+  }
+
+  async function whlExportReportCSV() {
+    const st = await getState();
+    const rows = [['phone','status','retries','timestamp']];
+    const ts = new Date().toISOString();
+    (st.queue||[]).forEach(x => rows.push([x.phone||'', x.status||'', String(x.retries||0), ts]));
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type:'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `whl_report_${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+
+  async function whlReadFileAsDataURL(file) {
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // ===== AUTOMATION FUNCTIONS =====
+
+  function getRandomDelay(min, max) {
+    return (min + Math.random() * (max - min)) * 1000;
+  }
+
+  async function waitForElement(selector, timeout = 10000) {
+    const startTime = Date.now();
+    while (Date.now() - startTime < timeout) {
+      const el = document.querySelector(selector);
+      if (el) return el;
+      await new Promise(r => setTimeout(r, 100));
+    }
+    return null;
+  }
+
+  // ===== DOM SELECTORS =====
+  
+  // Campo de busca para pesquisar contato/número
+  function getSearchInput() {
+    return (
+      document.querySelector('div[aria-label="Caixa de texto de pesquisa"][contenteditable="true"]') ||
+      document.querySelector('div[data-tab="3"][contenteditable="true"]')
+    );
+  }
+
+  // Campo de mensagem para digitar
+  function getMessageInput() {
+    return (
+      document.querySelector('div[aria-label^="Digitar na conversa"][contenteditable="true"]') ||
+      document.querySelector('div[data-tab="10"][contenteditable="true"]')
+    );
+  }
+
+  // Botão de enviar
+  function getSendButton() {
+    return (
+      document.querySelector('[data-testid="send"]') ||
+      document.querySelector('span[data-icon="send"]')?.closest('button') ||
+      document.querySelector('[aria-label="Enviar"]') ||
+      document.querySelector('[aria-label="Send"]')
+    );
+  }
+
+  // Resultado da busca (item clicável)
+  function getSearchResult() {
+    return document.querySelector('div[role="option"][data-testid="cell-frame-container"]');
+  }
+
+  // ===== DOM MANIPULATION FUNCTIONS =====
+  
+  // Função para digitar em campos do WhatsApp Web (usa execCommand)
+  async function typeInField(element, text) {
+    if (!element) return false;
+    const st = await getState();
+    window.__whl_cached_state__ = st;
+
+    element.focus();
+    await new Promise(r => setTimeout(r, 150));
+
+    document.execCommand('selectAll', false, null);
+    document.execCommand('delete', false, null);
+    await new Promise(r => setTimeout(r, 80));
+
+    if (st.typingEffect) {
+      for (const ch of String(text || '')) {
+        document.execCommand('insertText', false, ch);
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+        await new Promise(r => setTimeout(r, Math.max(10, Number(st.typingDelayMs)||35)));
+      }
+    } else {
+      document.execCommand('insertText', false, String(text || ''));
+      element.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 120));
+    }
+
+    const inserted = (element.textContent || '').length > 0;
+    console.log('[WHL] Texto inserido:', inserted ? '✅' : '❌', String(text || '').substring(0, 20));
+    return inserted;
+  }
+  
+  // Função para simular digitação caractere por caractere
+  async function simulateTyping(element, text, delay = 50) {
+    element.focus();
+    element.textContent = '';
+    
+    for (const char of text) {
+      element.textContent += char;
+      element.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+
+  // Função para simular clique robusto
+  function simulateClick(element) {
+    if (!element) return false;
+    
+    // Método 1: Focus primeiro
+    element.focus();
+    
+    // Método 2: Disparar eventos de mouse completos
+    const mouseDownEvent = new MouseEvent('mousedown', {
+      bubbles: true,
+      cancelable: true,
+      view: window
+    });
+    element.dispatchEvent(mouseDownEvent);
+    
+    const mouseUpEvent = new MouseEvent('mouseup', {
+      bubbles: true,
+      cancelable: true,
+      view: window
+    });
+    element.dispatchEvent(mouseUpEvent);
+    
+    // Método 3: Click event
+    const clickEvent = new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+      view: window
+    });
+    element.dispatchEvent(clickEvent);
+    
+    // Método 4: Click direto como fallback
+    element.click();
+    
+    return true;
+  }
+
+  // Função para abrir chat via DOM (sem reload!)
+  async function openChatViaDom(phoneNumber) {
+    console.log('[WHL] ========================================');
+    console.log('[WHL] ABRINDO CHAT VIA DOM');
+    console.log('[WHL] Número:', phoneNumber);
+    console.log('[WHL] ========================================');
+    
+    // 1. Encontrar campo de busca
+    const searchBox = document.querySelector('div[aria-label="Caixa de texto de pesquisa"][contenteditable="true"]') ||
+                      document.querySelector('div[data-tab="3"][contenteditable="true"]');
+    
+    if (!searchBox) {
+      console.log('[WHL] ❌ Campo de busca não encontrado');
+      return false;
+    }
+    console.log('[WHL] ✅ Campo de busca encontrado');
+    
+    // 2. Digitar o número usando execCommand (FUNCIONA!)
+    const typed = await typeInField(searchBox, phoneNumber);
+    if (!typed) {
+      console.log('[WHL] ❌ Falha ao digitar número');
+      return false;
+    }
+    console.log('[WHL] ✅ Número digitado:', phoneNumber);
+    
+    // 3. Aguardar resultados aparecerem
+    console.log('[WHL] Aguardando resultados...');
+    await new Promise(r => setTimeout(r, 2500));
+    
+    // 4. Clicar no primeiro resultado
+    const result = document.querySelector('div[role="option"][data-testid="cell-frame-container"]');
+    
+    if (result) {
+      result.click();
+      console.log('[WHL] ✅ Clicou no resultado da busca');
+    } else {
+      // Fallback: pressionar Enter
+      searchBox.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        code: 'Enter',
+        keyCode: 13,
+        bubbles: true
+      }));
+      console.log('[WHL] ⚠️ Nenhum resultado, pressionou Enter');
+    }
+    
+    // 5. Aguardar chat carregar
+    console.log('[WHL] Aguardando chat carregar...');
+    await new Promise(r => setTimeout(r, 3000));
+    
+    return true;
+  }
+
+  // Função para digitar mensagem via DOM
+  async function typeMessageViaDom(message) {
+    console.log('[WHL] ========================================');
+    console.log('[WHL] DIGITANDO MENSAGEM');
+    console.log('[WHL] ========================================');
+    
+    // Aguardar campo de mensagem aparecer (máx 15 segundos)
+    let msgBox = null;
+    for (let i = 0; i < 30; i++) {
+      msgBox = document.querySelector('div[aria-label^="Digitar na conversa"][contenteditable="true"]') ||
+               document.querySelector('div[data-tab="10"][contenteditable="true"]');
+      
+      if (msgBox) {
+        // Verificar que NÃO é o campo de busca
+        const ariaLabel = msgBox.getAttribute('aria-label') || '';
+        const dataTab = msgBox.getAttribute('data-tab');
+        
+        if (ariaLabel.includes('pesquisa') || ariaLabel.includes('Search') || dataTab === '3') {
+          console.log('[WHL] ⚠️ Campo de busca detectado, continuando...');
+          msgBox = null;
+        } else {
+          console.log('[WHL] ✅ Campo de mensagem encontrado');
+          break;
+        }
+      }
+      
+      if (i % 5 === 0) {
+        console.log('[WHL] Aguardando campo de mensagem... tentativa', i + 1);
+      }
+      await new Promise(r => setTimeout(r, 500));
+    }
+    
+    if (!msgBox) {
+      console.log('[WHL] ❌ Campo de mensagem não encontrado');
+      return false;
+    }
+    
+    // Digitar mensagem usando execCommand (FUNCIONA!)
+    const typed = await typeInField(msgBox, message);
+    if (!typed) {
+      console.log('[WHL] ❌ Falha ao digitar mensagem');
+      return false;
+    }
+    
+    console.log('[WHL] ✅ Mensagem digitada');
+    return true;
+  }
+
+  // Função principal de envio via DOM (sem reload!)
+  async function sendMessageViaDom(phoneNumber, message) {
+    console.log('[WHL] ████████████████████████████████████████');
+    console.log('[WHL] ███ ENVIANDO MENSAGEM VIA DOM ███');
+    console.log('[WHL] ████████████████████████████████████████');
+    console.log('[WHL] Para:', phoneNumber);
+    console.log('[WHL] Mensagem:', message.substring(0, 50) + '...');
+    
+    // 1. Abrir chat
+    const chatOpened = await openChatViaDom(phoneNumber);
+    const st = await getState();
+    if (st.imageData) {
+      const imgRes = await sendImage(st.imageData, message, !!st.typingEffect);
+      // se enviou a mídia com legenda, finaliza aqui
+      if (imgRes && imgRes.ok && imgRes.captionApplied) return true;
+      // se enviou a mídia sem legenda, segue para enviar o texto separado
+      await new Promise(r => setTimeout(r, 900));
+    }
+    if (!chatOpened) {
+      console.log('[WHL] ❌ FALHA: Não conseguiu abrir o chat');
+      return false;
+    }
+    
+    // 2. Digitar mensagem
+    const messageTyped = await typeMessageViaDom(message);
+    if (!messageTyped) {
+      console.log('[WHL] ❌ FALHA: Não conseguiu digitar a mensagem');
+      return false;
+    }
+
+    // Enviar texto (garantia)
+    await new Promise(r => setTimeout(r, 200));
+    const btn = getSendButton();
+    if (btn) {
+      btn.click();
+    } else {
+      const mi = getMessageInput();
+      if (mi) {
+        mi.focus();
+        mi.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+      }
+    }
+    await new Promise(r => setTimeout(r, 800));
+    const mi2 = getMessageInput();
+    if (mi2 && (mi2.textContent || '').trim().length) {
+      const btn2 = getSendButton();
+      if (btn2) btn2.click();
+      await new Promise(r => setTimeout(r, 600));
+    }
+    
+    // 3. Clicar no botão enviar
+    await new Promise(r => setTimeout(r, 500));
+    
+    const sendBtn = document.querySelector('[data-testid="send"]') ||
+                    document.querySelector('span[data-icon="send"]')?.closest('button') ||
+                    document.querySelector('[aria-label="Enviar"]') ||
+                    document.querySelector('[aria-label="Send"]');
+    
+    if (sendBtn) {
+      sendBtn.click();
+      console.log('[WHL] ✅ Clicou no botão enviar');
+    } else {
+      // Fallback: Enter no campo de mensagem
+      const msgBox = document.querySelector('div[aria-label^="Digitar na conversa"][contenteditable="true"]') ||
+                     document.querySelector('div[data-tab="10"][contenteditable="true"]');
+      if (msgBox) {
+        msgBox.focus();
+        msgBox.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'Enter',
+          code: 'Enter',
+          keyCode: 13,
+          bubbles: true
+        }));
+        console.log('[WHL] ✅ Enviou via Enter');
+      } else {
+        console.log('[WHL] ❌ Não encontrou botão enviar nem campo de mensagem');
+        return false;
+      }
+    }
+    
+    await new Promise(r => setTimeout(r, 1500));
+    console.log('[WHL] ████████████████████████████████████████');
+    console.log('[WHL] ███ ✅ MENSAGEM ENVIADA COM SUCESSO! ███');
+    console.log('[WHL] ████████████████████████████████████████');
+    return true;
+  }
+
+  // ===== OLD FUNCTIONS (DEPRECATED - Kept for fallback) =====
+
+  // Função para enviar usando Enter no campo de mensagem
+  async function sendViaEnterKey() {
+    const msgInput = getMessageInput();
+    if (!msgInput) return false;
+    
+    msgInput.focus();
+    
+    // Disparar Enter
+    const enterEvent = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      code: 'Enter',
+      keyCode: 13,
+      which: 13,
+      bubbles: true,
+      cancelable: true
+    });
+    msgInput.dispatchEvent(enterEvent);
+    
+    return true;
+  }
+
+  async function waitForPageLoad() {
+    const maxWait = 20000;
+    const start = Date.now();
+    
+    while (Date.now() - start < maxWait) {
+      // Verificar se o campo de mensagem E botão de enviar existem
+      const messageInput = getMessageInput();
+      const sendButton = getSendButton();
+      
+      if (messageInput && sendButton) {
+        console.log('[WHL] ✅ Chat carregado, pronto para enviar');
+        return true;
+      }
+      
+      // Log de debug
+      if (Date.now() - start > 5000) {
+        console.log('[WHL] Aguardando chat carregar...', {
+          messageInput: !!messageInput,
+          sendButton: !!sendButton
+        });
+      }
+      
+      await new Promise(r => setTimeout(r, 500));
+    }
+    
+    console.log('[WHL] ⚠️ Timeout aguardando chat carregar');
+    return false;
+  }
+
+  async function autoSendMessage() {
+    console.log('[WHL] Tentando enviar mensagem...');
+    
+    // Aguardar um pouco para garantir que a mensagem foi preenchida via URL
+    await new Promise(r => setTimeout(r, 2000));
+    
+    // Tentar encontrar o botão de enviar
+    const sendButton = getSendButton();
+    
+    if (sendButton) {
+      console.log('[WHL] Botão de enviar encontrado:', sendButton);
+      
+      // Simular clique robusto
+      simulateClick(sendButton);
+      console.log('[WHL] Clique simulado no botão de enviar');
+      
+      // Aguardar um pouco
+      await new Promise(r => setTimeout(r, 1000));
+      
+      // Verificar se a mensagem foi enviada (campo de input deve estar vazio)
+      const msgInput = getMessageInput();
+      if (msgInput && msgInput.textContent.trim() === '') {
+        console.log('[WHL] ✅ Mensagem enviada com sucesso!');
+        return true;
+      }
+      
+      // Se ainda tem texto, tentar via Enter
+      console.log('[WHL] Tentando enviar via tecla Enter...');
+      await sendViaEnterKey();
+      await new Promise(r => setTimeout(r, 1000));
+      
+      return true;
+    }
+    
+    // Fallback: tentar enviar via Enter direto
+    console.log('[WHL] Botão não encontrado, tentando via Enter...');
+    const sent = await sendViaEnterKey();
+    
+    if (sent) {
+      console.log('[WHL] Enviado via Enter');
+      await new Promise(r => setTimeout(r, 1000));
+      return true;
+    }
+    
+    console.log('[WHL] ❌ Não foi possível enviar a mensagem');
+    return false;
+  }
+
+  // DEPRECATED: Check and resume active campaign on page load (NO LONGER NEEDED)
+  // This function is no longer used because we don't reload pages anymore
+  async function checkAndResumeCampaign() {
+    // This function is deprecated - DOM mode doesn't need page reload resume logic
+    console.log('[WHL] checkAndResumeCampaign is deprecated in DOM mode');
+    return;
+  }
+
+  // DEPRECATED: Old processCampaignStep (uses page reload)
+  async function processCampaignStep() {
+    const msgInput = getMessageInput();
+    if (!msgInput) return false;
+    
+    msgInput.focus();
+    
+    // Disparar Enter
+    const enterEvent = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      code: 'Enter',
+      keyCode: 13,
+      which: 13,
+      bubbles: true,
+      cancelable: true
+    });
+    msgInput.dispatchEvent(enterEvent);
+    
+    return true;
+  }
+
+  async function waitForPageLoad() {
+    const maxWait = 20000;
+    const start = Date.now();
+    
+    while (Date.now() - start < maxWait) {
+      // Verificar se o campo de mensagem E botão de enviar existem
+      const messageInput = getMessageInput();
+      const sendButton = getSendButton();
+      
+      if (messageInput && sendButton) {
+        console.log('[WHL] ✅ Chat carregado, pronto para enviar');
+        return true;
+      }
+      
+      // Log de debug
+      if (Date.now() - start > 5000) {
+        console.log('[WHL] Aguardando chat carregar...', {
+          messageInput: !!messageInput,
+          sendButton: !!sendButton
+        });
+      }
+      
+      await new Promise(r => setTimeout(r, 500));
+    }
+    
+    console.log('[WHL] ⚠️ Timeout aguardando chat carregar');
+    return false;
+  }
+
+  async function autoSendMessage() {
+    console.log('[WHL] Tentando enviar mensagem...');
+    
+    // Aguardar um pouco para garantir que a mensagem foi preenchida via URL
+    await new Promise(r => setTimeout(r, 2000));
+    
+    // Tentar encontrar o botão de enviar
+    const sendButton = getSendButton();
+    
+    if (sendButton) {
+      console.log('[WHL] Botão de enviar encontrado:', sendButton);
+      
+      // Simular clique robusto
+      simulateClick(sendButton);
+      console.log('[WHL] Clique simulado no botão de enviar');
+      
+      // Aguardar um pouco
+      await new Promise(r => setTimeout(r, 1000));
+      
+      // Verificar se a mensagem foi enviada (campo de input deve estar vazio)
+      const msgInput = getMessageInput();
+      if (msgInput && msgInput.textContent.trim() === '') {
+        console.log('[WHL] ✅ Mensagem enviada com sucesso!');
+        return true;
+      }
+      
+      // Se ainda tem texto, tentar via Enter
+      console.log('[WHL] Tentando enviar via tecla Enter...');
+      await sendViaEnterKey();
+      await new Promise(r => setTimeout(r, 1000));
+      
+      return true;
+    }
+    
+    // Fallback: tentar enviar via Enter direto
+    console.log('[WHL] Botão não encontrado, tentando via Enter...');
+    const sent = await sendViaEnterKey();
+    
+    if (sent) {
+      console.log('[WHL] Enviado via Enter');
+      await new Promise(r => setTimeout(r, 1000));
+      return true;
+    }
+    
+    console.log('[WHL] ❌ Não foi possível enviar a mensagem');
+    return false;
+  }
+
+  // DEPRECATED: Old processCampaignStep (uses page reload)
+  async function processCampaignStep() {
+    // This function is deprecated - use processCampaignStepViaDom instead
+    console.log('[WHL] processCampaignStep is deprecated, this should not be called');
+  }
+
+  // ===== NEW DOM-BASED CAMPAIGN PROCESSING =====
+
+  // Loop da campanha via DOM (substituindo processCampaignStep)
+  async function processCampaignStepViaDom() {
+    const st = await getState();
+    
+    if (!st.isRunning || st.isPaused) {
+      console.log('[WHL] Campanha parada ou pausada');
+      return;
+    }
+    
+    if (st.index >= st.queue.length) {
+      console.log('[WHL] 🎉 Campanha finalizada!');
+      st.isRunning = false;
+      await setState(st);
+      await render();
+      return;
+    }
+    
+    const cur = st.queue[st.index];
+    if (cur && cur.valid === false) {
+      console.log('[WHL] ⚠️ Número inválido, pulando:', cur.phone);
+      st.index++;
+      await setState(st);
+      await render();
+      scheduleCampaignStepViaDom();
+      return;
+    }
+    if (!cur) {
+      st.index++;
+      await setState(st);
+      scheduleCampaignStepViaDom();
+      return;
+    }
+    
+    console.log(`[WHL] Processando ${st.index + 1}/${st.queue.length}: ${cur.phone}`);
+    cur.status = 'opened';
+    await setState(st);
+    await render();
+    
+    // Enviar via DOM (sem reload!)
+    const sent = await sendMessageViaDom(cur.phone, st.message);
+    
+    if (sent) {
+      cur.status = 'sent';
+      st.stats.sent++;
+      console.log('[WHL] ✅ Enviado com sucesso');
+    } else {
+      cur.status = 'failed';
+      cur.retries = Number(cur.retries||0) + 1;
+
+      const maxR = Math.max(0, Math.min(5, Number(st.retryMax)||0));
+      if (cur.retries <= maxR) {
+        console.log(`[WHL] 🔄 Retry ${cur.retries}/${maxR} para ${cur.phone}`);
+        cur.status = 'pending';
+        await setState(st);
+        await render();
+        campaignInterval = setTimeout(() => { processCampaignStepViaDom(); }, 300);
+        return;
+      }
+
+      st.stats.failed++;
+      console.log('[WHL] ❌ Falha no envio');
+      
+      if (!st.continueOnError) {
+        st.isRunning = false;
+        await setState(st);
+        await render();
+        return;
+      }
+    }
+    
+    // Avançar para próximo
+    st.index++;
+    await setState(st);
+    await render();
+    
+    // Se ainda há mais, agendar próximo com delay
+    if (st.index < st.queue.length) {
+      const delay = getRandomDelay(st.delayMin, st.delayMax);
+      console.log(`[WHL] Aguardando ${Math.round(delay/1000)}s antes do próximo...`);
+      
+      campaignInterval = setTimeout(() => {
+        processCampaignStepViaDom();
+      }, delay);
+    } else {
+      st.isRunning = false;
+      await setState(st);
+      await render();
+      console.log('[WHL] 🎉 Campanha finalizada!');
+    }
+  }
+
+  function scheduleCampaignStepViaDom() {
+    if (campaignInterval) clearTimeout(campaignInterval);
+    campaignInterval = setTimeout(() => {
+      processCampaignStepViaDom();
+    }, 100);
+  }
+
+  async function startCampaign() {
+    const st = await getState();
+    
+    if (st.queue.length === 0) {
+      alert('Por favor, adicione números e gere a tabela primeiro!');
+      return;
+    }
+
+    if (st.isRunning) {
+      console.log('[WHL] Campaign already running');
+      return;
+    }
+
+    // Calculate stats
+    st.stats.sent = st.queue.filter(c => c.status === 'sent').length;
+    st.stats.failed = st.queue.filter(c => c.status === 'failed').length;
+    st.stats.pending = st.queue.filter(c => c.status === 'pending' || c.status === 'opened').length;
+
+    st.isRunning = true;
+    st.isPaused = false;
+    await setState(st);
+    await render();
+
+    console.log('[WHL] 🚀 Campanha iniciada (modo DOM)');
+    
+    // Usar modo DOM (sem reload!)
+    processCampaignStepViaDom();
+  }
+
+  async function pauseCampaign() {
+    const st = await getState();
+    st.isPaused = !st.isPaused;
+    await setState(st);
+    await render();
+
+    if (campaignInterval) {
+      clearTimeout(campaignInterval);
+      campaignInterval = null;
+    }
+
+    if (!st.isPaused && st.isRunning) {
+      console.log('[WHL] Campaign resumed');
+      scheduleCampaignStepViaDom();
+    } else {
+      console.log('[WHL] Campaign paused');
+    }
+  }
+
+  async function stopCampaign() {
+    const st = await getState();
+    st.isRunning = false;
+    st.isPaused = false;
+    await setState(st);
+    await render();
+
+    if (campaignInterval) {
+      clearTimeout(campaignInterval);
+      campaignInterval = null;
+    }
+
+    console.log('[WHL] Campaign stopped');
+  }
+
+  // ===== RENDER & UI =====
+
+  async function render() {
+    const panel = ensurePanel();
+    const state = await getState();
+
+    // visibility
+    panel.style.display = state.panelVisible ? 'block' : 'none';
+
+    const numbersEl = document.getElementById('whlNumbers');
+    const msgEl = document.getElementById('whlMsg');
+    const delayMinEl = document.getElementById('whlDelayMin');
+    const delayMaxEl = document.getElementById('whlDelayMax');
+    const continueOnErrorEl = document.getElementById('whlContinueOnError');
+
+    if (numbersEl && numbersEl.value !== state.numbersText) numbersEl.value = state.numbersText;
+    if (msgEl && msgEl.value !== state.message) msgEl.value = state.message;
+    if (delayMinEl) delayMinEl.value = state.delayMin;
+    if (delayMaxEl) delayMaxEl.value = state.delayMax;
+    if (continueOnErrorEl) continueOnErrorEl.checked = !!state.continueOnError;
+    const retryEl = document.getElementById('whlRetryMax');
+    const schedEl = document.getElementById('whlScheduleAt');
+    const typingEl = document.getElementById('whlTypingEffect');
+    const overlayEl = document.getElementById('whlOverlayMode');
+    const fbEl = document.getElementById('whlFallbackMode');
+    if (retryEl) retryEl.value = state.retryMax ?? 2;
+    if (schedEl && (schedEl.value||'') !== (state.scheduleAt||'')) schedEl.value = state.scheduleAt || '';
+    if (typingEl) typingEl.checked = !!state.typingEffect;
+    if (overlayEl) overlayEl.checked = !!state.overlayMode;
+    if (fbEl) fbEl.checked = !!state.fallbackMode;
+    // Preview
+    const curp = state.queue[state.index];
+    const phone = curp?.phone || '';
+    const imgEl = document.getElementById('whlPreviewImg');
+    const textEl = document.getElementById('whlPreviewText');
+    const timeEl = document.getElementById('whlPreviewMeta');
+
+    // mensagem final (se CSV tiver customMessage, use)
+    const msgFinal = (curp?.customMessage || state.message || '').replace('{phone}', phone);
+
+    if (textEl) textEl.textContent = msgFinal || '';
+    if (imgEl) {
+      if (state.imageData) {
+        imgEl.src = state.imageData;
+        imgEl.style.display = 'block';
+      } else {
+        imgEl.removeAttribute('src');
+        imgEl.style.display = 'none';
+      }
+    }
+
+    if (timeEl) {
+      const d = new Date();
+      const hh = String(d.getHours()).padStart(2,'0');
+      const mm = String(d.getMinutes()).padStart(2,'0');
+      timeEl.textContent = `${hh}:${mm}`;
+    }
+
+
+    // Image hint
+    const ih = document.getElementById('whlImageHint');
+    if (ih) ih.textContent = state.imageData ? '✅ Imagem selecionada' : '';
+    // Selector health
+    const sh = document.getElementById('whlSelectorHealth');
+    if (sh) sh.innerHTML = state.selectorHealth?.ok ? '✅ Seletores OK' : `⚠️ Seletores: ${(state.selectorHealth?.issues||[]).join(', ')}`;
+
+
+    // Update status badge
+    const statusBadge = document.getElementById('whlStatusBadge');
+    if (statusBadge) {
+      statusBadge.className = 'status-badge';
+      if (state.isRunning && !state.isPaused) {
+        statusBadge.textContent = 'Enviando...';
+        statusBadge.classList.add('running');
+      } else if (state.isPaused) {
+        statusBadge.textContent = 'Pausado';
+        statusBadge.classList.add('paused');
+      } else {
+        statusBadge.textContent = 'Parado';
+        statusBadge.classList.add('stopped');
+      }
+    }
+
+    // Update statistics
+    const sent = state.queue.filter(c => c.status === 'sent').length;
+    const failed = state.queue.filter(c => c.status === 'failed').length;
+    const pending = state.queue.filter(c => c.status === 'pending' || c.status === 'opened').length;
+
+    document.getElementById('whlStatSent').textContent = sent;
+    document.getElementById('whlStatFailed').textContent = failed;
+    document.getElementById('whlStatPending').textContent = pending;
+
+    // Update progress bar
+    const total = state.queue.length;
+    const completed = sent + failed;
+    const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+    
+    document.getElementById('whlProgressFill').style.width = `${percentage}%`;
+    document.getElementById('whlProgressText').textContent = `${percentage}% (${completed}/${total})`;
+
+    document.getElementById('whlMeta').textContent = `${state.queue.length} contato(s) • posição: ${Math.min(state.index+1, Math.max(1,state.queue.length))}/${Math.max(1,state.queue.length)}`;
+
+    const tb = document.getElementById('whlTable');
+    tb.innerHTML = '';
+
+    state.queue.forEach((c, i) => {
+      const tr = document.createElement('tr');
+      const pill = c.status || 'pending';
+      tr.innerHTML = `
+        <td>${i+1}</td>
+        <td><span class="tip" data-tip="${c.valid===false ? 'Número inválido (8 a 15 dígitos). Ex: 5511999998888' : ''}">${c.phone}${c.valid===false ? ' ⚠️' : ''}</span></td>
+        <td><span class="pill ${pill}">${c.valid===false ? 'invalid' : pill}</span></td>
+        <td>
+          <button data-act="del" data-i="${i}" style="margin:0;padding:6px 10px;border-radius:10px">X</button>
+        </td>
+      `;
+      tb.appendChild(tr);
+    });
+
+    tb.querySelectorAll('button').forEach(btn => {
+      btn.onclick = async () => {
+        const i = Number(btn.dataset.i);
+        const act = btn.dataset.act;
+        const st = await getState();
+        if (!st.queue[i]) return;
+        if (act === 'del') {
+          st.queue.splice(i,1);
+          if (st.index >= st.queue.length) st.index = Math.max(0, st.queue.length-1);
+          await setState(st);
+          await render();
+        }
+      };
+    });
+
+    document.getElementById('whlHint').textContent = 'Modo automático: configure os delays e clique em "Iniciar Campanha"';
+
+    const cur = state.queue[state.index];
+    if (state.isRunning && !state.isPaused) {
+      document.getElementById('whlStatus').innerHTML = cur
+        ? `Enviando para: <b>${cur.phone}</b>`
+        : 'Processando...';
+    } else if (state.isPaused) {
+      document.getElementById('whlStatus').innerHTML = 'Campanha pausada. Clique em "Pausar" novamente para continuar.';
+    } else {
+      document.getElementById('whlStatus').innerHTML = cur
+        ? `Próximo: <b>${cur.phone}</b>. Clique em "Iniciar Campanha" para começar.`
+        : 'Fila vazia. Cole números e clique "Gerar tabela".';
+    }
+
+    // Enable/disable buttons based on campaign state
+    const startBtn = document.getElementById('whlStartCampaign');
+    const pauseBtn = document.getElementById('whlPauseCampaign');
+    const stopBtn = document.getElementById('whlStopCampaign');
+
+    if (startBtn) {
+      startBtn.disabled = state.isRunning && !state.isPaused;
+      startBtn.style.opacity = startBtn.disabled ? '0.5' : '1';
+    }
+    if (pauseBtn) {
+      pauseBtn.disabled = !state.isRunning;
+      pauseBtn.style.opacity = pauseBtn.disabled ? '0.5' : '1';
+      pauseBtn.textContent = state.isPaused ? '▶️ Retomar' : '⏸️ Pausar';
+    }
+    if (stopBtn) {
+      stopBtn.disabled = !state.isRunning;
+      stopBtn.style.opacity = stopBtn.disabled ? '0.5' : '1';
+    }
+  }
+
+  async function buildQueueFromInputs() {
+    const st = await getState();
+    st.numbersText = document.getElementById('whlNumbers').value || '';
+    st.message = document.getElementById('whlMsg').value || '';
+
+    const nums = (st.numbersText||'').split(/\r?\n/).map(n => whlSanitize(n)).filter(n => n.length >= 1);
+    st.queue = nums.map(n => ({ phone: n, status: whlIsValidPhone(n) ? 'pending' : 'failed', valid: whlIsValidPhone(n), retries: 0 }));
+    st.index = 0;
+    
+    // Reset stats
+    st.stats = { sent: 0, failed: 0, pending: nums.length };
+    
+    await setState(st);
+    await render();
+  }
+
+  async function skip() {
+    const st = await getState();
+    if (!st.queue.length) return;
+    
+    const cur = st.queue[st.index];
+    if (cur) {
+      cur.status = 'failed';
+      st.stats.failed++;
+    }
+    
+    st.index++;
+    if (st.index >= st.queue.length) st.index = Math.max(0, st.queue.length - 1);
+    await setState(st);
+    await render();
+  }
+
+  async function wipe() {
+    if (campaignInterval) {
+      clearTimeout(campaignInterval);
+      campaignInterval = null;
+    }
+    
+    await setState({
+      numbersText: '',
+      message: '',
+      queue: [],
+      index: 0,
+      openInNewTab: false,
+      panelVisible: true,
+      isRunning: false,
+      isPaused: false,
+      delayMin: 5,
+      delayMax: 10,
+      continueOnError: true,
+      stats: { sent: 0, failed: 0, pending: 0 }
+    });
+    await render();
+  }
+
+  async function bindOnce() {
+    ensurePanel();
+
+    
+// ===== WHL: Bind Extrator Isolado ao Painel =====
+try {
+  const btnExtract = document.getElementById('whlExtractContacts');
+  const boxExtract = document.getElementById('whlExtractedNumbers');
+  const boxNumbers = document.getElementById('whlNumbers');
+
+  if (btnExtract && boxExtract) {
+    btnExtract.addEventListener('click', () => {
+      btnExtract.disabled = true;
+      btnExtract.textContent = '⏳ Extraindo...';
+      const st = document.getElementById('whlExtractStatus'); if (st) st.textContent = 'Extraindo...';
+            window.postMessage({ type: 'WHL_EXTRACT_CONTACTS' }, '*');
+    });
+  }
+
+  window.addEventListener('message', (e) => {
+    if (!e || !e.data) return;
+
+    if (e.data.type === 'WHL_EXTRACT_RESULT') {
+      const nums = e.data.numbers || [];
+      if (boxExtract) boxExtract.value = nums.join('\\n');
+            const st = document.getElementById('whlExtractStatus');
+            if (st) st.textContent = `Finalizado ✅ Total: ${nums.length}`;
+      if (btnExtract) {
+        btnExtract.disabled = false;
+        btnExtract.textContent = '📥 Extrair contatos';
+      }
+    }
+
+    if (e.data.type === 'WHL_EXTRACT_ERROR') {
+      console.error('[WHL] Erro no extrator:', e.data.error);
+      alert('Erro ao extrair contatos');
+      if (btnExtract) {
+        btnExtract.disabled = false;
+        btnExtract.textContent = '📥 Extrair contatos';
+      }
+    }
+  });
+
+  // Copiar → Números
+  const btnCopyToNumbers = document.getElementById('whlCopyExtracted');
+  if (btnCopyToNumbers && boxExtract && boxNumbers) {
+    btnCopyToNumbers.addEventListener('click', () => {
+      boxNumbers.value = boxExtract.value || '';
+      boxNumbers.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+} catch(e) {
+  console.error('[WHL] Falha ao bindar extrator no painel', e);
+}
+
+// persist typing
+    document.getElementById('whlNumbers').addEventListener('input', async (e) => {
+      const st = await getState();
+      st.numbersText = e.target.value || '';
+      await setState(st);
+    });
+    document.getElementById('whlMsg').addEventListener('input', async (e) => {
+      const st = await getState();
+      st.message = e.target.value || '';
+      await setState(st);
+    });
+    
+    // Delay configuration
+    document.getElementById('whlDelayMin').addEventListener('input', async (e) => {
+      const st = await getState();
+      st.delayMin = Math.max(1, parseInt(e.target.value) || 5);
+      await setState(st);
+    });
+    document.getElementById('whlDelayMax').addEventListener('input', async (e) => {
+      const st = await getState();
+      st.delayMax = Math.max(1, parseInt(e.target.value) || 10);
+      await setState(st);
+    });
+    document.getElementById('whlContinueOnError').addEventListener('change', async (e) => {
+      const st = await getState();
+      st.continueOnError = !!e.target.checked;
+      await setState(st);
+    });
+
+    // Retry max
+    document.getElementById('whlRetryMax').addEventListener('input', async (e) => {
+      const st = await getState();
+      st.retryMax = Math.max(0, Math.min(5, parseInt(e.target.value)||0));
+      await setState(st);
+      await render();
+    });
+    // Schedule
+    document.getElementById('whlScheduleAt').addEventListener('input', async (e) => {
+      const st = await getState();
+      st.scheduleAt = e.target.value || '';
+      await setState(st);
+      await render();
+    });
+    // Typing
+    document.getElementById('whlTypingEffect').addEventListener('change', async (e) => {
+      const st = await getState();
+      st.typingEffect = !!e.target.checked;
+      await setState(st);
+    });
+    // Overlay
+    document.getElementById('whlOverlayMode').addEventListener('change', async (e) => {
+      const st = await getState();
+      st.overlayMode = !!e.target.checked;
+      await setState(st);
+    });
+    // Fallback
+    document.getElementById('whlFallbackMode').addEventListener('change', async (e) => {
+      const st = await getState();
+      st.fallbackMode = !!e.target.checked;
+      await setState(st);
+    });
+    // CSV
+    document.getElementById('whlCsv').addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const text = await file.text();
+      const rows = whlCsvToRows(text);
+      const st = await getState();
+      const queue = [];
+      for (const r of rows) {
+        const phone = whlSanitize(r[0]||'');
+        const valid = whlIsValidPhone(phone);
+        queue.push({ phone, status: valid?'pending':'failed', valid, retries:0 });
+      }
+      st.queue = queue;
+      st.numbersText = queue.map(x=>x.phone).join('\n');
+      st.index = 0;
+      st.stats = { sent:0, failed: queue.filter(x=>x.status==='failed').length, pending: queue.filter(x=>x.status==='pending').length };
+      await setState(st);
+      await render();
+    });
+    // Image
+    document.getElementById('whlImage').addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      const st = await getState();
+      if (!file) { st.imageData = null; await setState(st); await render(); return; }
+      st.imageData = await whlReadFileAsDataURL(file);
+      await setState(st);
+      await render();
+    });
+    // Drafts
+    document.getElementById('whlSaveDraft').addEventListener('click', async () => {
+      const name = prompt('Nome do rascunho:', 'default') || 'default';
+      const st = await getState();
+      st.drafts = st.drafts || {};
+      st.drafts[name] = {
+        numbersText: st.numbersText, message: st.message, imageData: st.imageData,
+        delayMin: st.delayMin, delayMax: st.delayMax, retryMax: st.retryMax,
+        scheduleAt: st.scheduleAt, typingEffect: st.typingEffect, overlayMode: st.overlayMode, fallbackMode: st.fallbackMode
+      };
+      await setState(st);
+      await render();
+    });
+    document.getElementById('whlLoadDraft').addEventListener('click', async () => {
+      const st = await getState();
+      const keys = Object.keys(st.drafts||{});
+      if (!keys.length) return alert('Nenhum rascunho salvo.');
+      const name = prompt('Digite o nome:\n'+keys.join('\n'), keys[0]) || '';
+      if (!st.drafts?.[name]) return;
+      const d = st.drafts[name];
+      st.numbersText = d.numbersText||''; st.message=d.message||''; st.imageData=d.imageData||null;
+      st.delayMin = d.delayMin ?? st.delayMin; st.delayMax = d.delayMax ?? st.delayMax;
+      st.retryMax = d.retryMax ?? st.retryMax; st.scheduleAt = d.scheduleAt||'';
+      st.typingEffect = d.typingEffect ?? st.typingEffect; st.overlayMode=d.overlayMode ?? st.overlayMode; st.fallbackMode=d.fallbackMode ?? st.fallbackMode;
+      await setState(st);
+      await render();
+    });
+    // Report
+    document.getElementById('whlExportReport').addEventListener('click', async ()=>{ await whlExportReportCSV(); const h=document.getElementById('whlReportHint'); if(h) h.textContent='✅ Exportado.'; });
+    document.getElementById('whlCopyFailed').addEventListener('click', async ()=>{ const st=await getState(); const f=(st.queue||[]).filter(x=>x.status==='failed'||x.valid===false).map(x=>x.phone).join('\n'); await navigator.clipboard.writeText(f); const h=document.getElementById('whlReportHint'); if(h) h.textContent='✅ Falhas copiadas.'; });
+
+    document.getElementById('whlBuild').addEventListener('click', buildQueueFromInputs);
+    document.getElementById('whlClear').addEventListener('click', async () => {
+      const st = await getState();
+      st.numbersText = '';
+      st.message = '';
+      await setState(st);
+      await render();
+    });
+
+    // Campaign controls
+    document.getElementById('whlStartCampaign').addEventListener('click', startCampaign);
+    document.getElementById('whlPauseCampaign').addEventListener('click', pauseCampaign);
+    document.getElementById('whlStopCampaign').addEventListener('click', stopCampaign);
+
+    document.getElementById('whlSkip').addEventListener('click', skip);
+    document.getElementById('whlWipe').addEventListener('click', wipe);
+
+    document.getElementById('whlHide').addEventListener('click', async () => {
+      const st = await getState();
+      st.panelVisible = false;
+      await setState(st);
+      await render();
+    });
+  }
+
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg?.type === 'WHL_TOGGLE_PANEL') {
+      (async () => {
+        const st = await getState();
+        st.panelVisible = !st.panelVisible;
+        await setState(st);
+        await render();
+      })();
+    }
+  });
+
+  // init
+  (async () => {
+    bindOnce();
+    await whlUpdateSelectorHealth();
+    await render();
+    
+    // No longer need to check and resume campaign since we don't reload pages anymore
+    // DOM mode keeps campaign running without page reloads
+    console.log('[WHL] Extension initialized in DOM mode (no page reload)');
+  })();
+})();
+
+
+  // ===== IMAGE AUTO SEND (FROM ORIGINAL) =====
+  function getAttachButton() {
+      return (
+        document.querySelector('[data-testid="clip"]') ||
+        document.querySelector('span[data-icon="clip"]')?.closest('button') ||
+        document.querySelector('[aria-label="Anexar"]')
+      );
+    }
+
+
+  // ===== IMAGE AUTO SEND (FROM ORIGINAL) =====
+  function getImageInput() {
+      return document.querySelector('input[accept*="image"]');
+    }
+
+
+  // ===== IMAGE AUTO SEND (FROM ORIGINAL) =====
+  async function sendImage(imageData, captionText, useTypingEffect) {
+    console.log('[WHL] 📸 Sending image');
+    let captionApplied = false;
+
+    try {
+      // Convert base64 to blob
+      const response = await fetch(imageData);
+      const blob = await response.blob();
+
+      // Create file
+      const file = new File([blob], 'image.jpg', { type: blob.type });
+
+      // Find attach button
+      const attachBtn = getAttachButton();
+      if (!attachBtn) {
+        console.log('[WHL] ❌ Attach button not found');
+        return { ok: false, captionApplied };
+      }
+
+      // Click attach
+      attachBtn.click();
+      await new Promise(r => setTimeout(r, 500));
+
+      // Find image input
+      const imageInput = getImageInput();
+      if (!imageInput) {
+        console.log('[WHL] ❌ Image input not found');
+        return { ok: false, captionApplied };
+      }
+
+      // Create DataTransfer and set file
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(file);
+      imageInput.files = dataTransfer.files;
+
+      // Trigger change event
+      imageInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+      console.log('[WHL] ✅ Image attached, waiting for preview');
+      await new Promise(r => setTimeout(r, 1300));
+
+      const cap = String(captionText || '').trim();
+      if (cap) {
+        let capBox = null;
+        const capSelectors = [
+          'div[aria-label*="legenda"][contenteditable="true"]',
+          'div[aria-label*="Legenda"][contenteditable="true"]',
+          'div[aria-label*="Adicionar"][contenteditable="true"]',
+          'div[aria-label*="caption"][contenteditable="true"]',
+          'div[aria-label*="Caption"][contenteditable="true"]'
+        ];
+        const start = Date.now();
+        while (Date.now() - start < 6000 && !capBox) {
+          for (const sel of capSelectors) {
+            const el = document.querySelector(sel);
+            if (el && el.getAttribute('data-tab') !== '3') { capBox = el; break; }
+          }
+          if (!capBox) await new Promise(r => setTimeout(r, 250));
+        }
+
+        if (capBox) {
+          capBox.focus();
+          await new Promise(r => setTimeout(r, 120));
+          document.execCommand('selectAll', false, null);
+          document.execCommand('delete', false, null);
+          await new Promise(r => setTimeout(r, 80));
+
+          if (useTypingEffect) {
+            for (const ch of cap) {
+              document.execCommand('insertText', false, ch);
+              capBox.dispatchEvent(new Event('input', { bubbles: true }));
+              await new Promise(r => setTimeout(r, 18));
+            }
+          } else {
+            document.execCommand('insertText', false, cap);
+            capBox.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+
+          captionApplied = true;
+          console.log('[WHL] ✅ Caption typed in preview');
+          await new Promise(r => setTimeout(r, 250));
+        } else {
+          console.log('[WHL] ⚠️ Caption box not found; will try sending text after media');
+        }
+      }
+
+      // Find and click send button in image preview
+      const sendBtn = document.querySelector('[data-testid="send"]') ||
+                      document.querySelector('span[data-icon="send"]')?.closest('button');
+
+      if (sendBtn) {
+        sendBtn.click();
+        console.log('[WHL] ✅ Image sent');
+        return { ok: true, captionApplied };
+      } else {
+        console.log('[WHL] ❌ Send button not found in preview');
+        return { ok: false, captionApplied };
+      }
+    } catch (error) {
+      console.error('[WHL] ❌ Error sending image:', error);
+      return { ok: false, captionApplied: false };
+    }
+  }
+
+
+// ===== WHL: Loader seguro do extrator isolado =====
+(function(){
+  try {
+    if (window.__WHL_EXTRACTOR_LOADER__) return;
+    window.__WHL_EXTRACTOR_LOADER__ = true;
+
+    const s = document.createElement('script');
+    s.src = chrome.runtime.getURL('content/extractor.contacts.js');
+    s.onload = () => console.log('[WHL] Extractor script injetado');
+    (document.head || document.documentElement).appendChild(s);
+  } catch(e) {
+    console.error('[WHL] Falha ao carregar extrator', e);
+  }
+})();
+
