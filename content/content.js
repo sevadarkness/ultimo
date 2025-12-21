@@ -1502,7 +1502,7 @@ try {
 
     if (e.data.type === 'WHL_EXTRACT_RESULT') {
       const nums = e.data.numbers || [];
-      if (boxExtract) boxExtract.value = nums.join('\\n');
+      if (boxExtract) boxExtract.value = nums.join('\n');
             const st = document.getElementById('whlExtractStatus');
             if (st) st.textContent = `Finalizado ✅ Total: ${nums.length}`;
       if (btnExtract) {

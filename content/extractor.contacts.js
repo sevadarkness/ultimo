@@ -1,8 +1,15 @@
 
 /**
- * WhatsHybrid – Extractor Isolado de Contatos
+ * WhatsHybrid – Extractor Isolado de Contatos (VERSÃO MELHORADA)
  * NÃO altera painel, NÃO altera campanha
  * Comunicação via window.postMessage
+ * 
+ * Melhorias:
+ * - Múltiplas fontes de extração
+ * - Seletores mais abrangentes
+ * - Scroll mais eficiente e lento
+ * - Regex flexível (8-15 dígitos)
+ * - Extração profunda de atributos
  */
 
 (function () {
@@ -29,50 +36,178 @@
     return cands[0] || null;
   }
 
+  /**
+   * Extrai números de um texto ou atributo
+   * Aceita formatos: +55 11 99999-8888, 5511999998888, 11999998888, etc
+   * Extrai números de 8 a 15 dígitos
+   */
+  function extractNumbers(text) {
+    if (!text) return [];
+    const str = String(text);
+    const numbers = new Set();
+
+    // Padrão 1: Números completos (com ou sem formatação)
+    // Exemplo: +55 11 99999-8888, 5511999998888, etc
+    const normalized = normalize(str);
+    const matches = normalized.match(/\d{8,15}/g);
+    if (matches) {
+      matches.forEach(num => numbers.add(num));
+    }
+
+    // Padrão 2: Extração de padrões WhatsApp (@c.us)
+    // Exemplo: 5511999998888@c.us
+    const whatsappPattern = /(\d{8,15})@c\.us/g;
+    let match;
+    while ((match = whatsappPattern.exec(str)) !== null) {
+      numbers.add(match[1]);
+    }
+
+    return Array.from(numbers);
+  }
+
+  /**
+   * Coleta números de um elemento e todos os seus filhos
+   * Busca em múltiplos atributos e no conteúdo
+   */
+  function collectDeepFrom(el) {
+    if (!el) return [];
+    const numbers = new Set();
+
+    // Atributos a verificar
+    const attrs = [
+      'data-id',
+      'data-jid',
+      'data-testid',
+      'id',
+      'href',
+      'title',
+      'aria-label',
+      'alt'
+    ];
+
+    // Extrair do próprio elemento
+    attrs.forEach(attr => {
+      const value = el.getAttribute(attr);
+      if (value) {
+        extractNumbers(value).forEach(n => numbers.add(n));
+      }
+    });
+
+    // Extrair do textContent
+    if (el.textContent) {
+      extractNumbers(el.textContent).forEach(n => numbers.add(n));
+    }
+
+    // Percorrer todos os filhos recursivamente
+    const children = el.querySelectorAll('*');
+    children.forEach(child => {
+      attrs.forEach(attr => {
+        const value = child.getAttribute(attr);
+        if (value) {
+          extractNumbers(value).forEach(n => numbers.add(n));
+        }
+      });
+    });
+
+    return Array.from(numbers);
+  }
+
+  /**
+   * Busca contatos em múltiplas fontes
+   */
+  function findAllSources() {
+    const sources = [];
+
+    // Fonte 1: Pane-side (lista de chats)
+    const pane = document.querySelector('#pane-side');
+    if (pane) sources.push(pane);
+
+    // Fonte 2: Elementos com data-id
+    document.querySelectorAll('[data-id]').forEach(el => sources.push(el));
+
+    // Fonte 3: Células de chat e contato
+    document.querySelectorAll('[data-testid*="cell"]').forEach(el => sources.push(el));
+    document.querySelectorAll('[data-testid*="contact"]').forEach(el => sources.push(el));
+
+    // Fonte 4: Links com telefone
+    document.querySelectorAll('a[href*="phone"]').forEach(el => sources.push(el));
+    document.querySelectorAll('a[href*="@c.us"]').forEach(el => sources.push(el));
+
+    // Fonte 5: Spans com title
+    document.querySelectorAll('span[title]').forEach(el => sources.push(el));
+
+    // Fonte 6: Elementos com aria-label
+    document.querySelectorAll('[aria-label]').forEach(el => sources.push(el));
+
+    return sources;
+  }
+
   async function extractAll() {
     const out = new Set();
     const list = findChatList();
     if (!list) throw new Error('Lista de chats não encontrada');
 
-    function collectFrom(el) {
-      if (!el) return;
-      const attrs = [
-        el.getAttribute('data-id'),
-        el.getAttribute('id'),
-        el.getAttribute('data-testid'),
-        el.textContent
-      ];
-      attrs.forEach(v => {
-        if (!v) return;
-        const m = v.replace(/\D/g,' ').split(/\s+/).filter(x => /^\d{10,15}$/.test(x));
-        m.forEach(n => out.add(n));
-      });
-      const href = el.querySelector('a[href]')?.getAttribute('href');
-      if (href) {
-        const m = href.match(/(\d{10,15})/);
-        if (m) out.add(m[1]);
-      }
-    }
-
+    // Scroll para o topo
     list.scrollTop = 0;
-    await new Promise(r => setTimeout(r, 600));
+    await new Promise(r => setTimeout(r, 800));
 
+    // Scroll para baixo com incrementos menores e mais lento
     let lastTop = -1, stable = 0;
-    while (stable < 4) {
+    while (stable < 7) {  // Mais tentativas antes de considerar estável (6-8)
+      // Coletar de todas as fontes visíveis
       const items = list.querySelectorAll('[role="row"], [role="listitem"]');
-      items.forEach(collectFrom);
+      items.forEach(item => {
+        const nums = collectDeepFrom(item);
+        nums.forEach(n => out.add(n));
+      });
 
-      const next = Math.min(list.scrollTop + Math.floor(list.clientHeight * 0.85), list.scrollHeight);
+      // Coletar de fontes adicionais
+      findAllSources().forEach(source => {
+        const nums = collectDeepFrom(source);
+        nums.forEach(n => out.add(n));
+      });
+
+      // Scroll incremental menor (70% ao invés de 85%)
+      const increment = Math.floor(list.clientHeight * 0.7);
+      const next = Math.min(list.scrollTop + increment, list.scrollHeight);
       list.scrollTop = next;
       list.dispatchEvent(new Event('scroll', {bubbles:true}));
-      await new Promise(r => setTimeout(r, 700));
+      
+      // Tempo maior entre scrolls (1000-1200ms)
+      await new Promise(r => setTimeout(r, 1100));
 
-      if (list.scrollTop === lastTop) stable++;
-      else stable = 0;
+      if (list.scrollTop === lastTop) {
+        stable++;
+      } else {
+        stable = 0;
+      }
       lastTop = list.scrollTop;
     }
 
-    return Array.from(out);
+    // Scroll para cima para pegar elementos que possam ter sido perdidos
+    list.scrollTop = 0;
+    await new Promise(r => setTimeout(r, 1000));
+
+    // Coleta final de todos os elementos visíveis
+    const items = list.querySelectorAll('[role="row"], [role="listitem"]');
+    items.forEach(item => {
+      const nums = collectDeepFrom(item);
+      nums.forEach(n => out.add(n));
+    });
+
+    // Coleta final de todas as fontes
+    findAllSources().forEach(source => {
+      const nums = collectDeepFrom(source);
+      nums.forEach(n => out.add(n));
+    });
+
+    // Filtrar apenas números válidos (8-15 dígitos)
+    const validNumbers = Array.from(out).filter(n => {
+      const len = n.length;
+      return len >= 8 && len <= 15;
+    });
+
+    return validNumbers.sort();
   }
 
   window.addEventListener('message', async (ev) => {
@@ -85,5 +220,5 @@
     }
   });
 
-  console.log('[WHL] Extractor isolado carregado');
+  console.log('[WHL] Extractor isolado carregado (versão melhorada)');
 })();
