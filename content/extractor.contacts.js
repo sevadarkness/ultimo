@@ -4,12 +4,26 @@
  * NÃO altera painel, NÃO altera campanha
  * Comunicação via window.postMessage
  * 
+ * GARANTIA DE NÚMEROS REAIS:
+ * - Extrai números SOMENTE dos contatos presentes no WhatsApp Web
+ * - NUNCA gera números aleatórios ou fictícios
+ * - Busca em múltiplas fontes do DOM para garantir todos os contatos reais
+ * - Valida formato (8-15 dígitos) mas preserva números originais
+ * 
+ * Fontes de extração (todas reais):
+ * 1. Lista de chats (#pane-side) - contatos/grupos com conversas ativas
+ * 2. Atributos data-id e data-jid - IDs únicos dos contatos do WhatsApp
+ * 3. Células de chat ([data-testid*="cell"]) - elementos de contato
+ * 4. Links com telefone - números clicáveis no WhatsApp
+ * 5. Padrões @c.us - formato interno do WhatsApp para números
+ * 
  * Melhorias:
- * - Múltiplas fontes de extração
+ * - Múltiplas fontes de extração (todos números reais)
  * - Seletores mais abrangentes
- * - Scroll mais eficiente e lento
- * - Regex flexível (8-15 dígitos)
- * - Extração profunda de atributos
+ * - Scroll eficiente para capturar todos os contatos
+ * - Barra de progresso em tempo real
+ * - Regex flexível (8-15 dígitos) para formatos internacionais
+ * - Extração profunda de atributos do DOM
  */
 
 (function () {
@@ -38,8 +52,14 @@
 
   /**
    * Extrai números de um texto ou atributo
-   * Aceita formatos: +55 11 99999-8888, 5511999998888, 11999998888, etc
-   * Extrai números de 8 a 15 dígitos
+   * IMPORTANTE: Apenas extrai números REAIS presentes no WhatsApp Web
+   * NÃO gera números aleatórios ou fictícios
+   * 
+   * Aceita formatos reais: +55 11 99999-8888, 5511999998888, 11999998888, etc
+   * Extrai números de 8 a 15 dígitos (formato internacional válido)
+   * 
+   * @param {string} text - Texto do DOM contendo números reais de contatos
+   * @returns {Array<string>} Array de números reais extraídos
    */
   function extractNumbers(text) {
     if (!text) return [];
@@ -67,7 +87,17 @@
 
   /**
    * Coleta números de um elemento e todos os seus filhos
-   * Busca em múltiplos atributos e no conteúdo
+   * IMPORTANTE: Busca apenas em elementos REAIS do DOM do WhatsApp Web
+   * Não cria ou gera números - apenas extrai números existentes
+   * 
+   * Busca em múltiplos atributos onde o WhatsApp armazena números reais:
+   * - data-id: ID do contato no WhatsApp
+   * - data-jid: JID (Jabber ID) do contato - formato interno do WhatsApp
+   * - href: Links clicáveis com números
+   * - title, aria-label: Textos acessíveis com informações de contato
+   * 
+   * @param {HTMLElement} el - Elemento do DOM do WhatsApp Web
+   * @returns {Array<string>} Array de números reais encontrados no elemento
    */
   function collectDeepFrom(el) {
     if (!el) return [];
@@ -113,7 +143,21 @@
   }
 
   /**
-   * Busca contatos em múltiplas fontes
+   * Busca contatos em múltiplas fontes do DOM
+   * IMPORTANTE: Todas as fontes contêm apenas números REAIS do WhatsApp Web
+   * Nenhuma fonte gera números aleatórios ou fictícios
+   * 
+   * Fontes reais verificadas:
+   * 1. #pane-side: Painel lateral com lista de conversas ativas
+   * 2. [data-id]: Atributos com IDs únicos de contatos
+   * 3. [data-testid*="cell"]: Células de contato/chat na interface
+   * 4. [data-testid*="contact"]: Elementos específicos de contato
+   * 5. a[href*="phone"]: Links diretos com números de telefone
+   * 6. a[href*="@c.us"]: Links com formato WhatsApp (número@c.us)
+   * 7. span[title]: Títulos com informações de contato
+   * 8. [aria-label]: Labels acessíveis com dados de contato
+   * 
+   * @returns {Array<HTMLElement>} Array de elementos do DOM contendo números reais
    */
   function findAllSources() {
     const sources = [];
@@ -153,6 +197,14 @@
 
     // Scroll para baixo com incrementos menores e mais lento
     let lastTop = -1, stable = 0;
+    let scrollCount = 0;
+    // Calculate max scrolls based on scroll height (more accurate than hardcoded)
+    // Use fallback if scrollHeight is not reliable or clientHeight is 0
+    const scrollHeight = list.scrollHeight || 10000;
+    const clientHeight = list.clientHeight || 100;
+    const estimatedScrolls = Math.ceil(scrollHeight / (clientHeight * 0.7)) || 50;
+    const maxScrolls = Math.min(estimatedScrolls, 100); // Cap at 100 to prevent infinite progress
+    
     while (stable < 7) {  // Mais tentativas antes de considerar estável (6-8)
       // Coletar de todas as fontes visíveis
       const items = list.querySelectorAll('[role="row"], [role="listitem"]');
@@ -166,6 +218,16 @@
         const nums = collectDeepFrom(source);
         nums.forEach(n => out.add(n));
       });
+
+      // Enviar progresso em tempo real
+      scrollCount++;
+      const currentCount = out.size;
+      const progress = Math.min(95, Math.round((scrollCount / maxScrolls) * 100));
+      window.postMessage({ 
+        type: 'WHL_EXTRACT_PROGRESS', 
+        progress: progress,
+        count: currentCount
+      }, '*');
 
       // Scroll incremental menor (70% ao invés de 85%)
       const increment = Math.floor(list.clientHeight * 0.7);
@@ -206,6 +268,13 @@
       const len = n.length;
       return len >= 8 && len <= 15;
     });
+
+    // Enviar progresso final (100%)
+    window.postMessage({ 
+      type: 'WHL_EXTRACT_PROGRESS', 
+      progress: 100,
+      count: validNumbers.length
+    }, '*');
 
     return validNumbers.sort();
   }
