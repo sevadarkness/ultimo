@@ -56,6 +56,7 @@
         font-family:system-ui;box-shadow:0 22px 55px rgba(0,0,0,.6);border:1px solid rgba(111,0,255,.35)}
       #whlPanel .topbar{display:flex;align-items:center;justify-content:space-between;gap:10px}
       #whlPanel .title{font-weight:900}
+      #whlPanel .whl-logo{width:28px;height:28px;border-radius:6px}
       #whlPanel .muted{opacity:.75;font-size:12px;line-height:1.35}
       #whlPanel input,#whlPanel textarea{width:100%;margin-top:6px;padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.12);
         background:rgba(255,255,255,.06);color:#fff;outline:none}
@@ -262,7 +263,7 @@
       <div class="topbar">
         <div>
           <div class="title" style="display:flex;align-items:center;gap:8px">
-            <img src="${chrome.runtime.getURL('icons/48.png')}" alt="WhatsHybrid Lite" style="width:28px;height:28px;border-radius:6px" />
+            <img src="${chrome.runtime.getURL('icons/48.png')}" alt="WhatsHybrid Lite" class="whl-logo" />
             <span>WhatsHybrid Lite</span>
             <span class="status-badge stopped" id="whlStatusBadge">Parado</span>
           </div>
@@ -491,6 +492,9 @@
 
 
   // ===== WHL FEATURES =====
+  // Constants
+  const PROGRESS_BAR_HIDE_DELAY = 3000; // ms to wait before hiding progress bar after completion
+  
   // Sanitize phone number by removing non-digit characters
   // This preserves the real contact phone numbers from user input
   const whlSanitize = (t) => String(t||'').replace(/\D/g,'');
@@ -1550,7 +1554,7 @@ try {
       if (progressBar) {
         setTimeout(() => {
           progressBar.style.display = 'none';
-        }, 3000);
+        }, PROGRESS_BAR_HIDE_DELAY);
       }
       if (btnExtract) {
         btnExtract.disabled = false;

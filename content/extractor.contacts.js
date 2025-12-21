@@ -198,7 +198,9 @@
     // Scroll para baixo com incrementos menores e mais lento
     let lastTop = -1, stable = 0;
     let scrollCount = 0;
-    const maxScrolls = 50; // Estimativa máxima de scrolls
+    // Calculate max scrolls based on scroll height (more accurate than hardcoded)
+    const estimatedScrolls = Math.ceil(list.scrollHeight / (list.clientHeight * 0.7)) || 50;
+    const maxScrolls = Math.min(estimatedScrolls, 100); // Cap at 100 to prevent infinite progress
     
     while (stable < 7) {  // Mais tentativas antes de considerar estável (6-8)
       // Coletar de todas as fontes visíveis

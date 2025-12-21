@@ -1,14 +1,54 @@
 <!doctype html>
 <html lang="pt-BR">
-<head><meta charset="utf-8"><title>WhatsHybrid Lite</title></head>
-<body style="background:#050014;color:#fff;font-family:system-ui;width:260px;padding:12px">
-<h3 style="margin:0 0 10px;display:flex;align-items:center;gap:8px">
-  <img src="../icons/48.png" alt="WhatsHybrid Lite" style="width:28px;height:28px;border-radius:6px" />
+<head>
+<meta charset="utf-8">
+<title>WhatsHybrid Lite</title>
+<style>
+  body {
+    background:#050014;
+    color:#fff;
+    font-family:system-ui;
+    width:260px;
+    padding:12px;
+  }
+  h3 {
+    margin:0 0 10px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .whl-logo {
+    width:28px;
+    height:28px;
+    border-radius:6px;
+  }
+  #toggle {
+    width:100%;
+    padding:10px;
+    border-radius:12px;
+    border:0;
+    background:#6f00ff;
+    color:#fff;
+    font-weight:800;
+    cursor:pointer;
+  }
+  .info {
+    margin-top:8px;
+    font-size:12px;
+    opacity:.75;
+    line-height:1.35;
+  }
+</style>
+</head>
+<body>
+<h3>
+  <img src="../icons/48.png" alt="WhatsHybrid Lite" class="whl-logo" />
   <span>WhatsHybrid Lite</span>
 </h3>
-<button id="toggle" style="width:100%;padding:10px;border-radius:12px;border:0;background:#6f00ff;color:#fff;font-weight:800;cursor:pointer">Mostrar/ocultar painel</button>
-<div style="margin-top:8px;font-size:12px;opacity:.75;line-height:1.35">
+<button id="toggle">Mostrar/ocultar painel</button>
+<div class="info">
 Modo <b>automático</b>: configure delays, inicie a campanha e a extensão envia todas as mensagens sozinha!
 </div>
 <script src="popup.js"></script>
-</body></html>
+</body>
+</html>
