@@ -1091,59 +1091,20 @@
 
   // ===== OLD FUNCTIONS (DEPRECATED - Kept for fallback) =====
 
-  // Função para enviar via URL (FALLBACK)
+  // Função para enviar via URL (FALLBACK) - Abre em nova aba ou mesmo tab
   async function sendMessageViaUrl(phoneNumber, message) {
     console.log('[WHL] ════════════════════════════════════════');
     console.log('[WHL] ═══ ENVIANDO VIA URL (FALLBACK) ═══');
     console.log('[WHL] ════════════════════════════════════════');
     console.log('[WHL] Para:', phoneNumber);
+    console.log('[WHL] ⚠️ URL fallback requer navegação de página');
+    console.log('[WHL] ⚠️ Funcionalidade simplificada - marcando como falha');
     
-    try {
-      // Limpar campo de pesquisa antes
-      await clearSearchField();
-      
-      // Navegar para URL do WhatsApp
-      const url = chatUrl(phoneNumber, message);
-      console.log('[WHL] Navegando para URL:', url);
-      
-      // Abrir no mesmo tab
-      window.location.href = url;
-      
-      // Aguardar página carregar
-      await waitForPageLoad();
-      
-      // Verificar se apareceu erro de número inválido
-      await new Promise(r => setTimeout(r, 2000));
-      
-      // Procurar por mensagens de erro do WhatsApp
-      const errorElements = document.querySelectorAll('div, span');
-      for (const el of errorElements) {
-        const text = (el.textContent || '').toLowerCase();
-        if (text.includes('número de telefone') && text.includes('inválido') ||
-            text.includes('phone number') && text.includes('invalid')) {
-          console.log('[WHL] ❌ ERRO: Número inválido detectado pelo WhatsApp');
-          await clearSearchField();
-          return false;
-        }
-      }
-      
-      // Tentar enviar a mensagem
-      const sent = await autoSendMessage();
-      
-      if (sent) {
-        console.log('[WHL] ✅ Mensagem enviada via URL com sucesso!');
-        await clearSearchField();
-        return true;
-      } else {
-        console.log('[WHL] ❌ Falha ao enviar via URL');
-        await clearSearchField();
-        return false;
-      }
-    } catch (error) {
-      console.error('[WHL] ❌ Erro no envio via URL:', error);
-      await clearSearchField();
-      return false;
-    }
+    // Por enquanto, apenas marcar como falha já que URL requer reload
+    // Em uma versão futura, isso pode abrir uma nova aba
+    // ou usar um método mais sofisticado
+    
+    return false; // Marca como falha para não travar o fluxo
   }
 
   // Função para enviar usando Enter no campo de mensagem
@@ -1244,12 +1205,55 @@
     return false;
   }
 
-  // DEPRECATED: Check and resume active campaign on page load (NO LONGER NEEDED)
-  // This function is no longer used because we don't reload pages anymore
+  // Função para verificar e retomar campanha após reload (URL fallback)
   async function checkAndResumeCampaign() {
-    // This function is deprecated - DOM mode doesn't need page reload resume logic
-    console.log('[WHL] checkAndResumeCampaign is deprecated in DOM mode');
-    return;
+    const st = await getState();
+    
+    // Se a campanha estava rodando e está em modo fallback
+    if (st.isRunning && st.fallbackMode) {
+      console.log('[WHL] 🔄 Retomando campanha após navegação URL...');
+      
+      // Aguardar página carregar completamente
+      await new Promise(r => setTimeout(r, 3000));
+      
+      // Verificar se estamos em uma página de envio (tem o campo de mensagem)
+      const msgInput = getMessageInput();
+      if (msgInput) {
+        console.log('[WHL] ✅ Página carregada, tentando enviar mensagem...');
+        
+        // Tentar enviar a mensagem atual
+        const sent = await autoSendMessage();
+        
+        const cur = st.queue[st.index];
+        if (cur) {
+          if (sent) {
+            cur.status = 'sent';
+            console.log('[WHL] ✅ Mensagem enviada via URL');
+          } else {
+            cur.status = 'failed';
+            console.log('[WHL] ❌ Falha no envio via URL');
+          }
+          
+          delete cur.fallbackAttempt;
+          st.index++;
+          await setState(st);
+          await render();
+        }
+        
+        // Continuar com a próxima mensagem após delay
+        const delay = getRandomDelay(st.delayMin, st.delayMax);
+        console.log(`[WHL] Aguardando ${Math.round(delay/1000)}s antes do próximo...`);
+        
+        campaignInterval = setTimeout(() => {
+          processCampaignStepViaDom();
+        }, delay);
+      } else {
+        console.log('[WHL] ⚠️ Página não carregou corretamente, continuando...');
+        st.index++;
+        await setState(st);
+        scheduleCampaignStepViaDom();
+      }
+    }
   }
 
   // DEPRECATED: Old processCampaignStep (uses page reload)
@@ -1368,39 +1372,6 @@
     }
     
     if (st.index >= st.queue.length) {
-      console.log('[WHL] ═══════════════════════════════════════════');
-      console.log('[WHL] Primeira fase concluída!');
-      console.log('[WHL] Iniciando fallback URL para números falhados...');
-      console.log('[WHL] ═══════════════════════════════════════════');
-      
-      // Verificar se fallback está habilitado
-      if (st.fallbackMode) {
-        // Filtrar números que falharam
-        const failedNumbers = st.queue.filter(c => c.status === 'failed');
-        
-        if (failedNumbers.length > 0) {
-          console.log(`[WHL] 🔄 ${failedNumbers.length} números falhados. Tentando via URL...`);
-          
-          // Marcar para retry via URL
-          failedNumbers.forEach(c => {
-            c.status = 'pending';
-            c.fallbackAttempt = true;
-          });
-          
-          // Resetar índice para começar do início com fallback
-          st.index = 0;
-          await setState(st);
-          await render();
-          
-          // Continuar processamento com fallback
-          campaignInterval = setTimeout(() => {
-            processCampaignStepViaDom();
-          }, 1000);
-          return;
-        }
-      }
-      
-      // Se não há mais nada para fazer, finalizar
       console.log('[WHL] 🎉 Campanha finalizada!');
       st.isRunning = false;
       await setState(st);
@@ -1429,8 +1400,16 @@
       return;
     }
     
-    // Pular números já enviados ou que não estão pendentes
-    if (cur.status !== 'pending' && cur.status !== 'opened') {
+    // Pular números já processados (enviados ou falhados finais)
+    if (cur.status === 'sent') {
+      st.index++;
+      await setState(st);
+      scheduleCampaignStepViaDom();
+      return;
+    }
+    
+    // Se já falhou e não é para retry, pular
+    if (cur.status === 'failed' && !cur.retryPending) {
       st.index++;
       await setState(st);
       scheduleCampaignStepViaDom();
@@ -1442,44 +1421,25 @@
     await setState(st);
     await render();
     
-    let sent = false;
-    
-    // Decidir método de envio: DOM ou URL (fallback)
-    if (cur.fallbackAttempt) {
-      // Tentar via URL (método de fallback)
-      console.log('[WHL] 🔄 Tentando via URL (fallback) para:', cur.phone);
-      sent = await sendMessageViaUrl(cur.phone, st.message);
-    } else {
-      // Tentar via DOM (método principal)
-      sent = await sendMessageViaDom(cur.phone, st.message);
-    }
+    // Enviar via DOM
+    const sent = await sendMessageViaDom(cur.phone, st.message);
     
     if (sent) {
       cur.status = 'sent';
       console.log('[WHL] ✅ Enviado com sucesso');
-      delete cur.fallbackAttempt; // Limpar flag de fallback
+      delete cur.retryPending;
       await setState(st);
       await render();
     } else {
-      // Se falhou
+      // Falhou - registrar como falha
       console.log('[WHL] ❌ Falha no envio');
-      
-      // Se estava em fallback, marcar como falha final
-      if (cur.fallbackAttempt) {
-        cur.status = 'failed';
-        console.log('[WHL] ❌ Falha no fallback URL. Número registrado como falha final.');
-        await setState(st);
-        await render();
-      } else {
-        // Se falhou no DOM, registrar como falha (será tentado via URL depois)
-        cur.status = 'failed';
-        cur.retries = Number(cur.retries||0) + 1;
-        await setState(st);
-        await render();
-      }
+      cur.status = 'failed';
+      delete cur.retryPending;
+      await setState(st);
+      await render();
       
       // Se continueOnError está desabilitado, parar
-      if (!st.continueOnError && !cur.fallbackAttempt) {
+      if (!st.continueOnError) {
         st.isRunning = false;
         await setState(st);
         await render();
@@ -1501,33 +1461,11 @@
         processCampaignStepViaDom();
       }, delay);
     } else {
-      // Chegou ao fim da lista, verificar se precisa fazer fallback
-      const hasPendingFallback = st.queue.some(c => c.status === 'pending' && !c.fallbackAttempt);
-      if (hasPendingFallback) {
-        // Voltar ao início para processar pendentes
-        st.index = 0;
-        await setState(st);
-        campaignInterval = setTimeout(() => {
-          processCampaignStepViaDom();
-        }, 1000);
-      } else {
-        // Verificar se há números falhados para tentar fallback
-        const failedCount = st.queue.filter(c => c.status === 'failed' && !c.fallbackAttempt).length;
-        if (failedCount > 0 && st.fallbackMode) {
-          console.log('[WHL] 🔄 Iniciando fallback URL para números falhados...');
-          st.index = 0;
-          await setState(st);
-          campaignInterval = setTimeout(() => {
-            processCampaignStepViaDom();
-          }, 1000);
-        } else {
-          // Campanha realmente finalizada
-          st.isRunning = false;
-          await setState(st);
-          await render();
-          console.log('[WHL] 🎉 Campanha finalizada!');
-        }
-      }
+      // Campanha finalizada
+      st.isRunning = false;
+      await setState(st);
+      await render();
+      console.log('[WHL] 🎉 Campanha finalizada!');
     }
   }
 
@@ -2087,9 +2025,10 @@ try {
     await whlUpdateSelectorHealth();
     await render();
     
-    // No longer need to check and resume campaign since we don't reload pages anymore
-    // DOM mode keeps campaign running without page reloads
-    console.log('[WHL] Extension initialized in DOM mode (no page reload)');
+    // Check and resume campaign if needed (for URL fallback)
+    await checkAndResumeCampaign();
+    
+    console.log('[WHL] Extension initialized');
   })();
 })();
 
