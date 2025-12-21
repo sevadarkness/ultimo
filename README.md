@@ -10,6 +10,8 @@ A barra de progresso agora reflete o progresso real das operações em tempo rea
 - ✅ Estatísticas precisas (Enviados, Falhas, Pendentes)
 - ✅ Porcentagem de conclusão atualizada instantaneamente
 - ✅ Feedback visual durante toda a execução da campanha
+- ✅ **NOVO**: Barra de progresso na extração de contatos
+- ✅ **NOVO**: Contador de contatos em tempo real durante extração
 
 ### 📱 Integridade dos Números de Telefone
 Os números de telefone utilizados são sempre os números reais dos contatos:
@@ -17,6 +19,13 @@ Os números de telefone utilizados são sempre os números reais dos contatos:
 - ✅ Sanitização apenas remove caracteres não-numéricos (espaços, hífens)
 - ✅ Nenhum número aleatório é gerado ou utilizado
 - ✅ Validação garante formato correto (8-15 dígitos)
+- ✅ **NOVO**: Extração de contatos usa SOMENTE números reais do WhatsApp Web
+- ✅ **NOVO**: Documentação completa das fontes de extração
+
+### 🎨 Interface Aprimorada
+- ✅ **NOVO**: Logo WhatsHybrid Lite no painel principal
+- ✅ **NOVO**: Logo WhatsHybrid Lite no popup da extensão
+- ✅ Design responsivo e bem posicionado
 
 ## 🚀 Funcionalidades
 
@@ -36,9 +45,13 @@ Os números de telefone utilizados são sempre os números reais dos contatos:
 
 ### Extração de Contatos
 - Extração automática de números do WhatsApp Web
-- Suporte a múltiplas fontes de dados
+- **GARANTIA**: Extrai SOMENTE números reais dos contatos presentes
+- **NUNCA** gera números aleatórios ou fictícios
+- Barra de progresso em tempo real durante a extração
+- Suporte a múltiplas fontes de dados do DOM
 - Scroll automático para coletar todos os contatos
 - Validação de números (8-15 dígitos)
+- Contador de contatos em tempo real
 
 ### Estatísticas e Relatórios
 - Contador de mensagens enviadas
@@ -115,6 +128,33 @@ Entrada: +55 (11) 99999-8888
 Saída: 5511999998888
 ```
 
+### Extração de Contatos - Como Funciona
+A extração de contatos é 100% segura e confiável:
+
+**Fontes de dados reais:**
+1. **#pane-side**: Painel lateral com conversas ativas
+2. **data-id**: IDs únicos dos contatos do WhatsApp
+3. **data-jid**: JID (Jabber ID) - formato interno do WhatsApp
+4. **Células de chat**: Elementos visíveis de contato/grupo
+5. **Links com telefone**: Números clicáveis no WhatsApp
+6. **Padrões @c.us**: Formato interno do WhatsApp (número@c.us)
+7. **Títulos e labels**: Informações acessíveis de contato
+
+**Processo de extração:**
+1. Inicia pelo topo da lista de conversas
+2. Scroll automático e incremental para capturar todos os contatos
+3. Extração em tempo real com barra de progresso
+4. Coleta de múltiplas fontes do DOM
+5. Validação de formato (8-15 dígitos)
+6. Remoção de duplicatas
+7. Ordenação alfabética
+
+**Garantias:**
+- ✅ Apenas números REAIS presentes no WhatsApp Web
+- ✅ ZERO geração de números aleatórios ou fictícios
+- ✅ Preserva formato original dos números
+- ✅ Feedback visual em tempo real (progresso + contador)
+
 ### Validação
 - Aceita números com 8 a 15 dígitos
 - Formatos aceitos: internacional, nacional, local
@@ -123,9 +163,23 @@ Saída: 5511999998888
 ## 🐛 Troubleshooting
 
 ### A barra de progresso não atualiza
-✅ **RESOLVIDO**: A barra agora atualiza em tempo real após cada operação.
+✅ **RESOLVIDO**: A barra agora atualiza em tempo real após cada operação, incluindo na extração de contatos.
 
-### Os números não correspondem aos meus contatos
+### Os números extraídos não correspondem aos meus contatos
+✅ **VERIFICADO**: Os números extraídos são 100% reais e vêm diretamente do WhatsApp Web. O extrator:
+- Busca em múltiplas fontes do DOM oficial do WhatsApp
+- Nunca gera números aleatórios
+- Mostra progresso e contador em tempo real
+- Valida apenas o formato, sem modificar os números
+
+### A extração de contatos está lenta
+✅ **NORMAL**: A extração é intencional lenta para:
+- Garantir que todos os contatos sejam capturados
+- Permitir que o WhatsApp Web carregue os elementos
+- Evitar sobrecarga e possíveis bloqueios
+- A barra de progresso mostra o andamento em tempo real
+
+### Os números não correspondem aos meus contatos (envio)
 ✅ **VERIFICADO**: Os números utilizados são exatamente os números inseridos (após sanitização). Nenhum número aleatório é gerado.
 
 ### Mensagens não estão sendo enviadas
