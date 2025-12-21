@@ -632,18 +632,22 @@
   // ===== DOM SELECTORS (UPDATED WITH CORRECT WHATSAPP WEB STRUCTURE) =====
   
   // Campo de busca para pesquisar contato/número (SELETORES CORRETOS)
+  // IMPORTANTE: Campo de pesquisa está na SIDEBAR (#side), não no main
   function getSearchInput() {
     return (
-      document.querySelector('div[contenteditable="true"][data-tab="3"]') ||
-      document.querySelector('div[contenteditable="true"][role="textbox"]')
+      document.querySelector('#side div[contenteditable="true"][data-tab="3"]') ||
+      document.querySelector('#side div[contenteditable="true"][role="textbox"]')
     );
   }
 
   // Campo de mensagem para digitar (SELETORES CORRETOS)
+  // IMPORTANTE: Campo de mensagem está no MAIN ou FOOTER, não na sidebar
   function getMessageInput() {
     return (
-      document.querySelector('div.lexical-rich-text-input p._aupe') ||
-      document.querySelector('div[contenteditable="true"][role="textbox"]')
+      document.querySelector('#main div[contenteditable="true"][data-tab="10"]') ||
+      document.querySelector('footer div[contenteditable="true"]') ||
+      document.querySelector('#main div.lexical-rich-text-input p._aupe') ||
+      document.querySelector('footer div.lexical-rich-text-input p._aupe')
     );
   }
 
@@ -683,19 +687,29 @@
       return false;
     }
 
+    // IMPORTANTE: Campo de pesquisa está na SIDEBAR (#side)
     const searchInput = getSearchInput();
+    
     if (!searchInput) {
-      log('❌ Campo de busca não encontrado');
+      log('❌ Campo de pesquisa não encontrado');
       return false;
     }
 
-    // Limpa busca
+    // Limpar campo primeiro
     searchInput.focus();
+    await new Promise(r => setTimeout(r, 100));
     document.execCommand('selectAll', false, null);
     document.execCommand('delete', false, null);
+    searchInput.textContent = '';
+    searchInput.innerHTML = '';
+    searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 200));
 
-    // Digita o número
+    // Digitar o número
+    searchInput.focus();
     document.execCommand('insertText', false, cleanNumber);
+    searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+    
     log('✅ Número digitado na busca:', cleanNumber);
 
     const start = Date.now();
@@ -785,12 +799,16 @@
    * Limpa o campo de pesquisa (NOVA IMPLEMENTAÇÃO)
    */
   async function clearSearchFieldNew() {
+    // IMPORTANTE: Campo de pesquisa está na SIDEBAR (#side)
     const searchInput = getSearchInput();
 
     if (searchInput) {
       searchInput.focus();
       document.execCommand('selectAll', false, null);
       document.execCommand('delete', false, null);
+      searchInput.textContent = '';
+      searchInput.innerHTML = '';
+      searchInput.dispatchEvent(new Event('input', { bubbles: true }));
       console.log('[WHL] ✅ Campo de pesquisa limpo');
       return true;
     }
@@ -879,42 +897,58 @@
 
   // Função para limpar campo de pesquisa
   async function clearSearchField() {
-    const searchBox = getSearchInput();
+    // IMPORTANTE: Campo de pesquisa está na SIDEBAR (#side), não no main
+    const searchInput = getSearchInput();
     
-    if (searchBox) {
-      // Tentar limpar até 3 vezes
-      for (let attempt = 0; attempt < 3; attempt++) {
-        searchBox.focus();
-        await new Promise(r => setTimeout(r, 100));
-        
-        // Método 1: SelectAll + Delete
-        document.execCommand('selectAll', false, null);
-        document.execCommand('delete', false, null);
-        
-        // Método 2: Limpar textContent diretamente
-        searchBox.textContent = '';
-        searchBox.innerText = '';
-        
-        // Método 3: Disparar eventos
-        searchBox.dispatchEvent(new Event('input', { bubbles: true }));
-        searchBox.dispatchEvent(new Event('change', { bubbles: true }));
-        
-        await new Promise(r => setTimeout(r, 200));
-        
-        // Verificar se realmente está limpo
-        const currentText = (searchBox.textContent || '').trim();
-        if (currentText.length === 0) {
-          console.log('[WHL] ✅ Campo de pesquisa limpo (tentativa', attempt + 1, ')');
-          return true;
-        }
-        
-        console.log('[WHL] ⚠️ Campo ainda contém texto:', currentText, '(tentativa', attempt + 1, ')');
-      }
-      
-      console.log('[WHL] ⚠️ Não foi possível limpar completamente o campo');
+    if (!searchInput) {
+      console.log('[WHL] ⚠️ Campo de pesquisa não encontrado na sidebar');
       return false;
     }
-    return false;
+    
+    // Método 1: Focus + SelectAll + Delete
+    searchInput.focus();
+    await new Promise(r => setTimeout(r, 100));
+    
+    // Selecionar todo e deletar
+    document.execCommand('selectAll', false, null);
+    document.execCommand('delete', false, null);
+    
+    // Limpar também via propriedades
+    searchInput.textContent = '';
+    searchInput.innerHTML = '';
+    
+    // Disparar eventos
+    searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+    
+    await new Promise(r => setTimeout(r, 100));
+    
+    // Verificar se limpou
+    const content = searchInput.textContent.trim();
+    if (content) {
+      console.log('[WHL] ⚠️ Campo ainda contém:', content);
+      
+      // Tentar método alternativo: simular Ctrl+A e Backspace
+      searchInput.focus();
+      searchInput.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'a',
+        code: 'KeyA',
+        ctrlKey: true,
+        bubbles: true
+      }));
+      await new Promise(r => setTimeout(r, 50));
+      searchInput.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Backspace',
+        code: 'Backspace',
+        bubbles: true
+      }));
+      
+      // Forçar limpeza
+      searchInput.textContent = '';
+      searchInput.innerHTML = '';
+    }
+    
+    console.log('[WHL] ✅ Campo de pesquisa limpo');
+    return true;
   }
 
   // Função auxiliar para aguardar resultados de busca com polling
@@ -993,11 +1027,10 @@
     // Aguardar campo de mensagem aparecer (máx 15 segundos)
     let msgBox = null;
     for (let i = 0; i < 30; i++) {
-      msgBox = document.querySelector('div[aria-label^="Digitar na conversa"][contenteditable="true"]') ||
-               document.querySelector('div[data-tab="10"][contenteditable="true"]');
+      msgBox = getMessageInput();
       
       if (msgBox) {
-        // Verificar que NÃO é o campo de busca
+        // Verificar que NÃO é o campo de busca (extra safety check)
         const ariaLabel = msgBox.getAttribute('aria-label') || '';
         const dataTab = msgBox.getAttribute('data-tab');
         
