@@ -480,7 +480,12 @@
 
 
   // ===== WHL FEATURES =====
+  // Sanitize phone number by removing non-digit characters
+  // This preserves the real contact phone numbers from user input
   const whlSanitize = (t) => String(t||'').replace(/\D/g,'');
+  
+  // Validate phone number (8-15 digits)
+  // Ensures phone numbers are valid format without modifying them
   const whlIsValidPhone = (t) => {
     const s = whlSanitize(t);
     return s.length >= 8 && s.length <= 15;
@@ -1136,8 +1141,10 @@
     
     if (sent) {
       cur.status = 'sent';
-      st.stats.sent++;
       console.log('[WHL] ✅ Enviado com sucesso');
+      // Update state and render immediately to show progress in real-time
+      await setState(st);
+      await render();
     } else {
       cur.status = 'failed';
       cur.retries = Number(cur.retries||0) + 1;
@@ -1152,8 +1159,10 @@
         return;
       }
 
-      st.stats.failed++;
       console.log('[WHL] ❌ Falha no envio');
+      // Update state and render immediately to show failure in real-time
+      await setState(st);
+      await render();
       
       if (!st.continueOnError) {
         st.isRunning = false;
@@ -1446,7 +1455,7 @@
     const cur = st.queue[st.index];
     if (cur) {
       cur.status = 'failed';
-      st.stats.failed++;
+      // Stats will be recalculated by render() from queue status
     }
     
     st.index++;
