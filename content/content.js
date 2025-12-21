@@ -59,17 +59,17 @@
       #whlPanel .whl-logo{width:28px;height:28px;border-radius:6px}
       #whlPanel .muted{opacity:.75;font-size:12px;line-height:1.35}
       #whlPanel input,#whlPanel textarea{width:100%;margin-top:6px;padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.12);
-        background:rgba(255,255,255,.06);color:#fff;outline:none}
+        background:rgba(255,255,255,.06);color:#fff;outline:none;box-sizing:border-box;max-width:100%}
       #whlPanel textarea{min-height:84px;resize:vertical}
       #whlPanel button{margin-top:8px;padding:10px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.12);
-        background:rgba(255,255,255,.06);color:#fff;font-weight:900;cursor:pointer}
+        background:rgba(255,255,255,.06);color:#fff;font-weight:900;cursor:pointer;box-sizing:border-box}
       #whlPanel button.primary{background:linear-gradient(180deg, rgba(111,0,255,.95), rgba(78,0,190,.95));
         box-shadow:0 14px 30px rgba(111,0,255,.25)}
       #whlPanel button.danger{border-color:rgba(255,120,120,.35);background:rgba(255,80,80,.10)}
       #whlPanel button.success{background:linear-gradient(180deg, rgba(0,200,100,.85), rgba(0,150,80,.85))}
       #whlPanel button.warning{background:linear-gradient(180deg, rgba(255,200,0,.75), rgba(200,150,0,.75))}
-      #whlPanel .row{display:flex;gap:10px}
-      #whlPanel .card{margin-top:12px;padding:12px;border-radius:16px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10)}
+      #whlPanel .row{display:flex;gap:10px;box-sizing:border-box}
+      #whlPanel .card{margin-top:12px;padding:12px;border-radius:16px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);box-sizing:border-box;overflow:hidden}
       #whlPanel table{width:100%;font-size:12px;margin-top:10px;border-collapse:collapse}
       #whlPanel th,#whlPanel td{padding:6px;border-bottom:1px solid rgba(255,255,255,.08);vertical-align:top}
       #whlPanel th{opacity:.75;text-align:left}
@@ -385,6 +385,8 @@
 
   <textarea id="whlExtractedNumbers" placeholder="Clique em 'Extrair contatos'…" style="margin-top:10px;min-height:140px"></textarea>
   <div class="tiny" id="whlExtractStatus" style="margin-top:6px;opacity:.8"></div>
+  
+  <button class="primary" style="width:100%;margin-top:8px" id="whlExportExtractedCsv">📥 Extrair CSV</button>
 </div>
 
 <div class="card">
@@ -393,12 +395,13 @@
         <textarea id="whlNumbers" placeholder="5511999998888
 5511988887777"></textarea>
 
-        <div class="title" style="font-size:13px;margin-top:10px">Mensagem padrão</div>
-        <textarea id="whlMsg" placeholder="Digite sua mensagem…"></textarea>
         <div style="margin-top:10px">
           <div class="muted">📊 Importar CSV (phone,message opcional)</div>
           <input id="whlCsv" type="file" accept=".csv,text/csv" />
         </div>
+
+        <div class="title" style="font-size:13px;margin-top:10px">Mensagem padrão</div>
+        <textarea id="whlMsg" placeholder="Digite sua mensagem…"></textarea>
 
         <div style="margin-top:10px">
           <div class="muted">📸 Selecionar imagem (será enviada automaticamente)</div>
@@ -570,6 +573,34 @@
     a.download = `whl_report_${Date.now()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function whlExportExtractedCSV() {
+    const extractedBox = document.getElementById('whlExtractedNumbers');
+    if (!extractedBox) return;
+    
+    const numbersText = extractedBox.value || '';
+    const numbers = numbersText.split(/\r?\n/).filter(n => n.trim().length > 0);
+    
+    if (numbers.length === 0) {
+      alert('Nenhum número extraído para exportar. Por favor, extraia contatos primeiro.');
+      return;
+    }
+    
+    const rows = [['phone']];
+    numbers.forEach(phone => rows.push([phone.trim()]));
+    
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type:'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `whl_extracted_contacts_${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    
+    const statusEl = document.getElementById('whlExtractStatus');
+    if (statusEl) statusEl.textContent = `✅ CSV exportado com ${numbers.length} números`;
   }
 
 
@@ -826,7 +857,15 @@
     if (st.imageData) {
       const imgRes = await sendImage(st.imageData, message, !!st.typingEffect);
       // se enviou a mídia com legenda, finaliza aqui
-      if (imgRes && imgRes.ok && imgRes.captionApplied) return true;
+      if (imgRes && imgRes.ok && imgRes.captionApplied) {
+        // Validar chat antes de confirmar envio
+        const isValid = await validateOpenChat(phoneNumber);
+        if (!isValid) {
+          console.log('[WHL] ❌ VALIDAÇÃO: Chat aberto não corresponde ao número esperado');
+          return false;
+        }
+        return true;
+      }
       // se enviou a mídia sem legenda, segue para enviar o texto separado
       await new Promise(r => setTimeout(r, 900));
     }
@@ -835,7 +874,15 @@
       return false;
     }
     
-    // 2. Digitar mensagem
+    // 2. Validar que o chat aberto corresponde ao número correto
+    const chatValid = await validateOpenChat(phoneNumber);
+    if (!chatValid) {
+      console.log('[WHL] ❌ VALIDAÇÃO FALHOU: Chat aberto não corresponde ao número esperado:', phoneNumber);
+      return false;
+    }
+    console.log('[WHL] ✅ VALIDAÇÃO: Chat confirmado para o número:', phoneNumber);
+    
+    // 3. Digitar mensagem
     const messageTyped = await typeMessageViaDom(message);
     if (!messageTyped) {
       console.log('[WHL] ❌ FALHA: Não conseguiu digitar a mensagem');
@@ -862,7 +909,7 @@
       await new Promise(r => setTimeout(r, 600));
     }
     
-    // 3. Clicar no botão enviar
+    // 4. Clicar no botão enviar
     await new Promise(r => setTimeout(r, 500));
     
     const sendBtn = document.querySelector('[data-testid="send"]') ||
@@ -897,6 +944,148 @@
     console.log('[WHL] ███ ✅ MENSAGEM ENVIADA COM SUCESSO! ███');
     console.log('[WHL] ████████████████████████████████████████');
     return true;
+  }
+
+  // Função para validar que o chat aberto corresponde ao número esperado
+  async function validateOpenChat(expectedPhone) {
+    console.log('[WHL] ========================================');
+    console.log('[WHL] VALIDANDO CHAT ABERTO');
+    console.log('[WHL] Número esperado:', expectedPhone);
+    console.log('[WHL] ========================================');
+    
+    // Normalizar o número esperado
+    const normalizedExpected = normalize(expectedPhone);
+    
+    // Aguardar um pouco para o chat carregar
+    await new Promise(r => setTimeout(r, 500));
+    
+    // Tentar múltiplas formas de obter o número do chat aberto
+    let chatNumber = null;
+    
+    // Método 1: Procurar no header do chat pelo data-id
+    const chatHeader = document.querySelector('header[data-testid="conversation-header"]') ||
+                      document.querySelector('header.pane-header') ||
+                      document.querySelector('div[data-testid="conversation-info-header"]');
+    
+    if (chatHeader) {
+      // Buscar em elementos com data-id dentro do header
+      const elementsWithDataId = chatHeader.querySelectorAll('[data-id]');
+      for (const el of elementsWithDataId) {
+        const dataId = el.getAttribute('data-id');
+        if (dataId) {
+          const nums = extractNumbersFromText(dataId);
+          if (nums.length > 0) {
+            chatNumber = nums[0];
+            console.log('[WHL] Número do chat encontrado via data-id:', chatNumber);
+            break;
+          }
+        }
+      }
+      
+      // Buscar em títulos e aria-labels
+      if (!chatNumber) {
+        const titleEl = chatHeader.querySelector('[title]');
+        const ariaLabelEl = chatHeader.querySelector('[aria-label]');
+        
+        if (titleEl) {
+          const nums = extractNumbersFromText(titleEl.getAttribute('title'));
+          if (nums.length > 0) {
+            chatNumber = nums[0];
+            console.log('[WHL] Número do chat encontrado via title:', chatNumber);
+          }
+        }
+        
+        if (!chatNumber && ariaLabelEl) {
+          const nums = extractNumbersFromText(ariaLabelEl.getAttribute('aria-label'));
+          if (nums.length > 0) {
+            chatNumber = nums[0];
+            console.log('[WHL] Número do chat encontrado via aria-label:', chatNumber);
+          }
+        }
+      }
+    }
+    
+    // Método 2: Procurar na URL atual
+    if (!chatNumber) {
+      const url = window.location.href;
+      const nums = extractNumbersFromText(url);
+      if (nums.length > 0) {
+        chatNumber = nums[0];
+        console.log('[WHL] Número do chat encontrado via URL:', chatNumber);
+      }
+    }
+    
+    // Método 3: Buscar em elementos do DOM principal
+    if (!chatNumber) {
+      const mainPanel = document.querySelector('div[data-testid="conversation-panel-wrapper"]') ||
+                       document.querySelector('div.pane-main');
+      
+      if (mainPanel) {
+        const elementsWithDataId = mainPanel.querySelectorAll('[data-id]');
+        for (const el of elementsWithDataId) {
+          const dataId = el.getAttribute('data-id');
+          if (dataId) {
+            const nums = extractNumbersFromText(dataId);
+            if (nums.length > 0) {
+              chatNumber = nums[0];
+              console.log('[WHL] Número do chat encontrado via main panel data-id:', chatNumber);
+              break;
+            }
+          }
+        }
+      }
+    }
+    
+    if (!chatNumber) {
+      console.log('[WHL] ⚠️ VALIDAÇÃO: Não foi possível determinar o número do chat aberto');
+      // Por segurança, se não conseguimos validar, retornamos false
+      return false;
+    }
+    
+    // Normalizar o número do chat
+    const normalizedChat = normalize(chatNumber);
+    
+    // Comparar os números (últimos 8-10 dígitos para maior flexibilidade)
+    // Alguns números podem ter código do país, então comparamos a parte final
+    const minLength = Math.min(normalizedExpected.length, normalizedChat.length);
+    const compareLength = Math.min(10, minLength); // Comparar até 10 dígitos
+    
+    const expectedSuffix = normalizedExpected.slice(-compareLength);
+    const chatSuffix = normalizedChat.slice(-compareLength);
+    
+    const isValid = expectedSuffix === chatSuffix;
+    
+    console.log('[WHL] Comparação de números:');
+    console.log('[WHL]   Esperado (normalizado):', normalizedExpected);
+    console.log('[WHL]   Chat (normalizado):', normalizedChat);
+    console.log('[WHL]   Sufixo esperado:', expectedSuffix);
+    console.log('[WHL]   Sufixo do chat:', chatSuffix);
+    console.log('[WHL]   Validação:', isValid ? '✅ VÁLIDO' : '❌ INVÁLIDO');
+    
+    return isValid;
+  }
+
+  // Função auxiliar para extrair números de texto
+  function extractNumbersFromText(text) {
+    if (!text) return [];
+    const str = String(text);
+    const numbers = [];
+    
+    // Padrão para números (8-15 dígitos)
+    const normalized = normalize(str);
+    const matches = normalized.match(/\d{8,15}/g);
+    if (matches) {
+      matches.forEach(num => numbers.push(num));
+    }
+    
+    // Padrão WhatsApp (@c.us)
+    const whatsappPattern = /(\d{8,15})@c\.us/g;
+    let match;
+    while ((match = whatsappPattern.exec(str)) !== null) {
+      numbers.push(match[1]);
+    }
+    
+    return numbers;
   }
 
   // ===== OLD FUNCTIONS (DEPRECATED - Kept for fallback) =====
@@ -1587,6 +1776,14 @@ try {
     btnCopyToNumbers.addEventListener('click', () => {
       boxNumbers.value = boxExtract.value || '';
       boxNumbers.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+
+  // Export Extracted CSV
+  const btnExportExtractedCsv = document.getElementById('whlExportExtractedCsv');
+  if (btnExportExtractedCsv) {
+    btnExportExtractedCsv.addEventListener('click', async () => {
+      await whlExportExtractedCSV();
     });
   }
 } catch(e) {
