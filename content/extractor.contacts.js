@@ -153,6 +153,9 @@
 
     // Scroll para baixo com incrementos menores e mais lento
     let lastTop = -1, stable = 0;
+    let scrollCount = 0;
+    const maxScrolls = 50; // Estimativa máxima de scrolls
+    
     while (stable < 7) {  // Mais tentativas antes de considerar estável (6-8)
       // Coletar de todas as fontes visíveis
       const items = list.querySelectorAll('[role="row"], [role="listitem"]');
@@ -166,6 +169,16 @@
         const nums = collectDeepFrom(source);
         nums.forEach(n => out.add(n));
       });
+
+      // Enviar progresso em tempo real
+      scrollCount++;
+      const currentCount = out.size;
+      const progress = Math.min(95, Math.round((scrollCount / maxScrolls) * 100));
+      window.postMessage({ 
+        type: 'WHL_EXTRACT_PROGRESS', 
+        progress: progress,
+        count: currentCount
+      }, '*');
 
       // Scroll incremental menor (70% ao invés de 85%)
       const increment = Math.floor(list.clientHeight * 0.7);
@@ -206,6 +219,13 @@
       const len = n.length;
       return len >= 8 && len <= 15;
     });
+
+    // Enviar progresso final (100%)
+    window.postMessage({ 
+      type: 'WHL_EXTRACT_PROGRESS', 
+      progress: 100,
+      count: validNumbers.length
+    }, '*');
 
     return validNumbers.sort();
   }

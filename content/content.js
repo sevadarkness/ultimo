@@ -261,7 +261,11 @@
     panel.innerHTML = `
       <div class="topbar">
         <div>
-          <div class="title">WhatsHybrid Lite <span class="status-badge stopped" id="whlStatusBadge">Parado</span></div>
+          <div class="title" style="display:flex;align-items:center;gap:8px">
+            <img src="${chrome.runtime.getURL('icons/48.png')}" alt="WhatsHybrid Lite" style="width:28px;height:28px;border-radius:6px" />
+            <span>WhatsHybrid Lite</span>
+            <span class="status-badge stopped" id="whlStatusBadge">Parado</span>
+          </div>
           <div class="muted">Modo <b>automático</b>: configure e inicie a campanha. A extensão envia tudo sozinha!</div>
         </div>
         <button class="iconbtn" id="whlHide" title="Ocultar">—</button>
@@ -369,6 +373,13 @@
   <div class="row" style="margin-top:10px">
     <button class="success" style="flex:1" id="whlExtractContacts">📥 Extrair contatos</button>
     <button style="width:150px" id="whlCopyExtracted">🔁 Copiar → Números</button>
+  </div>
+
+  <div id="whlExtractProgress" style="display:none;margin-top:10px">
+    <div class="progress-bar">
+      <div class="progress-fill" id="whlExtractProgressFill" style="width:0%"></div>
+    </div>
+    <div class="tiny" style="margin-top:6px;text-align:center" id="whlExtractProgressText">0%</div>
   </div>
 
   <textarea id="whlExtractedNumbers" placeholder="Clique em 'Extrair contatos'…" style="margin-top:10px;min-height:140px"></textarea>
@@ -1501,19 +1512,46 @@ try {
     btnExtract.addEventListener('click', () => {
       btnExtract.disabled = true;
       btnExtract.textContent = '⏳ Extraindo...';
-      const st = document.getElementById('whlExtractStatus'); if (st) st.textContent = 'Extraindo...';
-            window.postMessage({ type: 'WHL_EXTRACT_CONTACTS' }, '*');
+      const st = document.getElementById('whlExtractStatus'); 
+      if (st) st.textContent = 'Iniciando extração...';
+      const progressBar = document.getElementById('whlExtractProgress');
+      const progressFill = document.getElementById('whlExtractProgressFill');
+      const progressText = document.getElementById('whlExtractProgressText');
+      if (progressBar) progressBar.style.display = 'block';
+      if (progressFill) progressFill.style.width = '0%';
+      if (progressText) progressText.textContent = '0% - 0 contatos encontrados';
+      window.postMessage({ type: 'WHL_EXTRACT_CONTACTS' }, '*');
     });
   }
 
   window.addEventListener('message', (e) => {
     if (!e || !e.data) return;
 
+    if (e.data.type === 'WHL_EXTRACT_PROGRESS') {
+      const progress = e.data.progress || 0;
+      const count = e.data.count || 0;
+      const progressBar = document.getElementById('whlExtractProgress');
+      const progressFill = document.getElementById('whlExtractProgressFill');
+      const progressText = document.getElementById('whlExtractProgressText');
+      const statusEl = document.getElementById('whlExtractStatus');
+      
+      if (progressBar) progressBar.style.display = 'block';
+      if (progressFill) progressFill.style.width = `${progress}%`;
+      if (progressText) progressText.textContent = `${progress}% - ${count} contatos encontrados`;
+      if (statusEl) statusEl.textContent = `Extraindo... ${progress}% - ${count} contatos`;
+    }
+
     if (e.data.type === 'WHL_EXTRACT_RESULT') {
       const nums = e.data.numbers || [];
       if (boxExtract) boxExtract.value = nums.join('\n');
             const st = document.getElementById('whlExtractStatus');
             if (st) st.textContent = `Finalizado ✅ Total: ${nums.length}`;
+      const progressBar = document.getElementById('whlExtractProgress');
+      if (progressBar) {
+        setTimeout(() => {
+          progressBar.style.display = 'none';
+        }, 3000);
+      }
       if (btnExtract) {
         btnExtract.disabled = false;
         btnExtract.textContent = '📥 Extrair contatos';
@@ -1523,6 +1561,8 @@ try {
     if (e.data.type === 'WHL_EXTRACT_ERROR') {
       console.error('[WHL] Erro no extrator:', e.data.error);
       alert('Erro ao extrair contatos');
+      const progressBar = document.getElementById('whlExtractProgress');
+      if (progressBar) progressBar.style.display = 'none';
       if (btnExtract) {
         btnExtract.disabled = false;
         btnExtract.textContent = '📥 Extrair contatos';
