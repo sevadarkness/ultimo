@@ -646,7 +646,8 @@
     return (
       document.querySelector('#main div[contenteditable="true"][data-tab="10"]') ||
       document.querySelector('footer div[contenteditable="true"]') ||
-      document.querySelector('div.lexical-rich-text-input p._aupe')
+      document.querySelector('#main div.lexical-rich-text-input p._aupe') ||
+      document.querySelector('footer div.lexical-rich-text-input p._aupe')
     );
   }
 
@@ -687,7 +688,7 @@
     }
 
     // IMPORTANTE: Campo de pesquisa está na SIDEBAR (#side)
-    const searchInput = document.querySelector('#side div[contenteditable="true"][data-tab="3"]');
+    const searchInput = getSearchInput();
     
     if (!searchInput) {
       log('❌ Campo de pesquisa não encontrado');
@@ -799,7 +800,7 @@
    */
   async function clearSearchFieldNew() {
     // IMPORTANTE: Campo de pesquisa está na SIDEBAR (#side)
-    const searchInput = document.querySelector('#side div[contenteditable="true"][data-tab="3"]');
+    const searchInput = getSearchInput();
 
     if (searchInput) {
       searchInput.focus();
@@ -897,7 +898,7 @@
   // Função para limpar campo de pesquisa
   async function clearSearchField() {
     // IMPORTANTE: Campo de pesquisa está na SIDEBAR (#side), não no main
-    const searchInput = document.querySelector('#side div[contenteditable="true"][data-tab="3"]');
+    const searchInput = getSearchInput();
     
     if (!searchInput) {
       console.log('[WHL] ⚠️ Campo de pesquisa não encontrado na sidebar');
@@ -1026,12 +1027,10 @@
     // Aguardar campo de mensagem aparecer (máx 15 segundos)
     let msgBox = null;
     for (let i = 0; i < 30; i++) {
-      msgBox = document.querySelector('div[aria-label^="Digitar na conversa"][contenteditable="true"]') ||
-               document.querySelector('#main div[data-tab="10"][contenteditable="true"]') ||
-               document.querySelector('footer div[contenteditable="true"]');
+      msgBox = getMessageInput();
       
       if (msgBox) {
-        // Verificar que NÃO é o campo de busca
+        // Verificar que NÃO é o campo de busca (extra safety check)
         const ariaLabel = msgBox.getAttribute('aria-label') || '';
         const dataTab = msgBox.getAttribute('data-tab');
         
