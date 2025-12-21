@@ -1534,6 +1534,8 @@ try {
     if (e.data.type === 'WHL_EXTRACT_PROGRESS') {
       const progress = e.data.progress || 0;
       const count = e.data.count || 0;
+      
+      // Cache DOM elements for better performance
       const progressBar = document.getElementById('whlExtractProgress');
       const progressFill = document.getElementById('whlExtractProgressFill');
       const progressText = document.getElementById('whlExtractProgressText');
@@ -1548,14 +1550,17 @@ try {
     if (e.data.type === 'WHL_EXTRACT_RESULT') {
       const nums = e.data.numbers || [];
       if (boxExtract) boxExtract.value = nums.join('\n');
-            const st = document.getElementById('whlExtractStatus');
-            if (st) st.textContent = `Finalizado ✅ Total: ${nums.length}`;
+      
+      const statusEl = document.getElementById('whlExtractStatus');
+      if (statusEl) statusEl.textContent = `Finalizado ✅ Total: ${nums.length}`;
+      
       const progressBar = document.getElementById('whlExtractProgress');
       if (progressBar) {
         setTimeout(() => {
           progressBar.style.display = 'none';
         }, PROGRESS_BAR_HIDE_DELAY);
       }
+      
       if (btnExtract) {
         btnExtract.disabled = false;
         btnExtract.textContent = '📥 Extrair contatos';
@@ -1565,8 +1570,10 @@ try {
     if (e.data.type === 'WHL_EXTRACT_ERROR') {
       console.error('[WHL] Erro no extrator:', e.data.error);
       alert('Erro ao extrair contatos');
+      
       const progressBar = document.getElementById('whlExtractProgress');
       if (progressBar) progressBar.style.display = 'none';
+      
       if (btnExtract) {
         btnExtract.disabled = false;
         btnExtract.textContent = '📥 Extrair contatos';

@@ -199,7 +199,10 @@
     let lastTop = -1, stable = 0;
     let scrollCount = 0;
     // Calculate max scrolls based on scroll height (more accurate than hardcoded)
-    const estimatedScrolls = Math.ceil(list.scrollHeight / (list.clientHeight * 0.7)) || 50;
+    // Use fallback if scrollHeight is not reliable or clientHeight is 0
+    const scrollHeight = list.scrollHeight || 10000;
+    const clientHeight = list.clientHeight || 100;
+    const estimatedScrolls = Math.ceil(scrollHeight / (clientHeight * 0.7)) || 50;
     const maxScrolls = Math.min(estimatedScrolls, 100); // Cap at 100 to prevent infinite progress
     
     while (stable < 7) {  // Mais tentativas antes de considerar estável (6-8)
