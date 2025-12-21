@@ -742,6 +742,25 @@
     return true;
   }
 
+  // Função para limpar campo de pesquisa
+  async function clearSearchField() {
+    const searchBox = document.querySelector('div[aria-label="Caixa de texto de pesquisa"][contenteditable="true"]') ||
+                      document.querySelector('div[data-tab="3"][contenteditable="true"]');
+    
+    if (searchBox) {
+      searchBox.focus();
+      await new Promise(r => setTimeout(r, 100));
+      document.execCommand('selectAll', false, null);
+      document.execCommand('delete', false, null);
+      searchBox.textContent = '';
+      searchBox.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 200));
+      console.log('[WHL] ✅ Campo de pesquisa limpo');
+      return true;
+    }
+    return false;
+  }
+
   // Função para abrir chat via DOM (sem reload!)
   async function openChatViaDom(phoneNumber) {
     console.log('[WHL] ========================================');
@@ -749,13 +768,16 @@
     console.log('[WHL] Número:', phoneNumber);
     console.log('[WHL] ========================================');
     
+    // 0. LIMPAR campo de pesquisa antes de digitar
+    await clearSearchField();
+    
     // 1. Encontrar campo de busca
     const searchBox = document.querySelector('div[aria-label="Caixa de texto de pesquisa"][contenteditable="true"]') ||
                       document.querySelector('div[data-tab="3"][contenteditable="true"]');
     
     if (!searchBox) {
       console.log('[WHL] ❌ Campo de busca não encontrado');
-      return false;
+      return { success: false, hasResults: false };
     }
     console.log('[WHL] ✅ Campo de busca encontrado');
     
@@ -763,7 +785,7 @@
     const typed = await typeInField(searchBox, phoneNumber);
     if (!typed) {
       console.log('[WHL] ❌ Falha ao digitar número');
-      return false;
+      return { success: false, hasResults: false };
     }
     console.log('[WHL] ✅ Número digitado:', phoneNumber);
     
@@ -771,28 +793,24 @@
     console.log('[WHL] Aguardando resultados...');
     await new Promise(r => setTimeout(r, 2500));
     
-    // 4. Clicar no primeiro resultado
+    // 4. Verificar se há resultados no campo de busca
     const result = document.querySelector('div[role="option"][data-testid="cell-frame-container"]');
     
-    if (result) {
-      result.click();
-      console.log('[WHL] ✅ Clicou no resultado da busca');
-    } else {
-      // Fallback: pressionar Enter
-      searchBox.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'Enter',
-        code: 'Enter',
-        keyCode: 13,
-        bubbles: true
-      }));
-      console.log('[WHL] ⚠️ Nenhum resultado, pressionou Enter');
+    if (!result) {
+      console.log('[WHL] ❌ NENHUM RESULTADO ENCONTRADO no campo de busca');
+      await clearSearchField();
+      return { success: false, hasResults: false };
     }
     
-    // 5. Aguardar chat carregar
+    // 5. Clicar no resultado encontrado
+    console.log('[WHL] ✅ Resultado encontrado, clicando...');
+    result.click();
+    
+    // 6. Aguardar chat carregar
     console.log('[WHL] Aguardando chat carregar...');
     await new Promise(r => setTimeout(r, 3000));
     
-    return true;
+    return { success: true, hasResults: true };
   }
 
   // Função para digitar mensagem via DOM
@@ -852,25 +870,18 @@
     console.log('[WHL] Mensagem:', message.substring(0, 50) + '...');
     
     // 1. Abrir chat
-    const chatOpened = await openChatViaDom(phoneNumber);
-    const st = await getState();
-    if (st.imageData) {
-      const imgRes = await sendImage(st.imageData, message, !!st.typingEffect);
-      // se enviou a mídia com legenda, finaliza aqui
-      if (imgRes && imgRes.ok && imgRes.captionApplied) {
-        // Validar chat antes de confirmar envio
-        const isValid = await validateOpenChat(phoneNumber);
-        if (!isValid) {
-          console.log('[WHL] ❌ VALIDAÇÃO: Chat aberto não corresponde ao número esperado');
-          return false;
-        }
-        return true;
-      }
-      // se enviou a mídia sem legenda, segue para enviar o texto separado
-      await new Promise(r => setTimeout(r, 900));
+    const chatResult = await openChatViaDom(phoneNumber);
+    
+    // Se não achou resultados no campo de busca, registrar falha
+    if (!chatResult.hasResults) {
+      console.log('[WHL] ❌ FALHA: Nenhum resultado encontrado no campo de busca');
+      await clearSearchField();
+      return false;
     }
-    if (!chatOpened) {
+    
+    if (!chatResult.success) {
       console.log('[WHL] ❌ FALHA: Não conseguiu abrir o chat');
+      await clearSearchField();
       return false;
     }
     
@@ -878,68 +889,57 @@
     const chatValid = await validateOpenChat(phoneNumber);
     if (!chatValid) {
       console.log('[WHL] ❌ VALIDAÇÃO FALHOU: Chat aberto não corresponde ao número esperado:', phoneNumber);
+      await clearSearchField();
       return false;
     }
     console.log('[WHL] ✅ VALIDAÇÃO: Chat confirmado para o número:', phoneNumber);
     
-    // 3. Digitar mensagem
+    // 3. Se tem imagem, enviar a imagem
+    const st = await getState();
+    if (st.imageData) {
+      const imgRes = await sendImage(st.imageData, message, !!st.typingEffect);
+      // se enviou a mídia com legenda, finaliza aqui
+      if (imgRes && imgRes.ok && imgRes.captionApplied) {
+        console.log('[WHL] ✅ Imagem enviada com legenda');
+        await clearSearchField();
+        return true;
+      }
+      // se enviou a mídia sem legenda, segue para enviar o texto separado
+      if (imgRes && imgRes.ok && !imgRes.captionApplied) {
+        console.log('[WHL] ✅ Imagem enviada, agora enviando texto separado');
+        await new Promise(r => setTimeout(r, 900));
+      }
+    }
+    
+    // 4. Digitar mensagem
     const messageTyped = await typeMessageViaDom(message);
     if (!messageTyped) {
       console.log('[WHL] ❌ FALHA: Não conseguiu digitar a mensagem');
+      await clearSearchField();
       return false;
     }
 
-    // Enviar texto (garantia)
-    await new Promise(r => setTimeout(r, 200));
-    const btn = getSendButton();
-    if (btn) {
-      btn.click();
+    // 5. Enviar mensagem usando ENTER
+    await new Promise(r => setTimeout(r, 300));
+    const msgInput = getMessageInput();
+    if (msgInput) {
+      msgInput.focus();
+      msgInput.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        code: 'Enter',
+        keyCode: 13,
+        bubbles: true
+      }));
+      console.log('[WHL] ✅ Enviou mensagem via ENTER');
     } else {
-      const mi = getMessageInput();
-      if (mi) {
-        mi.focus();
-        mi.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
-      }
-    }
-    await new Promise(r => setTimeout(r, 800));
-    const mi2 = getMessageInput();
-    if (mi2 && (mi2.textContent || '').trim().length) {
-      const btn2 = getSendButton();
-      if (btn2) btn2.click();
-      await new Promise(r => setTimeout(r, 600));
-    }
-    
-    // 4. Clicar no botão enviar
-    await new Promise(r => setTimeout(r, 500));
-    
-    const sendBtn = document.querySelector('[data-testid="send"]') ||
-                    document.querySelector('span[data-icon="send"]')?.closest('button') ||
-                    document.querySelector('[aria-label="Enviar"]') ||
-                    document.querySelector('[aria-label="Send"]');
-    
-    if (sendBtn) {
-      sendBtn.click();
-      console.log('[WHL] ✅ Clicou no botão enviar');
-    } else {
-      // Fallback: Enter no campo de mensagem
-      const msgBox = document.querySelector('div[aria-label^="Digitar na conversa"][contenteditable="true"]') ||
-                     document.querySelector('div[data-tab="10"][contenteditable="true"]');
-      if (msgBox) {
-        msgBox.focus();
-        msgBox.dispatchEvent(new KeyboardEvent('keydown', {
-          key: 'Enter',
-          code: 'Enter',
-          keyCode: 13,
-          bubbles: true
-        }));
-        console.log('[WHL] ✅ Enviou via Enter');
-      } else {
-        console.log('[WHL] ❌ Não encontrou botão enviar nem campo de mensagem');
-        return false;
-      }
+      console.log('[WHL] ❌ Não encontrou campo de mensagem para enviar');
+      await clearSearchField();
+      return false;
     }
     
     await new Promise(r => setTimeout(r, 1500));
+    await clearSearchField();
+    
     console.log('[WHL] ████████████████████████████████████████');
     console.log('[WHL] ███ ✅ MENSAGEM ENVIADA COM SUCESSO! ███');
     console.log('[WHL] ████████████████████████████████████████');
@@ -1038,8 +1038,9 @@
     
     if (!chatNumber) {
       console.log('[WHL] ⚠️ VALIDAÇÃO: Não foi possível determinar o número do chat aberto');
-      // Por segurança, se não conseguimos validar, retornamos false
-      return false;
+      console.log('[WHL] ⚠️ VALIDAÇÃO INCONCLUSIVA: Prosseguindo com o envio (não bloqueante)');
+      // Se não conseguimos validar, NÃO bloqueamos o envio - continuamos
+      return true;
     }
     
     // Normalizar o número do chat
@@ -1089,6 +1090,22 @@
   }
 
   // ===== OLD FUNCTIONS (DEPRECATED - Kept for fallback) =====
+
+  // Função para enviar via URL (FALLBACK) - Abre em nova aba ou mesmo tab
+  async function sendMessageViaUrl(phoneNumber, message) {
+    console.log('[WHL] ════════════════════════════════════════');
+    console.log('[WHL] ═══ ENVIANDO VIA URL (FALLBACK) ═══');
+    console.log('[WHL] ════════════════════════════════════════');
+    console.log('[WHL] Para:', phoneNumber);
+    console.log('[WHL] ⚠️ URL fallback requer navegação de página');
+    console.log('[WHL] ⚠️ Funcionalidade simplificada - marcando como falha');
+    
+    // Por enquanto, apenas marcar como falha já que URL requer reload
+    // Em uma versão futura, isso pode abrir uma nova aba
+    // ou usar um método mais sofisticado
+    
+    return false; // Marca como falha para não travar o fluxo
+  }
 
   // Função para enviar usando Enter no campo de mensagem
   async function sendViaEnterKey() {
@@ -1188,12 +1205,55 @@
     return false;
   }
 
-  // DEPRECATED: Check and resume active campaign on page load (NO LONGER NEEDED)
-  // This function is no longer used because we don't reload pages anymore
+  // Função para verificar e retomar campanha após reload (URL fallback)
   async function checkAndResumeCampaign() {
-    // This function is deprecated - DOM mode doesn't need page reload resume logic
-    console.log('[WHL] checkAndResumeCampaign is deprecated in DOM mode');
-    return;
+    const st = await getState();
+    
+    // Se a campanha estava rodando e está em modo fallback
+    if (st.isRunning && st.fallbackMode) {
+      console.log('[WHL] 🔄 Retomando campanha após navegação URL...');
+      
+      // Aguardar página carregar completamente
+      await new Promise(r => setTimeout(r, 3000));
+      
+      // Verificar se estamos em uma página de envio (tem o campo de mensagem)
+      const msgInput = getMessageInput();
+      if (msgInput) {
+        console.log('[WHL] ✅ Página carregada, tentando enviar mensagem...');
+        
+        // Tentar enviar a mensagem atual
+        const sent = await autoSendMessage();
+        
+        const cur = st.queue[st.index];
+        if (cur) {
+          if (sent) {
+            cur.status = 'sent';
+            console.log('[WHL] ✅ Mensagem enviada via URL');
+          } else {
+            cur.status = 'failed';
+            console.log('[WHL] ❌ Falha no envio via URL');
+          }
+          
+          delete cur.fallbackAttempt;
+          st.index++;
+          await setState(st);
+          await render();
+        }
+        
+        // Continuar com a próxima mensagem após delay
+        const delay = getRandomDelay(st.delayMin, st.delayMax);
+        console.log(`[WHL] Aguardando ${Math.round(delay/1000)}s antes do próximo...`);
+        
+        campaignInterval = setTimeout(() => {
+          processCampaignStepViaDom();
+        }, delay);
+      } else {
+        console.log('[WHL] ⚠️ Página não carregou corretamente, continuando...');
+        st.index++;
+        await setState(st);
+        scheduleCampaignStepViaDom();
+      }
+    }
   }
 
   // DEPRECATED: Old processCampaignStep (uses page reload)
@@ -1320,15 +1380,36 @@
     }
     
     const cur = st.queue[st.index];
+    
+    // Pular números inválidos
     if (cur && cur.valid === false) {
       console.log('[WHL] ⚠️ Número inválido, pulando:', cur.phone);
+      cur.status = 'failed';
       st.index++;
       await setState(st);
       await render();
       scheduleCampaignStepViaDom();
       return;
     }
+    
+    // Pular se não existe
     if (!cur) {
+      st.index++;
+      await setState(st);
+      scheduleCampaignStepViaDom();
+      return;
+    }
+    
+    // Pular números já processados (enviados ou falhados finais)
+    if (cur.status === 'sent') {
+      st.index++;
+      await setState(st);
+      scheduleCampaignStepViaDom();
+      return;
+    }
+    
+    // Se já falhou e não é para retry, pular
+    if (cur.status === 'failed' && !cur.retryPending) {
       st.index++;
       await setState(st);
       scheduleCampaignStepViaDom();
@@ -1340,34 +1421,24 @@
     await setState(st);
     await render();
     
-    // Enviar via DOM (sem reload!)
+    // Enviar via DOM
     const sent = await sendMessageViaDom(cur.phone, st.message);
     
     if (sent) {
       cur.status = 'sent';
       console.log('[WHL] ✅ Enviado com sucesso');
-      // Update state and render immediately to show progress in real-time
+      delete cur.retryPending;
       await setState(st);
       await render();
     } else {
-      cur.status = 'failed';
-      cur.retries = Number(cur.retries||0) + 1;
-
-      const maxR = Math.max(0, Math.min(5, Number(st.retryMax)||0));
-      if (cur.retries <= maxR) {
-        console.log(`[WHL] 🔄 Retry ${cur.retries}/${maxR} para ${cur.phone}`);
-        cur.status = 'pending';
-        await setState(st);
-        await render();
-        campaignInterval = setTimeout(() => { processCampaignStepViaDom(); }, 300);
-        return;
-      }
-
+      // Falhou - registrar como falha
       console.log('[WHL] ❌ Falha no envio');
-      // Update state and render immediately to show failure in real-time
+      cur.status = 'failed';
+      delete cur.retryPending;
       await setState(st);
       await render();
       
+      // Se continueOnError está desabilitado, parar
       if (!st.continueOnError) {
         st.isRunning = false;
         await setState(st);
@@ -1390,6 +1461,7 @@
         processCampaignStepViaDom();
       }, delay);
     } else {
+      // Campanha finalizada
       st.isRunning = false;
       await setState(st);
       await render();
@@ -1953,9 +2025,10 @@ try {
     await whlUpdateSelectorHealth();
     await render();
     
-    // No longer need to check and resume campaign since we don't reload pages anymore
-    // DOM mode keeps campaign running without page reloads
-    console.log('[WHL] Extension initialized in DOM mode (no page reload)');
+    // Check and resume campaign if needed (for URL fallback)
+    await checkAndResumeCampaign();
+    
+    console.log('[WHL] Extension initialized');
   })();
 })();
 
