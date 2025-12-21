@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "WhatsHybrid Lite",
-  "version": "1.3.6",
+  "version": "1.3.7",
   "description": "WhatsHybrid Lite — envio 100% automático de mensagens no WhatsApp Web (DOM)",
   "icons": {
     "16": "icons/16.png",
@@ -28,6 +28,12 @@
         "content/content.js"
       ],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["content/extractor.contacts.js"],
+      "matches": ["https://web.whatsapp.com/*"]
     }
   ]
 }
