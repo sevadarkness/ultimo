@@ -188,7 +188,7 @@
 
       /* ===== QUEUE TABLE CONTAINER ===== */
       #whlPanel .whl-queue-container {
-        max-height: 350px;
+        max-height: 450px;
         overflow-y: auto;
         border: 1px solid rgba(255,255,255,.10);
         border-radius: 12px;
@@ -328,7 +328,6 @@
             <span>WhatsHybrid Lite</span>
             <span class="status-badge stopped" id="whlStatusBadge">Parado</span>
           </div>
-          <div class="muted">Modo <b>automático via URL</b>: configure e inicie a campanha. A extensão envia tudo sozinha!</div>
         </div>
         <button class="iconbtn" id="whlHide" title="Ocultar">—</button>
       </div>
@@ -377,6 +376,10 @@
 
           <div class="title" style="font-size:13px;margin-top:10px">Mensagem padrão</div>
           <textarea id="whlMsg" placeholder="Digite sua mensagem…"></textarea>
+          
+          <button id="whlSaveMessage" class="iconbtn primary" style="width:100%; margin-top:8px;">
+            💾 Salvar Mensagem
+          </button>
 
           <div style="margin-top:10px">
             <div class="muted">📸 Selecionar imagem (será enviada automaticamente)</div>
@@ -393,7 +396,7 @@
             <div class="muted">Como vai aparecer no WhatsApp:</div>
             <div class="wa-chat">
               <div class="wa-bubble">
-                <img id="whlPreviewImg" alt="preview" style="display:none;width:100%;max-width:260px;border-radius:12px;margin-bottom:8px;border:1px solid rgba(255,255,255,.10)" />
+                <img id="whlPreviewImg" alt="preview" style="display:none;width:100%;max-width:300px;max-height:300px;object-fit:contain;border-radius:12px;margin-bottom:8px;border:1px solid rgba(255,255,255,.10)" />
                 <div id="whlPreviewText" style="white-space:pre-wrap"></div>
                 <div class="wa-time"><span id="whlPreviewMeta"></span><span class="wa-ticks">✓✓</span></div>
               </div>
@@ -2234,6 +2237,36 @@ try {
     // Report
     document.getElementById('whlExportReport').addEventListener('click', async ()=>{ await whlExportReportCSV(); const h=document.getElementById('whlReportHint'); if(h) h.textContent='✅ Exportado.'; });
     document.getElementById('whlCopyFailed').addEventListener('click', async ()=>{ const st=await getState(); const f=(st.queue||[]).filter(x=>x.status==='failed'||x.valid===false).map(x=>x.phone).join('\n'); await navigator.clipboard.writeText(f); const h=document.getElementById('whlReportHint'); if(h) h.textContent='✅ Falhas copiadas.'; });
+
+    // Save message button
+    document.getElementById('whlSaveMessage').addEventListener('click', async () => {
+      const st = await getState();
+      const msgValue = document.getElementById('whlMsg').value || '';
+      
+      if (!msgValue.trim()) {
+        alert('Por favor, digite uma mensagem antes de salvar.');
+        return;
+      }
+      
+      // Save to drafts with a timestamp-based name
+      const timestamp = new Date().toLocaleString('pt-BR');
+      const name = prompt('Nome da mensagem salva:', `Mensagem ${timestamp}`) || `Mensagem ${timestamp}`;
+      
+      st.drafts = st.drafts || {};
+      st.drafts[name] = {
+        numbersText: st.numbersText,
+        message: msgValue,
+        imageData: st.imageData,
+        delayMin: st.delayMin,
+        delayMax: st.delayMax,
+        retryMax: st.retryMax,
+        scheduleAt: st.scheduleAt,
+        typingEffect: st.typingEffect
+      };
+      
+      await setState(st);
+      alert(`✅ Mensagem "${name}" salva com sucesso!`);
+    });
 
     document.getElementById('whlBuild').addEventListener('click', buildQueueFromInputs);
     document.getElementById('whlClear').addEventListener('click', async () => {
