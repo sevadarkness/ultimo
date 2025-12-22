@@ -34,11 +34,13 @@ Os números de telefone utilizados são sempre os números reais dos contatos:
 - Sem recarregamento de página
 - Delays personalizáveis entre envios (min/max)
 - Efeito de digitação para simular comportamento humano
+- **NOVO**: Pressione Enter no campo de mensagem para gerar tabela automaticamente
 
 ### Gerenciamento de Campanhas
 - Importação de números via textarea ou CSV
 - Preview da mensagem no estilo WhatsApp
 - Suporte a imagens (enviadas automaticamente)
+- **NOVO**: Botões visuais para anexar e remover imagens
 - Controle de campanha: Iniciar, Pausar, Parar
 - Sistema de retry automático em falhas
 - Opção de continuar em erros
