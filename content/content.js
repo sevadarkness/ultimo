@@ -806,28 +806,15 @@
     // Aguardar um pouco para garantir que o chat está carregado
     await new Promise(r => setTimeout(r, 500));
     
-    // Focar no campo de mensagem
-    const msgInput = document.querySelector('#main footer p._aupe') ||
-                     document.querySelector('footer._ak1i div.copyable-area p');
+    // Obter o campo de mensagem usando helper
+    const msgInput = getMessageInputField();
     
     if (msgInput) {
       console.log('[WHL] ✅ Campo de mensagem encontrado');
-      msgInput.focus();
-      await new Promise(r => setTimeout(r, 200));
       
-      // Disparar evento ENTER
-      const enterEvent = new KeyboardEvent('keydown', {
-        key: 'Enter',
-        code: 'Enter',
-        keyCode: 13,
-        which: 13,
-        bubbles: true,
-        cancelable: true
-      });
-      msgInput.dispatchEvent(enterEvent);
-      
+      // Enviar tecla ENTER usando helper
+      await sendEnterKey(msgInput);
       console.log('[WHL] ✅ Tecla ENTER enviada');
-      await new Promise(r => setTimeout(r, 500));
       
       // Verificar se mensagem foi enviada
       const checkInput = getMessageInputField();
@@ -1336,27 +1323,13 @@
       console.log('[WHL] 📝 Enviando texto via ENTER...');
       await new Promise(r => setTimeout(r, 1000));
       
-      // Focar no campo de mensagem e enviar ENTER
-      const msgInput = document.querySelector('#main footer p._aupe') ||
-                       document.querySelector('footer._ak1i div.copyable-area p');
+      // Obter o campo de mensagem usando helper
+      const msgInput = getMessageInputField();
       
       if (msgInput) {
-        msgInput.focus();
-        await new Promise(r => setTimeout(r, 200));
-        
-        // Disparar evento ENTER
-        const enterEvent = new KeyboardEvent('keydown', {
-          key: 'Enter',
-          code: 'Enter',
-          keyCode: 13,
-          which: 13,
-          bubbles: true,
-          cancelable: true
-        });
-        msgInput.dispatchEvent(enterEvent);
-        
+        // Enviar tecla ENTER usando helper
+        await sendEnterKey(msgInput);
         console.log('[WHL] ✅ ENTER enviado');
-        await new Promise(r => setTimeout(r, 500));
         
         // Verificar se mensagem foi enviada
         const checkInput = getMessageInputField();
