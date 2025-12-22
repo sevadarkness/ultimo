@@ -10,17 +10,85 @@
   window.__WHL_EXTRACTOR_LOADED__ = true;
 
   // ===== USAR HARVESTER STORE COMPARTILHADO =====
-  // Usar o HarvesterStore já exposto no window pelo content.js
-  const HarvesterStore = window.HarvesterStore;
+  // Aguardar até que HarvesterStore esteja disponível
+  let HarvesterStore = window.HarvesterStore;
 
-  // Se ainda não estiver disponível, aguardar um pouco
   if (!HarvesterStore) {
-    console.warn('[WHL] HarvesterStore ainda não disponível, aguardando...');
-    setTimeout(() => {
-      if (window.HarvesterStore) {
-        console.log('[WHL] HarvesterStore agora disponível');
+    console.warn('[WHL] HarvesterStore ainda não disponível, criando local...');
+    
+    // Criar HarvesterStore local como fallback
+    HarvesterStore = {
+      _phones: new Map(),
+      _valid: new Set(),
+      _meta: {},
+      PATTERNS: {
+        BR_MOBILE: /\b(?:\+?55)?\s?\(?[1-9][0-9]\)?\s?9[0-9]{4}-?[0-9]{4}\b/g,
+        BR_LAND: /\b(?:\+?55)?\s?\(?[1-9][0-9]\)?\s?[2-8][0-9]{3}-?[0-9]{4}\b/g,
+        RAW: /\b\d{8,15}\b/g
+      },
+      ORIGINS: {
+        DOM: 'dom',
+        STORE: 'store',
+        GROUP: 'group',
+        WS: 'websocket',
+        NET: 'network',
+        LS: 'local_storage'
+      },
+      processPhone(num, origin, meta = {}) {
+        if (!num) return null;
+        let n = num.replace(/\D/g, '');
+        if (n.length < 8 || n.length > 15) return null;
+        if (n.length === 11 && n[2] === '9') n = '55' + n;
+        if ((n.length === 10 || n.length === 11) && !n.startsWith('55')) n = '55' + n;
+        if (!this._phones.has(n)) this._phones.set(n, {origens: new Set(), conf: 0, meta: {}});
+        let item = this._phones.get(n);
+        item.origens.add(origin);
+        Object.assign(item.meta, meta);
+        this._meta[n] = {...item.meta};
+        item.conf = this.calcScore(item);
+        if (item.conf >= 60) this._valid.add(n);
+        return n;
+      },
+      calcScore(item) {
+        let score = 10;
+        if (item.origens.size > 1) score += 30;
+        if (item.origens.has(this.ORIGINS.STORE)) score += 30;
+        if (item.origens.has(this.ORIGINS.GROUP)) score += 10;
+        if (item.meta?.nome) score += 15;
+        if (item.meta?.isGroup) score += 5;
+        if (item.meta?.isActive) score += 10;
+        return Math.min(score, 100);
+      },
+      stats() {
+        const or = {};
+        Object.values(this.ORIGINS).forEach(o => or[o] = 0);
+        this._phones.forEach(item => { item.origens.forEach(o => or[o]++); });
+        return or;
+      },
+      save() {
+        try {
+          chrome.storage.local.set({
+            contacts: Array.from(this._phones.keys()),
+            valid: Array.from(this._valid),
+            meta: this._meta
+          });
+        } catch(e) {
+          console.log('[WHL] Erro ao salvar:', e);
+        }
+      },
+      clear() {
+        this._phones.clear();
+        this._valid.clear();
+        this._meta = {};
+        try {
+          localStorage.removeItem('wa_extracted_numbers');
+        } catch(e) {}
+        this.save();
       }
-    }, 500);
+    };
+    
+    // Expor para window
+    window.HarvesterStore = HarvesterStore;
   }
 
   // ===== WA EXTRACTOR - Extração multi-fonte =====
