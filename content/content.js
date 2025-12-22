@@ -2047,11 +2047,11 @@ try {
       msgTextarea.addEventListener('keydown', async (e) => {
         // Check if Enter key was pressed (without Shift for new line)
         if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault(); // Prevent default new line behavior
           const st = await getState();
           
           // Only auto-build if there are numbers and a message
           if (st.numbersText.trim() && st.message.trim()) {
+            e.preventDefault(); // Prevent default new line behavior only when triggering action
             console.log('[WHL] 📨 Enter pressionado - gerando tabela automaticamente');
             // Trigger build queue
             const buildBtn = document.getElementById('whlBuild');
@@ -2145,15 +2145,12 @@ try {
     const clearImageBtn = document.getElementById('whlClearImageBtn');
     if (clearImageBtn) {
       clearImageBtn.addEventListener('click', async () => {
-        const st = await getState();
-        st.imageData = null;
-        // Clear the file input
+        // Clear the file input and trigger change event to handle state update
         const fileInput = document.getElementById('whlImage');
         if (fileInput) {
           fileInput.value = '';
+          fileInput.dispatchEvent(new Event('change', { bubbles: true }));
         }
-        await setState(st);
-        await render();
       });
     }
     
