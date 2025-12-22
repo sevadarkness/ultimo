@@ -603,28 +603,7 @@
   // IMPORTANTE: Campo de mensagem está no MAIN ou FOOTER, não na sidebar
   // CORRIGIDO: Mais seletores para melhor compatibilidade
   function getMessageInput() {
-    const selectors = [
-      'div[aria-label^="Digitar na conversa"][contenteditable="true"]',
-      'div[data-tab="10"][contenteditable="true"]',
-      'div[data-tab="10"]',
-      '#main footer div[contenteditable="true"]',
-      '#main footer p[contenteditable="true"]',
-      'footer div[contenteditable="true"]',
-      '#main footer p._aupe.copyable-text',
-      'footer._ak1i div.copyable-area p',
-      '#main footer p._aupe'
-    ];
-    
-    for (const selector of selectors) {
-      const el = document.querySelector(selector);
-      if (el) {
-        console.log('[WHL] 🔍 Campo de mensagem encontrado:', selector);
-        return el;
-      }
-    }
-    
-    console.log('[WHL] ⚠️ Campo de mensagem não encontrado');
-    return null;
+    return getMessageInputField();
   }
 
   /**
@@ -637,77 +616,42 @@
     // Primeiro: verificar se há modal/dialog aberto (imagem, vídeo, doc)
     const dialog = document.querySelector('[role="dialog"]');
     if (dialog) {
-      // Método 1: Procurar por [data-testid="send"]
-      const testIdBtn = dialog.querySelector('[data-testid="send"]');
-      if (testIdBtn && !testIdBtn.disabled) {
-        console.log('[WHL] 🔍 Botão encontrado: [data-testid="send"] no dialog');
-        return testIdBtn;
+      // Procurar botão de enviar no dialog
+      const sendBtn = dialog.querySelector('[data-testid="send"]') ||
+                      dialog.querySelector('span[data-icon="send"]')?.closest('button') ||
+                      dialog.querySelector('[aria-label="Enviar"]') ||
+                      dialog.querySelector('[aria-label="Send"]');
+      if (sendBtn && !sendBtn.disabled) {
+        console.log('[WHL] 🔍 Botão de enviar encontrado no dialog');
+        return sendBtn;
       }
       
-      // Método 2: Procurar botão com span que contenha ícone de enviar
-      const sendIcon = dialog.querySelector('span[data-icon="send"]');
-      if (sendIcon) {
-        const btn = sendIcon.closest('button');
-        if (btn && !btn.disabled) {
-          console.log('[WHL] 🔍 Botão encontrado: span[data-icon="send"] no dialog');
-          return btn;
-        }
-      }
-      
-      // Fallback: último botão não-disabled
-      const buttons = [...dialog.querySelectorAll('button')].filter(b => !b.disabled);
-      if (buttons.length > 0) {
-        console.log('[WHL] 🔍 Botão encontrado: último botão do dialog (fallback)');
-        return buttons[buttons.length - 1];
+      // Fallback: primeiro botão habilitado no dialog
+      const btn = [...dialog.querySelectorAll('button')].find(b => !b.disabled);
+      if (btn) {
+        console.log('[WHL] 🔍 Botão encontrado no dialog (fallback)');
+        return btn;
       }
     }
 
     // Segundo: verificar no footer (texto normal)
     const footer = document.querySelector('footer');
     if (footer) {
-      // Método 1: Procurar por [data-testid="send"]
-      const testIdBtn = footer.querySelector('[data-testid="send"]');
-      if (testIdBtn && !testIdBtn.disabled) {
-        console.log('[WHL] 🔍 Botão encontrado: [data-testid="send"] no footer');
-        return testIdBtn;
+      // Procurar botão de enviar específico
+      const sendBtn = footer.querySelector('[data-testid="send"]') ||
+                      footer.querySelector('span[data-icon="send"]')?.closest('button') ||
+                      footer.querySelector('[aria-label="Enviar"]') ||
+                      footer.querySelector('[aria-label="Send"]');
+      if (sendBtn && !sendBtn.disabled) {
+        console.log('[WHL] 🔍 Botão de enviar encontrado no footer');
+        return sendBtn;
       }
       
-      // Método 2: Procurar botão com span que contenha ícone de enviar
-      const sendIcon = footer.querySelector('span[data-icon="send"]');
-      if (sendIcon) {
-        const btn = sendIcon.closest('button');
-        if (btn && !btn.disabled) {
-          console.log('[WHL] 🔍 Botão encontrado: span[data-icon="send"] no footer');
-          return btn;
-        }
-      }
-      
-      // Fallback: primeiro botão não-disabled no footer
+      // Fallback: primeiro botão habilitado no footer
       const btn = [...footer.querySelectorAll('button')].find(b => !b.disabled);
       if (btn) {
-        console.log('[WHL] 🔍 Botão encontrado: primeiro botão do footer (fallback)');
+        console.log('[WHL] 🔍 Botão encontrado no footer (fallback)');
         return btn;
-      }
-    }
-
-    // Terceiro: Procurar em #main (caso footer não seja encontrado)
-    const main = document.querySelector('#main');
-    if (main) {
-      // Método 1: Procurar por [data-testid="send"]
-      const testIdBtn = main.querySelector('[data-testid="send"]');
-      if (testIdBtn && !testIdBtn.disabled) {
-        console.log('[WHL] 🔍 Botão encontrado: [data-testid="send"] no main');
-        return testIdBtn;
-      }
-      
-      // Método 2: Procurar por span[data-icon="send"]
-      const sendIcon = main.querySelector('span[data-icon="send"]');
-      if (sendIcon) {
-        const btn = sendIcon.closest('button');
-        if (btn && !btn.disabled) {
-          console.log('[WHL] 🔍 Botão encontrado: span[data-icon="send"] no main');
-          return btn;
-        }
       }
     }
 
@@ -881,6 +825,38 @@
            document.querySelector('footer div[contenteditable="true"]') ||
            document.querySelector('#main footer p._aupe') ||
            document.querySelector('footer._ak1i div.copyable-area p');
+  }
+
+  /**
+   * Digita texto no campo de mensagem de forma robusta
+   * Usado quando o parâmetro &text= da URL não funciona
+   */
+  async function typeMessageInField(text) {
+    if (!text || !text.trim()) return true;
+    
+    const msgInput = getMessageInputField();
+    if (!msgInput) {
+      console.log('[WHL] ❌ Campo de mensagem não encontrado');
+      return false;
+    }
+    
+    // Focar no campo
+    msgInput.focus();
+    await new Promise(r => setTimeout(r, 200));
+    
+    // Limpar campo existente
+    msgInput.textContent = '';
+    msgInput.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 100));
+    
+    // Digitar usando execCommand (funciona melhor com React)
+    document.execCommand('insertText', false, text);
+    msgInput.dispatchEvent(new Event('input', { bubbles: true }));
+    
+    await new Promise(r => setTimeout(r, 300));
+    
+    console.log('[WHL] ✅ Texto digitado:', text.substring(0, 30) + '...');
+    return true;
   }
 
   /**
@@ -1467,22 +1443,33 @@
       }
     } else if (st.currentMessage) {
       // Se é apenas texto, enviar via botão profissional
-      console.log('[WHL] 📝 Enviando texto...');
+      console.log('[WHL] 📝 Preparando envio de texto...');
       await new Promise(r => setTimeout(r, 2000));
       
-      // Tentar até 3 vezes
+      // PRIMEIRO: Verificar se o texto já está no campo (via URL)
+      let msgInput = getMessageInputField();
+      let textInField = msgInput ? msgInput.textContent.trim() : '';
+      
+      // Se o campo está vazio, digitar o texto manualmente
+      if (!textInField && st.currentMessage) {
+        console.log('[WHL] ⌨️ Texto não apareceu via URL, digitando manualmente...');
+        await typeMessageInField(st.currentMessage);
+        await new Promise(r => setTimeout(r, 500));
+      }
+      
+      // Agora tentar enviar (3 tentativas)
       for (let attempt = 1; attempt <= 3; attempt++) {
         console.log(`[WHL] Tentativa ${attempt}/3...`);
         
-        // Método 1: Clicar no botão de enviar diretamente
+        // Clicar no botão de enviar
         const sendBtn = findSendButton();
         if (sendBtn) {
           console.log('[WHL] ✅ Botão de enviar encontrado');
           sendBtn.click();
           await new Promise(r => setTimeout(r, 1000));
           
-          // Verificar se foi enviado
-          const msgInput = getMessageInputField();
+          // Verificar se foi enviado (campo deve estar vazio)
+          msgInput = getMessageInputField();
           if (!msgInput || msgInput.textContent.trim().length === 0) {
             success = true;
             console.log('[WHL] ✅ Mensagem enviada com sucesso!');
@@ -1490,9 +1477,9 @@
           }
         }
         
-        // Método 2: Tentar via ENTER como fallback
+        // Fallback: tentar via ENTER
         if (!success && attempt < 3) {
-          const msgInput = getMessageInputField();
+          msgInput = getMessageInputField();
           if (msgInput) {
             await sendEnterKey(msgInput);
             await new Promise(r => setTimeout(r, 1000));
