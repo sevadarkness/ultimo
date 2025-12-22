@@ -9,120 +9,19 @@
   if (window.__WHL_EXTRACTOR_LOADED__) return;
   window.__WHL_EXTRACTOR_LOADED__ = true;
 
-  // ===== HARVESTER STORE - Sistema de validação multi-fonte =====
-  const HarvesterStore = {
-    _phones: new Map(),
-    _valid: new Set(),
-    _meta: {},
-    
-    PATTERNS: {
-      BR_MOBILE: /\b(?:\+?55)?\s?\(?[1-9][0-9]\)?\s?9[0-9]{4}-?[0-9]{4}\b/g,
-      BR_LAND: /\b(?:\+?55)?\s?\(?[1-9][0-9]\)?\s?[2-8][0-9]{3}-?[0-9]{4}\b/g,
-      RAW: /\b\d{8,15}\b/g
-    },
-    
-    ORIGINS: {
-      DOM: 'dom',
-      STORE: 'store',
-      GROUP: 'group',
-      WS: 'websocket',
-      NET: 'network',
-      LS: 'local_storage'
-    },
-    
-    processPhone(num, origin, meta = {}) {
-      if (!num) return null;
-      
-      // Limpar e normalizar
-      let n = num.replace(/\D/g, '');
-      
-      // Validar tamanho
-      if (n.length < 8 || n.length > 15) return null;
-      
-      // Normalização Brasil
-      // Se tem 11 dígitos e terceiro dígito é 9, adicionar código do país
-      if (n.length === 11 && n[2] === '9') {
-        n = '55' + n;
+  // ===== USAR HARVESTER STORE COMPARTILHADO =====
+  // Usar o HarvesterStore já exposto no window pelo content.js
+  const HarvesterStore = window.HarvesterStore;
+
+  // Se ainda não estiver disponível, aguardar um pouco
+  if (!HarvesterStore) {
+    console.warn('[WHL] HarvesterStore ainda não disponível, aguardando...');
+    setTimeout(() => {
+      if (window.HarvesterStore) {
+        console.log('[WHL] HarvesterStore agora disponível');
       }
-      // Se tem 10 ou 11 dígitos e não começa com 55, adicionar
-      if ((n.length === 10 || n.length === 11) && !n.startsWith('55')) {
-        n = '55' + n;
-      }
-      
-      // Adicionar ao mapa ou atualizar
-      if (!this._phones.has(n)) {
-        this._phones.set(n, {
-          origens: new Set(),
-          conf: 0,
-          meta: {}
-        });
-      }
-      
-      let item = this._phones.get(n);
-      item.origens.add(origin);
-      Object.assign(item.meta, meta);
-      this._meta[n] = {...item.meta};
-      
-      // Calcular score
-      item.conf = this.calcScore(item);
-      
-      // Se confiança >= 60, adicionar aos válidos
-      if (item.conf >= 60) {
-        this._valid.add(n);
-      }
-      
-      return n;
-    },
-    
-    calcScore(item) {
-      let score = 10; // Score base
-      
-      // Múltiplas fontes aumentam confiança
-      if (item.origens.size > 1) score += 30;
-      
-      // Store do WhatsApp é fonte confiável
-      if (item.origens.has(this.ORIGINS.STORE)) score += 30;
-      
-      // Grupos são boas fontes
-      if (item.origens.has(this.ORIGINS.GROUP)) score += 10;
-      
-      // Metadata adiciona confiança
-      if (item.meta?.nome) score += 15;
-      if (item.meta?.isGroup) score += 5;
-      if (item.meta?.isActive) score += 10;
-      
-      return Math.min(score, 100);
-    },
-    
-    stats() {
-      const or = {};
-      Object.values(this.ORIGINS).forEach(o => or[o] = 0);
-      this._phones.forEach(item => {
-        item.origens.forEach(o => or[o]++);
-      });
-      return or;
-    },
-    
-    save() {
-      try {
-        chrome.storage.local.set({
-          contacts: Array.from(this._phones.keys()),
-          valid: Array.from(this._valid),
-          meta: this._meta
-        });
-      } catch (e) {
-        console.log('[WHL] Erro ao salvar contatos:', e);
-      }
-    },
-    
-    clear() {
-      this._phones.clear();
-      this._valid.clear();
-      this._meta = {};
-      localStorage.removeItem('wa_extracted_numbers');
-      this.save();
-    }
-  };
+    }, 500);
+  }
 
   // ===== WA EXTRACTOR - Extração multi-fonte =====
   const WAExtractor = {
@@ -380,6 +279,8 @@
   function collectDeepFrom(el, sourceName = 'dom') {
     if (!el) return [];
     const numbers = new Set();
+    const store = window.HarvesterStore || HarvesterStore;
+    if (!store) return [];
 
     const attrs = [
       'data-id',
@@ -397,7 +298,7 @@
       if (value) {
         extractNumbers(value).forEach(n => {
           numbers.add(n);
-          HarvesterStore.processPhone(n, sourceName);
+          store.processPhone(n, sourceName);
         });
       }
     });
@@ -405,7 +306,7 @@
     if (el.textContent) {
       extractNumbers(el.textContent).forEach(n => {
         numbers.add(n);
-        HarvesterStore.processPhone(n, sourceName);
+        store.processPhone(n, sourceName);
       });
     }
 
@@ -416,7 +317,7 @@
         if (value) {
           extractNumbers(value).forEach(n => {
             numbers.add(n);
-            HarvesterStore.processPhone(n, sourceName);
+            store.processPhone(n, sourceName);
           });
         }
       });
@@ -445,14 +346,22 @@
   async function extractAll() {
     console.log('[WHL] 🚀 Iniciando extração completa com sistema Harvester...');
     
+    // Garantir que HarvesterStore está disponível
+    const store = window.HarvesterStore || HarvesterStore;
+    if (!store) {
+      console.error('[WHL] HarvesterStore não disponível!');
+      window.postMessage({ type:'WHL_EXTRACT_ERROR', error: 'HarvesterStore não disponível' }, '*');
+      return [];
+    }
+    
     // Limpar store anterior
-    HarvesterStore.clear();
+    store.clear();
     
     // Fase 1: Iniciar WAExtractor (Store, Observer, Network hooks, etc)
     window.postMessage({ 
       type: 'WHL_EXTRACT_PROGRESS', 
       progress: 10,
-      count: HarvesterStore._valid.size
+      count: store._valid.size
     }, '*');
     
     await WAExtractor.start();
@@ -461,7 +370,7 @@
     window.postMessage({ 
       type: 'WHL_EXTRACT_PROGRESS', 
       progress: 30,
-      count: HarvesterStore._valid.size
+      count: store._valid.size
     }, '*');
     
     const list = findChatList();
@@ -493,7 +402,7 @@
         window.postMessage({ 
           type: 'WHL_EXTRACT_PROGRESS', 
           progress: progress,
-          count: HarvesterStore._valid.size
+          count: store._valid.size
         }, '*');
 
         const increment = Math.floor(list.clientHeight * 0.7);
@@ -529,13 +438,13 @@
     window.postMessage({ 
       type: 'WHL_EXTRACT_PROGRESS', 
       progress: 80,
-      count: HarvesterStore._valid.size
+      count: store._valid.size
     }, '*');
     
     await new Promise(r => setTimeout(r, 3000));
     
     // Retornar apenas números validados (com score >= 60)
-    const validNumbers = Array.from(HarvesterStore._valid).sort();
+    const validNumbers = Array.from(store._valid).sort();
 
     window.postMessage({ 
       type: 'WHL_EXTRACT_PROGRESS', 
@@ -544,15 +453,15 @@
     }, '*');
 
     // Estatísticas
-    const stats = HarvesterStore.stats();
+    const stats = store.stats();
     console.log('[WHL] ✅ Extração concluída:', {
-      total: HarvesterStore._phones.size,
+      total: store._phones.size,
       validos: validNumbers.length,
       stats: stats
     });
     
     // Salvar
-    HarvesterStore.save();
+    store.save();
     
     return validNumbers;
   }
