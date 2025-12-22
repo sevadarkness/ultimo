@@ -386,8 +386,12 @@
 
         <div style="margin-top:10px">
           <div class="muted">📸 Selecionar imagem (será enviada automaticamente)</div>
-          <input id="whlImage" type="file" accept="image/*" />
-          <div class="tiny" id="whlImageHint"></div>
+          <div class="row" style="margin-top:6px">
+            <button id="whlSelectImageBtn" style="flex:1">📎 Anexar Imagem</button>
+            <button id="whlClearImageBtn" style="width:120px" title="Remover imagem">🗑️ Remover</button>
+          </div>
+          <input id="whlImage" type="file" accept="image/*" style="display:none" />
+          <div class="tiny" id="whlImageHint" style="margin-top:6px"></div>
         </div>
 
         <div class="row" style="margin-top:10px">
@@ -1750,7 +1754,20 @@
 
     // Image hint
     const ih = document.getElementById('whlImageHint');
-    if (ih) ih.textContent = state.imageData ? '✅ Imagem selecionada' : '';
+    const selectImageBtn = document.getElementById('whlSelectImageBtn');
+    const clearImageBtn = document.getElementById('whlClearImageBtn');
+    if (ih) {
+      if (state.imageData) {
+        ih.textContent = '✅ Imagem anexada e pronta para envio';
+        ih.style.color = '#78ffa0';
+        if (clearImageBtn) clearImageBtn.style.display = '';
+        if (selectImageBtn) selectImageBtn.textContent = '📎 Trocar Imagem';
+      } else {
+        ih.textContent = '';
+        if (clearImageBtn) clearImageBtn.style.display = 'none';
+        if (selectImageBtn) selectImageBtn.textContent = '📎 Anexar Imagem';
+      }
+    }
     // Selector health
     const sh = document.getElementById('whlSelectorHealth');
     if (sh) sh.innerHTML = state.selectorHealth?.ok ? '✅ Seletores OK' : `⚠️ Seletores: ${(state.selectorHealth?.issues||[]).join(', ')}`;
@@ -2024,6 +2041,25 @@ try {
       await setState(st);
     });
     
+    // Enter key to auto-generate queue (build table)
+    document.getElementById('whlMsg').addEventListener('keydown', async (e) => {
+      // Check if Enter key was pressed (without Shift for new line)
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault(); // Prevent default new line behavior
+        const st = await getState();
+        
+        // Only auto-build if there are numbers and a message
+        if (st.numbersText.trim() && st.message.trim()) {
+          console.log('[WHL] 📨 Enter pressionado - gerando tabela automaticamente');
+          // Trigger build queue
+          const buildBtn = document.getElementById('whlBuild');
+          if (buildBtn) {
+            buildBtn.click();
+          }
+        }
+      }
+    });
+    
     // Delay configuration
     document.getElementById('whlDelayMin').addEventListener('input', async (e) => {
       const st = await getState();
@@ -2090,6 +2126,23 @@ try {
       await setState(st);
       await render();
     });
+    
+    // Image button handlers
+    document.getElementById('whlSelectImageBtn').addEventListener('click', () => {
+      // Trigger the hidden file input
+      document.getElementById('whlImage').click();
+    });
+    
+    document.getElementById('whlClearImageBtn').addEventListener('click', async () => {
+      const st = await getState();
+      st.imageData = null;
+      // Clear the file input
+      const fileInput = document.getElementById('whlImage');
+      fileInput.value = '';
+      await setState(st);
+      await render();
+    });
+    
     // Drafts
     document.getElementById('whlSaveDraft').addEventListener('click', async () => {
       const name = prompt('Nome do rascunho:', 'default') || 'default';
