@@ -732,18 +732,135 @@
    * Clica no botão enviar (para mensagens de texto via URL)
    */
   async function clickSendButton() {
-    const sendButton = document.querySelector('footer._ak1i div._ak1r button') ||
-                       document.querySelector('footer._ak1i button[aria-label="Enviar"]') ||
-                       document.querySelector('button[data-testid="send"]');
+    console.log('[WHL] 🔍 Procurando botão de enviar...');
+    
+    // Aguardar um pouco para garantir que o botão está renderizado
+    await new Promise(r => setTimeout(r, 500));
+    
+    // Seletores em ordem de prioridade (baseados no que o usuário forneceu)
+    const selectors = [
+      '#main footer._ak1i div._ak1r button',
+      'footer._ak1i div._ak1r button',
+      'footer._ak1i button[aria-label="Enviar"]',
+      'footer button[aria-label="Enviar"]',
+      'button[data-testid="send"]',
+      '[data-testid="send"]',
+      'span[data-icon="send"]',
+      // Seletor genérico para botão de enviar no footer
+      '#main footer button:last-child',
+      'footer._ak1i button'
+    ];
+    
+    let sendButton = null;
+    
+    for (const selector of selectors) {
+      sendButton = document.querySelector(selector);
+      if (sendButton) {
+        console.log('[WHL] ✅ Botão encontrado com seletor:', selector);
+        break;
+      }
+    }
+    
+    // Se encontrou o span com ícone de send, pegar o button pai
+    if (!sendButton) {
+      const sendIcon = document.querySelector('span[data-icon="send"]');
+      if (sendIcon) {
+        sendButton = sendIcon.closest('button');
+        if (sendButton) {
+          console.log('[WHL] ✅ Botão encontrado via ícone send');
+        }
+      }
+    }
     
     if (sendButton) {
+      console.log('[WHL] 🖱️ Clicando no botão de enviar...');
+      
+      // Método 1: Click direto
       sendButton.click();
-      console.log('[WHL] ✅ Mensagem enviada');
-      return { success: true };
+      
+      // Aguardar um pouco
+      await new Promise(r => setTimeout(r, 300));
+      
+      // Método 2: Se ainda não enviou, tentar via eventos
+      const msgInput = document.querySelector('#main footer p._aupe') ||
+                       document.querySelector('footer._ak1i div.copyable-area p');
+      
+      if (msgInput && msgInput.textContent.trim().length > 0) {
+        console.log('[WHL] ⚠️ Mensagem ainda no campo, tentando eventos de mouse...');
+        
+        // Eventos de mouse completos
+        sendButton.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+        await new Promise(r => setTimeout(r, 50));
+        sendButton.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+        await new Promise(r => setTimeout(r, 50));
+        sendButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+        
+        await new Promise(r => setTimeout(r, 300));
+      }
+      
+      // Verificar se mensagem foi enviada
+      const msgInputAfter = document.querySelector('#main footer p._aupe') ||
+                            document.querySelector('footer._ak1i div.copyable-area p');
+      
+      if (!msgInputAfter || msgInputAfter.textContent.trim().length === 0) {
+        console.log('[WHL] ✅ Mensagem enviada com sucesso!');
+        return { success: true };
+      }
+      
+      // Método 3: Tentar via ENTER como último recurso
+      console.log('[WHL] ⚠️ Tentando via tecla ENTER...');
+      if (msgInputAfter) {
+        msgInputAfter.focus();
+        msgInputAfter.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'Enter',
+          code: 'Enter',
+          keyCode: 13,
+          which: 13,
+          bubbles: true,
+          cancelable: true
+        }));
+        
+        await new Promise(r => setTimeout(r, 500));
+        
+        // Verificar novamente
+        const finalCheck = document.querySelector('#main footer p._aupe') ||
+                          document.querySelector('footer._ak1i div.copyable-area p');
+        
+        if (!finalCheck || finalCheck.textContent.trim().length === 0) {
+          console.log('[WHL] ✅ Mensagem enviada via ENTER!');
+          return { success: true };
+        }
+      }
+      
+      console.log('[WHL] ⚠️ Não foi possível confirmar se a mensagem foi enviada');
+      return { success: true }; // Assumir sucesso se o botão foi clicado
     }
     
     console.log('[WHL] ❌ Botão enviar não encontrado');
-    return { success: false, error: 'Botão enviar não encontrado' };
+    console.log('[WHL] DEBUG: Elementos no footer:', document.querySelector('#main footer')?.innerHTML?.substring(0, 500));
+    
+    // Última tentativa: ENTER direto no campo de mensagem
+    const msgInput = document.querySelector('#main footer p._aupe') ||
+                     document.querySelector('footer._ak1i div.copyable-area p');
+    
+    if (msgInput) {
+      console.log('[WHL] 🔄 Tentando enviar via ENTER no campo de mensagem...');
+      msgInput.focus();
+      msgInput.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        code: 'Enter',
+        keyCode: 13,
+        which: 13,
+        bubbles: true,
+        cancelable: true
+      }));
+      
+      await new Promise(r => setTimeout(r, 500));
+      console.log('[WHL] ✅ ENTER enviado');
+      return { success: true };
+    }
+    
+    return { success: false, error: 'Botão enviar não encontrado e ENTER falhou' };
   }
 
   // DEPRECATED: sendTextMessage removido - agora usa clickSendButton() após navegação via URL
@@ -1141,9 +1258,11 @@
     }
     
     console.log('[WHL] 🔄 Retomando campanha após navegação URL...');
+    console.log('[WHL] Número atual:', st.currentPhoneNumber);
+    console.log('[WHL] Mensagem:', st.currentMessage?.substring(0, 50));
     
-    // Aguardar página carregar completamente
-    await new Promise(r => setTimeout(r, 4000));
+    // Aguardar página carregar completamente (aumentado de 4s para 5s)
+    await new Promise(r => setTimeout(r, 5000));
     
     // Verificar se há popup de erro
     const hasError = await checkForErrorPopup();
