@@ -1693,21 +1693,32 @@
   }
 
   async function pauseCampaign() {
+    console.log('[WHL] 🔸 Botão PAUSAR clicado');
     const st = await getState();
-    st.isPaused = !st.isPaused;
-    await setState(st);
-    await render();
-
-    if (campaignInterval) {
-      clearTimeout(campaignInterval);
-      campaignInterval = null;
-    }
-
-    if (!st.isPaused && st.isRunning) {
-      console.log('[WHL] Campaign resumed');
-      scheduleCampaignStepViaDom();
+    
+    if (st.isPaused) {
+      // Retomar
+      console.log('[WHL] ▶️ Retomando campanha...');
+      st.isPaused = false;
+      await setState(st);
+      await render();
+      
+      // Continuar processamento de onde parou
+      if (st.isRunning) {
+        scheduleCampaignStepViaDom();
+      }
     } else {
-      console.log('[WHL] Campaign paused');
+      // Pausar
+      console.log('[WHL] ⏸️ Pausando campanha...');
+      st.isPaused = true;
+      await setState(st);
+      await render();
+      
+      // Limpar interval para parar o loop
+      if (campaignInterval) {
+        clearTimeout(campaignInterval);
+        campaignInterval = null;
+      }
     }
   }
 
@@ -2575,38 +2586,45 @@ try {
         await new Promise(r => setTimeout(r, 500));
       }
 
-      // PASSO 2: Converter base64 para blob (MANTER COMO ESTÁ)
+      // PASSO 2: Converter base64 para blob
       const response = await fetch(imageData);
       const blob = await response.blob();
       
-      // NOVO: Determinar extensão correta baseada no tipo MIME
+      // Determinar extensão e tipo MIME corretos
       let extension = 'jpg';
       let mimeType = blob.type || 'image/jpeg';
 
-      if (mimeType.includes('png')) {
+      // IMPORTANTE: Se for webp, converter para jpeg para evitar ser tratado como sticker
+      if (mimeType.includes('webp')) {
+        console.log('[WHL] ⚠️ Imagem webp detectada, mantendo mas forçando como foto');
+        // Mantém webp mas garante que vai pelo input de fotos
+        extension = 'webp';
+      } else if (mimeType.includes('png')) {
         extension = 'png';
       } else if (mimeType.includes('gif')) {
         extension = 'gif';
-      } else if (mimeType.includes('webp')) {
-        extension = 'webp';
       } else if (mimeType.includes('bmp')) {
         extension = 'bmp';
+      } else {
+        // Forçar jpeg por padrão
+        mimeType = 'image/jpeg';
+        extension = 'jpg';
       }
 
       // Criar arquivo com tipo correto e timestamp para evitar cache
       const timestamp = Date.now();
-      const file = new File([blob], `image_${timestamp}.${extension}`, { 
+      const file = new File([blob], `foto_${timestamp}.${extension}`, { 
         type: mimeType,
         lastModified: timestamp
       });
 
-      console.log('[WHL] 📷 Imagem:', {
+      console.log('[WHL] 📷 Enviando como FOTO (não sticker):', {
         tipo: mimeType,
         tamanho: `${(blob.size / 1024).toFixed(1)} KB`,
-        extensao: extension
+        nome: file.name
       });
 
-      // PASSO 3: Clicar no botão de anexar (MANTER COMO ESTÁ)
+      // PASSO 3: Clicar no botão de anexar
       console.log('[WHL] 📎 PASSO 2: Clicando no botão de anexar...');
       const attachBtn = document.querySelector('[aria-label="Anexar"]');
       if (!attachBtn) {
@@ -2618,13 +2636,65 @@ try {
       console.log('[WHL] ✅ Botão de anexar clicado');
       await new Promise(r => setTimeout(r, 1000));
 
-      // PASSO 4: Encontrar input de arquivo (MANTER COMO ESTÁ)
+      // PASSO 4: Clicar especificamente em "Fotos e vídeos" (NÃO em figurinha!)
+      console.log('[WHL] 🖼️ Procurando opção "Fotos e vídeos"...');
+      const allButtons = document.querySelectorAll('button, div[role="button"], span[role="button"]');
+      let photoVideoBtn = null;
+      
+      for (const btn of allButtons) {
+        const label = btn.getAttribute('aria-label') || btn.textContent || '';
+        if (label.includes('Fotos') || label.includes('vídeos') || label.includes('Photos') || label.includes('videos')) {
+          photoVideoBtn = btn;
+          console.log('[WHL] ✅ Encontrou botão de Fotos e vídeos');
+          break;
+        }
+      }
+      
+      // Se encontrou, clicar nele
+      if (photoVideoBtn) {
+        photoVideoBtn.click();
+        console.log('[WHL] ✅ Clicou em Fotos e vídeos');
+        await new Promise(r => setTimeout(r, 500));
+      } else {
+        console.log('[WHL] ⚠️ Botão de Fotos e vídeos não encontrado, usando input padrão');
+      }
+
+      // PASSO 5: Encontrar input de arquivo CORRETO (não o de sticker)
       console.log('[WHL] 📁 PASSO 3: Anexando imagem...');
       let imageInput = null;
-      for (let i = 0; i < 10; i++) {
+      
+      // O input de fotos/vídeos aceita image/* e video/*
+      // O input de sticker aceita apenas image/webp
+      const allInputs = document.querySelectorAll('input[type="file"]');
+      
+      for (const input of allInputs) {
+        const accept = input.getAttribute('accept') || '';
+        // Preferir input que aceita image/* (fotos) e NÃO é apenas webp (sticker)
+        if (accept.includes('image/') && !accept.match(/^image\/webp$/)) {
+          imageInput = input;
+          console.log('[WHL] ✅ Input de fotos encontrado:', accept);
+          break;
+        }
+      }
+      
+      // Fallback: qualquer input de imagem que não seja só webp
+      if (!imageInput) {
+        for (const input of allInputs) {
+          const accept = input.getAttribute('accept') || '';
+          if (accept.includes('image') && !accept.match(/^image\/webp$/)) {
+            imageInput = input;
+            console.log('[WHL] ✅ Input de imagem encontrado (fallback):', accept);
+            break;
+          }
+        }
+      }
+      
+      // Último fallback
+      if (!imageInput) {
         imageInput = document.querySelector('input[accept*="image"]');
-        if (imageInput) break;
-        await new Promise(r => setTimeout(r, 200));
+        if (imageInput) {
+          console.log('[WHL] ⚠️ Usando input genérico de imagem');
+        }
       }
       
       if (!imageInput) {
