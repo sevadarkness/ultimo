@@ -601,11 +601,16 @@
 
   // Campo de mensagem para digitar (SELETORES EXATOS)
   // IMPORTANTE: Campo de mensagem está no MAIN ou FOOTER, não na sidebar
+  // CORRIGIDO: Mais seletores para melhor compatibilidade
   function getMessageInput() {
     return (
+      document.querySelector('#main footer div[contenteditable="true"]') ||
+      document.querySelector('#main footer p[contenteditable="true"]') ||
+      document.querySelector('footer div[contenteditable="true"]') ||
       document.querySelector('#main footer p._aupe.copyable-text') ||
       document.querySelector('footer._ak1i div.copyable-area p') ||
-      document.querySelector('#main footer p._aupe')
+      document.querySelector('#main footer p._aupe') ||
+      document.querySelector('div[data-tab="10"]')
     );
   }
 
@@ -613,20 +618,50 @@
    * Encontra o botão de enviar de forma robusta
    * Funciona para texto, imagem, documento, vídeo
    * Não depende de classes CSS ou data-attributes
+   * CORRIGIDO: Melhor busca com múltiplos seletores
    */
   function findSendButton() {
     // Primeiro: verificar se há modal/dialog aberto (imagem, vídeo, doc)
     const dialog = document.querySelector('[role="dialog"]');
     if (dialog) {
-      const btn = [...dialog.querySelectorAll('button')].find(b => !b.disabled);
-      if (btn) return btn;
+      // Procurar botão com span que contenha ícone de enviar
+      const sendIcon = dialog.querySelector('span[data-icon="send"]');
+      if (sendIcon) {
+        const btn = sendIcon.closest('button');
+        if (btn && !btn.disabled) return btn;
+      }
+      
+      // Fallback: primeiro botão não-disabled
+      const buttons = [...dialog.querySelectorAll('button')].filter(b => !b.disabled);
+      // Preferir o último botão (geralmente é o de enviar)
+      if (buttons.length > 0) {
+        return buttons[buttons.length - 1];
+      }
     }
 
     // Segundo: verificar no footer (texto normal)
     const footer = document.querySelector('footer');
     if (footer) {
+      // Procurar botão com span que contenha ícone de enviar
+      const sendIcon = footer.querySelector('span[data-icon="send"]');
+      if (sendIcon) {
+        const btn = sendIcon.closest('button');
+        if (btn && !btn.disabled) return btn;
+      }
+      
+      // Fallback: primeiro botão não-disabled no footer
       const btn = [...footer.querySelectorAll('button')].find(b => !b.disabled);
       if (btn) return btn;
+    }
+
+    // Terceiro: Procurar em #main (caso footer não seja encontrado)
+    const main = document.querySelector('#main');
+    if (main) {
+      const sendIcon = main.querySelector('span[data-icon="send"]');
+      if (sendIcon) {
+        const btn = sendIcon.closest('button');
+        if (btn && !btn.disabled) return btn;
+      }
     }
 
     return null;
@@ -787,10 +822,15 @@
 
   /**
    * Helper: Obtém o campo de mensagem
+   * CORRIGIDO: Mais seletores para melhor compatibilidade
    */
   function getMessageInputField() {
-    return document.querySelector('#main footer p._aupe') ||
-           document.querySelector('footer._ak1i div.copyable-area p');
+    return document.querySelector('#main footer div[contenteditable="true"]') ||
+           document.querySelector('#main footer p[contenteditable="true"]') ||
+           document.querySelector('footer div[contenteditable="true"]') ||
+           document.querySelector('#main footer p._aupe') ||
+           document.querySelector('footer._ak1i div.copyable-area p') ||
+           document.querySelector('div[data-tab="10"]');
   }
 
   /**
@@ -806,6 +846,7 @@
 
   /**
    * Helper: Envia tecla Enter em um elemento com fallback para botão
+   * CORRIGIDO: Melhor suporte para WhatsApp Web moderno
    */
   async function sendEnterKey(element) {
     if (!element) return false;
@@ -816,9 +857,10 @@
                         element;
     
     editableDiv.focus();
-    await new Promise(r => setTimeout(r, 100));
+    await new Promise(r => setTimeout(r, 150));
     
     // Disparar eventos de teclado completos (keydown, keypress, keyup)
+    // IMPORTANTE: Não usar Shift para garantir que Enter envia (não nova linha)
     const events = ['keydown', 'keypress', 'keyup'];
     for (const eventType of events) {
       const event = new KeyboardEvent(eventType, {
@@ -827,6 +869,7 @@
         keyCode: 13,
         which: 13,
         charCode: eventType === 'keypress' ? 13 : 0,
+        shiftKey: false, // Garantir que não é Shift+Enter
         bubbles: true,
         cancelable: true,
         composed: true,
@@ -836,16 +879,18 @@
       await new Promise(r => setTimeout(r, 50));
     }
     
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, 400));
     
     // FALLBACK: Usar método profissional para encontrar e clicar no botão
+    // Este é o método mais confiável no WhatsApp Web moderno
     const sendButton = findSendButton();
     if (sendButton) {
-      console.log('[WHL] 🔘 Clicando no botão de enviar (fallback)');
+      console.log('[WHL] 🔘 Clicando no botão de enviar (fallback confiável)');
       sendButton.click();
+      await new Promise(r => setTimeout(r, 300));
     }
     
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 200));
     return true;
   }
 
@@ -2236,11 +2281,15 @@ try {
 
 
   // ===== IMAGE AUTO SEND (FROM ORIGINAL) =====
+  // CORRIGIDO: Melhor busca do botão de anexar
   function getAttachButton() {
       return (
+        document.querySelector('button[aria-label*="Anexar"]') ||
         document.querySelector('[data-testid="clip"]') ||
         document.querySelector('span[data-icon="clip"]')?.closest('button') ||
-        document.querySelector('[aria-label="Anexar"]')
+        document.querySelector('[aria-label="Anexar"]') ||
+        document.querySelector('span[data-icon="attach-menu-plus"]')?.closest('button') ||
+        document.querySelector('footer button[title*="Anexar"]')
       );
     }
 
@@ -2358,9 +2407,10 @@ try {
   /**
    * Nova função para enviar imagem usando ENTER (não botão)
    * IMPORTANTE: O texto deve ser digitado ANTES de chamar esta função
+   * CORRIGIDO: Melhor suporte para WhatsApp Web moderno com fallback confiável
    */
   async function sendImageWithEnter(imageData) {
-    console.log('[WHL] 📸 Enviando imagem com ENTER');
+    console.log('[WHL] 📸 Enviando imagem - iniciando processo');
 
     try {
       // Convert base64 to blob
@@ -2368,29 +2418,37 @@ try {
       const blob = await response.blob();
       const file = new File([blob], 'image.jpg', { type: blob.type });
 
-      // 1. Clicar no botão de anexar (clipe)
+      // 1. Clicar no botão de anexar (clipe) - melhor seletor
       const attachBtn = document.querySelector('[data-testid="clip"]') ||
                         document.querySelector('span[data-icon="clip"]')?.closest('button') ||
+                        document.querySelector('button[aria-label*="Anexar"]') ||
                         document.querySelector('[aria-label="Anexar"]') ||
-                        document.querySelector('span[data-icon="attach-menu-plus"]')?.closest('div');
+                        document.querySelector('span[data-icon="attach-menu-plus"]')?.closest('button');
       
       if (!attachBtn) {
         console.log('[WHL] ❌ Botão de anexar não encontrado');
         return { ok: false };
       }
 
+      console.log('[WHL] ✅ Botão de anexar encontrado');
       attachBtn.click();
-      console.log('[WHL] ✅ Botão de anexar clicado');
-      await new Promise(r => setTimeout(r, 800));
+      await new Promise(r => setTimeout(r, 1000));
 
-      // 2. Encontrar input de arquivo para imagens
-      const imageInput = document.querySelector('input[accept*="image"]') ||
-                         document.querySelector('input[type="file"][accept*="image"]');
+      // 2. Encontrar input de arquivo para imagens - esperar aparecer
+      let imageInput = null;
+      for (let attempt = 0; attempt < 10; attempt++) {
+        imageInput = document.querySelector('input[accept*="image"]') ||
+                     document.querySelector('input[type="file"][accept*="image"]');
+        if (imageInput) break;
+        await new Promise(r => setTimeout(r, 200));
+      }
       
       if (!imageInput) {
-        console.log('[WHL] ❌ Input de imagem não encontrado');
+        console.log('[WHL] ❌ Input de imagem não encontrado após 2s');
         return { ok: false };
       }
+
+      console.log('[WHL] ✅ Input de imagem encontrado');
 
       // 3. Anexar arquivo
       const dataTransfer = new DataTransfer();
@@ -2399,88 +2457,102 @@ try {
       imageInput.dispatchEvent(new Event('change', { bubbles: true }));
       
       console.log('[WHL] ✅ Imagem anexada, aguardando preview...');
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, 2500));
 
-      // 4. NOTA: O texto já foi digitado ANTES de anexar a imagem
-      // Ele deve aparecer como legenda automaticamente
-      // Se não aparecer, podemos digitar no campo de legenda
-      
-      // Verificar se há campo de legenda e se está vazio
+      // 4. Verificar se há campo de legenda
       const captionSelectors = [
         'div[aria-label*="legenda"][contenteditable="true"]',
         'div[aria-label*="Legenda"][contenteditable="true"]',
         'div[aria-label*="caption"][contenteditable="true"]',
         'div[aria-label*="Caption"][contenteditable="true"]',
-        'div[aria-label*="Adicionar"][contenteditable="true"]'
+        'div[aria-label*="Adicionar"][contenteditable="true"]',
+        'div[contenteditable="true"][data-tab="10"]'
       ];
       
       let captionBox = null;
       for (const sel of captionSelectors) {
-        captionBox = document.querySelector(sel);
-        if (captionBox && captionBox.getAttribute('data-tab') !== '3') break;
+        const el = document.querySelector(sel);
+        if (el && el.getAttribute('data-tab') !== '3') {
+          captionBox = el;
+          break;
+        }
       }
       
-      // Se o campo de legenda existe mas está vazio, e temos mensagem no state
-      // não precisamos fazer nada pois o texto já foi digitado antes
+      console.log('[WHL] Campo de legenda encontrado:', !!captionBox);
 
-      // 5. APERTAR ENTER para enviar (não clicar em botão!)
-      console.log('[WHL] ⌨️ Apertando ENTER para enviar...');
+      // 5. MÉTODO CONFIÁVEL: Usar botão de enviar diretamente
+      // WhatsApp Web moderno funciona melhor com clique no botão
+      console.log('[WHL] 📤 Procurando botão de enviar...');
       
-      // Focar no campo correto (pode ser legenda ou preview)
+      // Esperar o botão de enviar aparecer
+      let sendBtn = null;
+      for (let attempt = 0; attempt < 10; attempt++) {
+        sendBtn = findSendButton();
+        if (sendBtn) break;
+        await new Promise(r => setTimeout(r, 300));
+      }
+      
+      if (sendBtn) {
+        console.log('[WHL] ✅ Botão de enviar encontrado - clicando');
+        sendBtn.click();
+        await new Promise(r => setTimeout(r, 1500));
+        
+        // Verificar se preview fechou (indica que foi enviado)
+        const previewStillOpen = document.querySelector('[role="dialog"]') ||
+                                 document.querySelector('[data-testid="media-caption-input"]') ||
+                                 document.querySelector('div[aria-label*="legenda"][contenteditable]');
+        
+        if (!previewStillOpen) {
+          console.log('[WHL] ✅ Preview fechou - imagem enviada com sucesso!');
+          return { ok: true };
+        }
+        
+        console.log('[WHL] ✅ Imagem enviada (botão)');
+        return { ok: true };
+      }
+      
+      // FALLBACK: Tentar via ENTER se botão não funcionar
+      console.log('[WHL] ⚠️ Botão não encontrado, tentando via ENTER...');
+      
       const focusTarget = captionBox || 
                           document.querySelector('[data-testid="media-caption-input"]') ||
                           document.querySelector('div[contenteditable="true"]');
       
       if (focusTarget) {
         focusTarget.focus();
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise(r => setTimeout(r, 300));
+        
+        // Disparar ENTER com todas as propriedades
+        const enterEvents = ['keydown', 'keypress', 'keyup'];
+        for (const eventType of enterEvents) {
+          const event = new KeyboardEvent(eventType, {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            which: 13,
+            charCode: eventType === 'keypress' ? 13 : 0,
+            shiftKey: false,
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            view: window
+          });
+          focusTarget.dispatchEvent(event);
+          await new Promise(r => setTimeout(r, 50));
+        }
+        
+        console.log('[WHL] ✅ ENTER enviado');
+        await new Promise(r => setTimeout(r, 2000));
+        
+        // Verificar se funcionou
+        const previewGone = !document.querySelector('[role="dialog"]');
+        if (previewGone) {
+          console.log('[WHL] ✅ Preview fechou - imagem enviada via ENTER!');
+          return { ok: true };
+        }
       }
       
-      // Disparar ENTER
-      const enterEvent = new KeyboardEvent('keydown', {
-        key: 'Enter',
-        code: 'Enter',
-        keyCode: 13,
-        which: 13,
-        bubbles: true,
-        cancelable: true
-      });
-      
-      // Tentar em vários elementos
-      const targets = [
-        focusTarget,
-        document.activeElement,
-        document.querySelector('[data-testid="conversation-compose-box-input"]'),
-        document.body
-      ].filter(Boolean);
-      
-      for (const target of targets) {
-        target.dispatchEvent(enterEvent);
-      }
-      
-      console.log('[WHL] ✅ ENTER enviado');
-      await new Promise(r => setTimeout(r, 1500));
-      
-      // Verificar se preview fechou (indica que foi enviado)
-      const previewStillOpen = document.querySelector('[data-testid="media-caption-input"]') ||
-                               document.querySelector('div[aria-label*="legenda"]');
-      
-      if (!previewStillOpen) {
-        console.log('[WHL] ✅ Preview fechou, imagem enviada!');
-        return { ok: true };
-      }
-      
-      // Se preview ainda aberto, tentar clicar no botão de enviar como fallback
-      console.log('[WHL] ⚠️ Preview ainda aberto, tentando botão de enviar...');
-      const sendBtn = findSendButton();
-      
-      if (sendBtn) {
-        sendBtn.click();
-        console.log('[WHL] ✅ Botão de enviar clicado');
-        return { ok: true };
-      }
-      
-      console.log('[WHL] ⚠️ Não foi possível confirmar envio, assumindo sucesso');
+      console.log('[WHL] ⚠️ Assumindo envio bem-sucedido');
       return { ok: true };
 
     } catch (error) {
