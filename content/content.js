@@ -603,17 +603,28 @@
   // IMPORTANTE: Campo de mensagem está no MAIN ou FOOTER, não na sidebar
   // CORRIGIDO: Mais seletores para melhor compatibilidade
   function getMessageInput() {
-    return (
-      document.querySelector('div[aria-label^="Digitar na conversa"][contenteditable="true"]') ||
-      document.querySelector('div[data-tab="10"][contenteditable="true"]') ||
-      document.querySelector('div[data-tab="10"]') ||
-      document.querySelector('#main footer div[contenteditable="true"]') ||
-      document.querySelector('#main footer p[contenteditable="true"]') ||
-      document.querySelector('footer div[contenteditable="true"]') ||
-      document.querySelector('#main footer p._aupe.copyable-text') ||
-      document.querySelector('footer._ak1i div.copyable-area p') ||
-      document.querySelector('#main footer p._aupe')
-    );
+    const selectors = [
+      'div[aria-label^="Digitar na conversa"][contenteditable="true"]',
+      'div[data-tab="10"][contenteditable="true"]',
+      'div[data-tab="10"]',
+      '#main footer div[contenteditable="true"]',
+      '#main footer p[contenteditable="true"]',
+      'footer div[contenteditable="true"]',
+      '#main footer p._aupe.copyable-text',
+      'footer._ak1i div.copyable-area p',
+      '#main footer p._aupe'
+    ];
+    
+    for (const selector of selectors) {
+      const el = document.querySelector(selector);
+      if (el) {
+        console.log('[WHL] 🔍 Campo de mensagem encontrado:', selector);
+        return el;
+      }
+    }
+    
+    console.log('[WHL] ⚠️ Campo de mensagem não encontrado');
+    return null;
   }
 
   /**
@@ -628,18 +639,25 @@
     if (dialog) {
       // Método 1: Procurar por [data-testid="send"]
       const testIdBtn = dialog.querySelector('[data-testid="send"]');
-      if (testIdBtn && !testIdBtn.disabled) return testIdBtn;
+      if (testIdBtn && !testIdBtn.disabled) {
+        console.log('[WHL] 🔍 Botão encontrado: [data-testid="send"] no dialog');
+        return testIdBtn;
+      }
       
       // Método 2: Procurar botão com span que contenha ícone de enviar
       const sendIcon = dialog.querySelector('span[data-icon="send"]');
       if (sendIcon) {
         const btn = sendIcon.closest('button');
-        if (btn && !btn.disabled) return btn;
+        if (btn && !btn.disabled) {
+          console.log('[WHL] 🔍 Botão encontrado: span[data-icon="send"] no dialog');
+          return btn;
+        }
       }
       
       // Fallback: último botão não-disabled
       const buttons = [...dialog.querySelectorAll('button')].filter(b => !b.disabled);
       if (buttons.length > 0) {
+        console.log('[WHL] 🔍 Botão encontrado: último botão do dialog (fallback)');
         return buttons[buttons.length - 1];
       }
     }
@@ -649,18 +667,27 @@
     if (footer) {
       // Método 1: Procurar por [data-testid="send"]
       const testIdBtn = footer.querySelector('[data-testid="send"]');
-      if (testIdBtn && !testIdBtn.disabled) return testIdBtn;
+      if (testIdBtn && !testIdBtn.disabled) {
+        console.log('[WHL] 🔍 Botão encontrado: [data-testid="send"] no footer');
+        return testIdBtn;
+      }
       
       // Método 2: Procurar botão com span que contenha ícone de enviar
       const sendIcon = footer.querySelector('span[data-icon="send"]');
       if (sendIcon) {
         const btn = sendIcon.closest('button');
-        if (btn && !btn.disabled) return btn;
+        if (btn && !btn.disabled) {
+          console.log('[WHL] 🔍 Botão encontrado: span[data-icon="send"] no footer');
+          return btn;
+        }
       }
       
       // Fallback: primeiro botão não-disabled no footer
       const btn = [...footer.querySelectorAll('button')].find(b => !b.disabled);
-      if (btn) return btn;
+      if (btn) {
+        console.log('[WHL] 🔍 Botão encontrado: primeiro botão do footer (fallback)');
+        return btn;
+      }
     }
 
     // Terceiro: Procurar em #main (caso footer não seja encontrado)
@@ -668,16 +695,23 @@
     if (main) {
       // Método 1: Procurar por [data-testid="send"]
       const testIdBtn = main.querySelector('[data-testid="send"]');
-      if (testIdBtn && !testIdBtn.disabled) return testIdBtn;
+      if (testIdBtn && !testIdBtn.disabled) {
+        console.log('[WHL] 🔍 Botão encontrado: [data-testid="send"] no main');
+        return testIdBtn;
+      }
       
       // Método 2: Procurar por span[data-icon="send"]
       const sendIcon = main.querySelector('span[data-icon="send"]');
       if (sendIcon) {
         const btn = sendIcon.closest('button');
-        if (btn && !btn.disabled) return btn;
+        if (btn && !btn.disabled) {
+          console.log('[WHL] 🔍 Botão encontrado: span[data-icon="send"] no main');
+          return btn;
+        }
       }
     }
 
+    console.log('[WHL] ⚠️ Botão de enviar não encontrado em nenhum local');
     return null;
   }
 
@@ -2299,15 +2333,32 @@ try {
   // ===== IMAGE AUTO SEND (FROM ORIGINAL) =====
   // CORRIGIDO: Prioriza seletores exatos [data-testid="clip"] e span[data-icon="clip"]
   function getAttachButton() {
-      return (
-        document.querySelector('[data-testid="clip"]') ||
-        document.querySelector('span[data-icon="clip"]')?.closest('button') ||
-        document.querySelector('button[aria-label*="Anexar"]') ||
-        document.querySelector('[aria-label="Anexar"]') ||
-        document.querySelector('span[data-icon="attach-menu-plus"]')?.closest('button') ||
-        document.querySelector('footer button[title*="Anexar"]')
-      );
+    const selectors = [
+      '[data-testid="clip"]',
+      'span[data-icon="clip"]',
+      'button[aria-label*="Anexar"]',
+      '[aria-label="Anexar"]',
+      'span[data-icon="attach-menu-plus"]',
+      'footer button[title*="Anexar"]'
+    ];
+    
+    for (const selector of selectors) {
+      let el = document.querySelector(selector);
+      
+      // Se for span, pegar o botão pai
+      if (el && el.tagName === 'SPAN') {
+        el = el.closest('button');
+      }
+      
+      if (el) {
+        console.log('[WHL] 🔍 Botão de anexar encontrado:', selector);
+        return el;
+      }
     }
+    
+    console.log('[WHL] ⚠️ Botão de anexar não encontrado');
+    return null;
+  }
 
 
   // ===== IMAGE AUTO SEND (FROM ORIGINAL) =====
