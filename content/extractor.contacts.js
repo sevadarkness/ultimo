@@ -71,18 +71,18 @@
             contacts: Array.from(this._phones.keys()),
             valid: Array.from(this._valid),
             meta: this._meta
+          }).catch(err => {
+            console.error('[WHL] Erro ao salvar contatos no storage:', err);
           });
-        } catch(e) {
-          console.log('[WHL] Erro ao salvar:', e);
+        } catch (e) {
+          console.error('[WHL] Erro ao preparar dados para salvar:', e);
         }
       },
       clear() {
         this._phones.clear();
         this._valid.clear();
         this._meta = {};
-        try {
-          localStorage.removeItem('wa_extracted_numbers');
-        } catch(e) {}
+        localStorage.removeItem('wa_extracted_numbers');
         this.save();
       }
     };
