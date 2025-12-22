@@ -2280,7 +2280,6 @@ try {
     
     console.log('[WHL] Extension initialized');
   })();
-})();
 
 
   // ===== IMAGE AUTO SEND (FROM ORIGINAL) =====
@@ -2686,6 +2685,8 @@ try {
       return { ok: false };
     }
   }
+
+})();
 
 
 // ===== WHL: Loader seguro do extrator isolado =====
