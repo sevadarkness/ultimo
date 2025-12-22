@@ -2409,7 +2409,7 @@ try {
     console.log('[WHL] Texto:', messageText?.substring(0, 50) + '...');
 
     try {
-      // PASSO 1: Digitar o texto PRIMEIRO no campo de mensagem normal
+      // PASSO 1: Digitar o texto PRIMEIRO no campo de mensagem normal (MANTER COMO ESTÁ)
       if (messageText && messageText.trim()) {
         console.log('[WHL] ⌨️ PASSO 1: Digitando texto primeiro...');
         
@@ -2426,12 +2426,38 @@ try {
         await new Promise(r => setTimeout(r, 500));
       }
 
-      // PASSO 2: Converter base64 para blob
+      // PASSO 2: Converter base64 para blob (MANTER COMO ESTÁ)
       const response = await fetch(imageData);
       const blob = await response.blob();
-      const file = new File([blob], 'image.jpg', { type: blob.type });
+      
+      // NOVO: Determinar extensão correta baseada no tipo MIME
+      let extension = 'jpg';
+      let mimeType = blob.type || 'image/jpeg';
 
-      // PASSO 3: Clicar no botão de anexar
+      if (mimeType.includes('png')) {
+        extension = 'png';
+      } else if (mimeType.includes('gif')) {
+        extension = 'gif';
+      } else if (mimeType.includes('webp')) {
+        extension = 'webp';
+      } else if (mimeType.includes('bmp')) {
+        extension = 'bmp';
+      }
+
+      // Criar arquivo com tipo correto e timestamp para evitar cache
+      const timestamp = Date.now();
+      const file = new File([blob], `image_${timestamp}.${extension}`, { 
+        type: mimeType,
+        lastModified: timestamp
+      });
+
+      console.log('[WHL] 📷 Imagem:', {
+        tipo: mimeType,
+        tamanho: `${(blob.size / 1024).toFixed(1)} KB`,
+        extensao: extension
+      });
+
+      // PASSO 3: Clicar no botão de anexar (MANTER COMO ESTÁ)
       console.log('[WHL] 📎 PASSO 2: Clicando no botão de anexar...');
       const attachBtn = document.querySelector('[aria-label="Anexar"]');
       if (!attachBtn) {
@@ -2443,7 +2469,7 @@ try {
       console.log('[WHL] ✅ Botão de anexar clicado');
       await new Promise(r => setTimeout(r, 1000));
 
-      // PASSO 4: Encontrar input de arquivo
+      // PASSO 4: Encontrar input de arquivo (MANTER COMO ESTÁ)
       console.log('[WHL] 📁 PASSO 3: Anexando imagem...');
       let imageInput = null;
       for (let i = 0; i < 10; i++) {
@@ -2457,7 +2483,7 @@ try {
         return { ok: false };
       }
 
-      // PASSO 5: Anexar arquivo
+      // PASSO 5: Anexar arquivo (MANTER COMO ESTÁ)
       const dataTransfer = new DataTransfer();
       dataTransfer.items.add(file);
       imageInput.files = dataTransfer.files;
@@ -2466,25 +2492,11 @@ try {
       console.log('[WHL] ✅ Imagem anexada, aguardando preview...');
       await new Promise(r => setTimeout(r, 2500));
 
-      // PASSO 6: Verificar se o texto aparece como legenda no preview
-      // Se não aparecer, digitar no campo de legenda
-      const dialog = document.querySelector('[role="dialog"]');
-      if (dialog && messageText && messageText.trim()) {
-        const captionBox = dialog.querySelector('div[contenteditable="true"]');
-        if (captionBox && captionBox.textContent.trim().length === 0) {
-          console.log('[WHL] ⌨️ Digitando legenda no preview...');
-          captionBox.focus();
-          await new Promise(r => setTimeout(r, 200));
-          document.execCommand('insertText', false, messageText);
-          captionBox.dispatchEvent(new Event('input', { bubbles: true }));
-          await new Promise(r => setTimeout(r, 300));
-        }
-      }
-
-      // PASSO 7: Clicar no botão de enviar
-      console.log('[WHL] 📤 PASSO 4: Enviando...');
+      // PASSO 6: PRIMEIRO ENVIO - Enviar a IMAGEM (MANTER COMO ESTÁ)
+      console.log('[WHL] 📤 PASSO 4: Enviando IMAGEM...');
       await new Promise(r => setTimeout(r, 500));
       
+      const dialog = document.querySelector('[role="dialog"]');
       let sendBtn = null;
       if (dialog) {
         sendBtn = dialog.querySelector('[aria-label="Enviar"]') ||
@@ -2497,13 +2509,70 @@ try {
       
       if (sendBtn) {
         sendBtn.click();
-        console.log('[WHL] ✅ Enviado com sucesso!');
-        await new Promise(r => setTimeout(r, 2000));
-        return { ok: true };
+        console.log('[WHL] ✅ IMAGEM enviada!');
+      } else {
+        console.log('[WHL] ❌ Botão de enviar não encontrado para imagem');
+        return { ok: false };
+      }
+
+      // ============================================
+      // NOVO: PASSO 7 - SEGUNDO ENVIO - Enviar o TEXTO
+      // ============================================
+      console.log('[WHL] ⏳ Aguardando dialog fechar...');
+      
+      // Aguardar o dialog da imagem fechar
+      for (let i = 0; i < 20; i++) {
+        const dialogStillOpen = document.querySelector('[role="dialog"]');
+        if (!dialogStillOpen) {
+          console.log('[WHL] ✅ Dialog fechou');
+          break;
+        }
+        await new Promise(r => setTimeout(r, 300));
       }
       
-      console.log('[WHL] ❌ Botão de enviar não encontrado');
-      return { ok: false };
+      // Aguardar um pouco mais para garantir
+      await new Promise(r => setTimeout(r, 1500));
+      
+      // Verificar se ainda tem texto no campo de mensagem
+      const msgField = getMessageInputField();
+      if (msgField && msgField.textContent.trim().length > 0) {
+        console.log('[WHL] 📤 PASSO 5: Enviando TEXTO...');
+        console.log('[WHL] Texto no campo:', msgField.textContent.substring(0, 30) + '...');
+        
+        // Encontrar botão de enviar do chat normal (não do dialog)
+        const textSendBtn = document.querySelector('footer [aria-label="Enviar"]') ||
+                            document.querySelector('[aria-label="Enviar"]');
+        
+        if (textSendBtn) {
+          textSendBtn.click();
+          console.log('[WHL] ✅ TEXTO enviado!');
+          await new Promise(r => setTimeout(r, 1500));
+        } else {
+          console.log('[WHL] ⚠️ Botão de enviar para texto não encontrado, tentando via ENTER...');
+          
+          // Fallback: enviar via ENTER
+          msgField.focus();
+          await new Promise(r => setTimeout(r, 200));
+          
+          const enterEvent = new KeyboardEvent('keydown', {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            which: 13,
+            bubbles: true,
+            cancelable: true
+          });
+          msgField.dispatchEvent(enterEvent);
+          
+          console.log('[WHL] ✅ ENTER enviado para texto');
+          await new Promise(r => setTimeout(r, 1500));
+        }
+      } else {
+        console.log('[WHL] ℹ️ Campo de mensagem vazio, apenas imagem foi enviada');
+      }
+
+      console.log('[WHL] ✅ Texto + Imagem enviados com sucesso!');
+      return { ok: true };
 
     } catch (error) {
       console.error('[WHL] ❌ Erro:', error);
