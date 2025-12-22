@@ -798,120 +798,41 @@
   }
 
   /**
-   * Clica no botão enviar (para mensagens de texto via URL)
+   * Envia mensagem via tecla ENTER (para mensagens de texto via URL)
+   * Nota: Nome mantido como clickSendButton() por compatibilidade, mas agora usa ENTER
    */
   async function clickSendButton() {
-    console.log('[WHL] 🔍 Procurando botão de enviar...');
+    console.log('[WHL] 📤 Enviando mensagem via tecla ENTER...');
     
-    // Aguardar um pouco para garantir que o botão está renderizado
+    // Aguardar um pouco para garantir que o chat está carregado
     await new Promise(r => setTimeout(r, 500));
     
-    // Seletores em ordem de prioridade (baseados no que o usuário forneceu)
-    const selectors = [
-      '#main footer._ak1i div._ak1r button',
-      'footer._ak1i div._ak1r button',
-      'footer._ak1i button[aria-label="Enviar"]',
-      'footer button[aria-label="Enviar"]',
-      'button[data-testid="send"]',
-      '[data-testid="send"]',
-      // Seletor genérico para botão de enviar no footer
-      '#main footer button:last-child',
-      'footer._ak1i button'
-    ];
+    // Obter o campo de mensagem usando helper
+    const msgInput = getMessageInputField();
     
-    let sendButton = null;
-    let foundVia = '';
-    
-    // Tentar encontrar botão pelos seletores
-    for (const selector of selectors) {
-      const el = document.querySelector(selector);
-      if (el) {
-        // Se for um span, pegar o botão pai
-        if (el.tagName.toLowerCase() === 'span') {
-          sendButton = el.closest('button');
-          foundVia = `${selector} (via closest button)`;
-        } else {
-          sendButton = el;
-          foundVia = selector;
-        }
-        if (sendButton) {
-          console.log('[WHL] ✅ Botão encontrado com seletor:', foundVia);
-          break;
-        }
-      }
-    }
-    
-    // Fallback: procurar pelo ícone send
-    if (!sendButton) {
-      const sendIcon = document.querySelector('span[data-icon="send"]');
-      if (sendIcon) {
-        sendButton = sendIcon.closest('button');
-        if (sendButton) {
-          console.log('[WHL] ✅ Botão encontrado via ícone send');
-        }
-      }
-    }
-    
-    if (sendButton) {
-      console.log('[WHL] 🖱️ Clicando no botão de enviar...');
+    if (msgInput) {
+      console.log('[WHL] ✅ Campo de mensagem encontrado');
       
-      // Método 1: Click direto
-      sendButton.click();
-      await new Promise(r => setTimeout(r, 300));
-      
-      // Verificar se mensagem ainda está no campo
-      let msgInput = getMessageInputField();
-      
-      if (msgInput && msgInput.textContent.trim().length > 0) {
-        console.log('[WHL] ⚠️ Mensagem ainda no campo, tentando eventos de mouse...');
-        
-        // Método 2: Eventos de mouse completos
-        await dispatchMouseEvents(sendButton);
-        await new Promise(r => setTimeout(r, 300));
-        
-        msgInput = getMessageInputField();
-      }
+      // Enviar tecla ENTER usando helper
+      await sendEnterKey(msgInput);
+      console.log('[WHL] ✅ Tecla ENTER enviada');
       
       // Verificar se mensagem foi enviada
-      if (!msgInput || msgInput.textContent.trim().length === 0) {
+      const checkInput = getMessageInputField();
+      if (!checkInput || checkInput.textContent.trim().length === 0) {
         console.log('[WHL] ✅ Mensagem enviada com sucesso!');
         return { success: true };
       }
       
-      // Método 3: Tentar via ENTER como último recurso
-      console.log('[WHL] ⚠️ Tentando via tecla ENTER...');
-      await sendEnterKey(msgInput);
-      
-      // Verificar novamente
-      const finalCheck = getMessageInputField();
-      if (!finalCheck || finalCheck.textContent.trim().length === 0) {
-        console.log('[WHL] ✅ Mensagem enviada via ENTER!');
-        return { success: true };
-      }
-      
-      // Se chegou aqui, ainda tem mensagem no campo
-      console.log('[WHL] ⚠️ Mensagem ainda presente após todas as tentativas');
-      // Retornar sucesso parcial - pelo menos encontramos e clicamos o botão
+      console.log('[WHL] ⚠️ Mensagem ainda presente no campo');
       return { success: true, warning: 'Não foi possível verificar se mensagem foi enviada' };
     }
     
-    console.log('[WHL] ❌ Botão enviar não encontrado');
-    console.log('[WHL] DEBUG: Elementos no footer:', document.querySelector('#main footer')?.innerHTML?.substring(0, 500));
-    
-    // Última tentativa: ENTER direto no campo de mensagem
-    const msgInput = getMessageInputField();
-    
-    if (msgInput) {
-      console.log('[WHL] 🔄 Tentando enviar via ENTER no campo de mensagem...');
-      await sendEnterKey(msgInput);
-      console.log('[WHL] ✅ ENTER enviado');
-      return { success: true };
-    }
-    
-    return { success: false, error: 'Botão enviar não encontrado e ENTER falhou' };
+    console.log('[WHL] ❌ Campo de mensagem não encontrado');
+    return { success: false, error: 'Campo de mensagem não encontrado' };
   }
 
-  // DEPRECATED: sendTextMessage removido - agora usa clickSendButton() após navegação via URL
+  // DEPRECATED: sendTextMessage removido - agora envia via tecla ENTER após navegação via URL
 
   /**
    * Fecha popup de número inválido
@@ -1398,12 +1319,26 @@
         console.log('[WHL] ❌ Falha ao enviar imagem');
       }
     } else if (st.currentMessage) {
-      // Se é apenas texto, clicar no botão enviar
+      // Se é apenas texto, enviar via ENTER
       // (texto já foi inserido via URL parameter)
-      console.log('[WHL] 📝 Enviando texto...');
+      console.log('[WHL] 📝 Enviando texto via ENTER...');
       await new Promise(r => setTimeout(r, 1000));
-      const sendResult = await clickSendButton();
-      success = sendResult && sendResult.success;
+      
+      // Obter o campo de mensagem usando helper
+      const msgInput = getMessageInputField();
+      
+      if (msgInput) {
+        // Enviar tecla ENTER usando helper
+        await sendEnterKey(msgInput);
+        console.log('[WHL] ✅ ENTER enviado');
+        
+        // Verificar se mensagem foi enviada
+        const checkInput = getMessageInputField();
+        success = !checkInput || checkInput.textContent.trim().length === 0;
+      } else {
+        console.log('[WHL] ❌ Campo de mensagem não encontrado');
+        success = false;
+      }
       
       if (success) {
         console.log('[WHL] ✅ Texto enviado');
