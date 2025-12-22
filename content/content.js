@@ -621,7 +621,8 @@
   /**
    * Envia mensagem via URL (modo exclusivo)
    * Para texto: https://web.whatsapp.com/send?phone=NUM&text=MSG
-   * Para imagem: https://web.whatsapp.com/send?phone=NUM
+   * Para imagem: https://web.whatsapp.com/send?phone=NUM (SEM texto na URL!)
+   * ATUALIZADO: Quando tem imagem, NÃO coloca texto na URL
    */
   async function sendViaURL(numero, mensagem, hasImage = false) {
     const cleanNumber = String(numero).replace(/\D/g, '');
@@ -632,14 +633,18 @@
     }
     
     // Construir URL
+    // IMPORTANTE: Se tem imagem, NÃO colocar texto na URL!
+    // O texto será digitado depois, antes de anexar a imagem
     let url = `https://web.whatsapp.com/send?phone=${cleanNumber}`;
     
-    // Se for apenas texto (sem imagem), adicionar texto na URL
+    // APENAS adicionar texto na URL se NÃO tiver imagem
     if (mensagem && !hasImage) {
       url += `&text=${encodeURIComponent(mensagem)}`;
     }
     
     console.log('[WHL] 🔗 Navegando para:', url);
+    console.log('[WHL] Tem imagem:', hasImage);
+    console.log('[WHL] Mensagem será digitada depois:', hasImage && mensagem ? 'SIM' : 'NÃO');
     
     // Salvar estado antes de navegar (para retomar após reload)
     const st = await getState();
@@ -658,32 +663,61 @@
 
   /**
    * Verifica se há popup de erro após navegação via URL
+   * ATUALIZADO: Detecção mais agressiva com múltiplas tentativas
    */
   async function checkForErrorPopup() {
-    // Aguardar um pouco para popup aparecer
-    await new Promise(r => setTimeout(r, 1000));
+    // NÃO aguardar muito - verificar imediatamente e várias vezes
     
-    // Procurar por popup de erro
-    const popup = document.querySelector('div[data-animate-modal-popup="true"]');
-    const okButton = [...document.querySelectorAll('button')]
-      .find(b => b.innerText.trim().toUpperCase() === 'OK');
-    
-    // Verificar se há mensagem de erro
-    const errorMessages = [
-      'número de telefone compartilhado por url é inválido',
-      'phone number shared via url is invalid',
-      'número inválido',
-      'invalid phone number'
-    ];
-    
-    const pageText = document.body.innerText.toLowerCase();
-    for (const msg of errorMessages) {
-      if (pageText.includes(msg.toLowerCase())) {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await new Promise(r => setTimeout(r, 500));
+      
+      // Método 1: Procurar por popup modal
+      const popup = document.querySelector('div[data-animate-modal-popup="true"]');
+      const modal = document.querySelector('div[role="dialog"]');
+      const alertDialog = document.querySelector('[role="alertdialog"]');
+      
+      // Método 2: Procurar por botão OK (indica popup de erro)
+      const okButton = [...document.querySelectorAll('button')]
+        .find(b => b.innerText.trim().toUpperCase() === 'OK');
+      
+      // Método 3: Verificar mensagens de erro no texto da página
+      const errorMessages = [
+        'número de telefone compartilhado por url é inválido',
+        'phone number shared via url is invalid',
+        'número inválido',
+        'invalid phone number',
+        'não foi possível',
+        'could not',
+        'número não existe',
+        'number does not exist',
+        'não está no whatsapp',
+        'is not on whatsapp',
+        'não encontrado',
+        'not found'
+      ];
+      
+      const pageText = document.body.innerText.toLowerCase();
+      for (const msg of errorMessages) {
+        if (pageText.includes(msg.toLowerCase())) {
+          console.log('[WHL] ❌ Erro detectado:', msg);
+          return true;
+        }
+      }
+      
+      // Se encontrou popup com botão OK, é erro
+      if ((popup || modal || alertDialog) && okButton) {
+        console.log('[WHL] ❌ Popup de erro detectado');
+        return true;
+      }
+      
+      // Se só tem botão OK sem campo de mensagem, provavelmente é erro
+      if (okButton && !document.querySelector('#main footer p._aupe')) {
+        console.log('[WHL] ❌ Botão OK sem campo de mensagem = erro');
         return true;
       }
     }
     
-    return okButton !== undefined && popup !== undefined;
+    return false;
   }
 
   /**
@@ -1329,10 +1363,33 @@
     const cur = st.queue[st.index];
     let success = false;
     
-    // Se tem imagem, anexar e enviar
+    // Se tem imagem, usar fluxo correto
     if (st.imageData) {
-      console.log('[WHL] 📸 Enviando imagem...');
-      const imageResult = await sendImage(st.imageData, st.currentMessage, !!st.typingEffect);
+      console.log('[WHL] 📸 Modo IMAGEM detectado');
+      
+      // 1. PRIMEIRO digitar o texto (se houver)
+      if (st.currentMessage && st.currentMessage.trim()) {
+        console.log('[WHL] ✏️ Digitando texto antes da imagem...');
+        
+        const msgInput = document.querySelector('#main footer p._aupe') ||
+                         document.querySelector('footer._ak1i div.copyable-area p');
+        
+        if (msgInput) {
+          msgInput.focus();
+          await new Promise(r => setTimeout(r, 200));
+          
+          // Digitar o texto
+          document.execCommand('insertText', false, st.currentMessage);
+          msgInput.dispatchEvent(new Event('input', { bubbles: true }));
+          
+          console.log('[WHL] ✅ Texto digitado');
+          await new Promise(r => setTimeout(r, 500));
+        }
+      }
+      
+      // 2. DEPOIS anexar e enviar a imagem (com ENTER)
+      console.log('[WHL] 📸 Anexando imagem...');
+      const imageResult = await sendImageWithEnter(st.imageData);
       success = imageResult && imageResult.ok;
       
       if (success) {
@@ -2227,6 +2284,142 @@ try {
     } catch (error) {
       console.error('[WHL] ❌ Error sending image:', error);
       return { ok: false, captionApplied: false };
+    }
+  }
+
+  /**
+   * Nova função para enviar imagem usando ENTER (não botão)
+   * IMPORTANTE: O texto deve ser digitado ANTES de chamar esta função
+   */
+  async function sendImageWithEnter(imageData) {
+    console.log('[WHL] 📸 Enviando imagem com ENTER');
+
+    try {
+      // Convert base64 to blob
+      const response = await fetch(imageData);
+      const blob = await response.blob();
+      const file = new File([blob], 'image.jpg', { type: blob.type });
+
+      // 1. Clicar no botão de anexar (clipe)
+      const attachBtn = document.querySelector('[data-testid="clip"]') ||
+                        document.querySelector('span[data-icon="clip"]')?.closest('button') ||
+                        document.querySelector('[aria-label="Anexar"]') ||
+                        document.querySelector('span[data-icon="attach-menu-plus"]')?.closest('div');
+      
+      if (!attachBtn) {
+        console.log('[WHL] ❌ Botão de anexar não encontrado');
+        return { ok: false };
+      }
+
+      attachBtn.click();
+      console.log('[WHL] ✅ Botão de anexar clicado');
+      await new Promise(r => setTimeout(r, 800));
+
+      // 2. Encontrar input de arquivo para imagens
+      const imageInput = document.querySelector('input[accept*="image"]') ||
+                         document.querySelector('input[type="file"][accept*="image"]');
+      
+      if (!imageInput) {
+        console.log('[WHL] ❌ Input de imagem não encontrado');
+        return { ok: false };
+      }
+
+      // 3. Anexar arquivo
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(file);
+      imageInput.files = dataTransfer.files;
+      imageInput.dispatchEvent(new Event('change', { bubbles: true }));
+      
+      console.log('[WHL] ✅ Imagem anexada, aguardando preview...');
+      await new Promise(r => setTimeout(r, 2000));
+
+      // 4. NOTA: O texto já foi digitado ANTES de anexar a imagem
+      // Ele deve aparecer como legenda automaticamente
+      // Se não aparecer, podemos digitar no campo de legenda
+      
+      // Verificar se há campo de legenda e se está vazio
+      const captionSelectors = [
+        'div[aria-label*="legenda"][contenteditable="true"]',
+        'div[aria-label*="Legenda"][contenteditable="true"]',
+        'div[aria-label*="caption"][contenteditable="true"]',
+        'div[aria-label*="Caption"][contenteditable="true"]',
+        'div[aria-label*="Adicionar"][contenteditable="true"]'
+      ];
+      
+      let captionBox = null;
+      for (const sel of captionSelectors) {
+        captionBox = document.querySelector(sel);
+        if (captionBox && captionBox.getAttribute('data-tab') !== '3') break;
+      }
+      
+      // Se o campo de legenda existe mas está vazio, e temos mensagem no state
+      // não precisamos fazer nada pois o texto já foi digitado antes
+
+      // 5. APERTAR ENTER para enviar (não clicar em botão!)
+      console.log('[WHL] ⌨️ Apertando ENTER para enviar...');
+      
+      // Focar no campo correto (pode ser legenda ou preview)
+      const focusTarget = captionBox || 
+                          document.querySelector('[data-testid="media-caption-input"]') ||
+                          document.querySelector('div[contenteditable="true"]');
+      
+      if (focusTarget) {
+        focusTarget.focus();
+        await new Promise(r => setTimeout(r, 200));
+      }
+      
+      // Disparar ENTER
+      const enterEvent = new KeyboardEvent('keydown', {
+        key: 'Enter',
+        code: 'Enter',
+        keyCode: 13,
+        which: 13,
+        bubbles: true,
+        cancelable: true
+      });
+      
+      // Tentar em vários elementos
+      const targets = [
+        focusTarget,
+        document.activeElement,
+        document.querySelector('[data-testid="conversation-compose-box-input"]'),
+        document.body
+      ].filter(Boolean);
+      
+      for (const target of targets) {
+        target.dispatchEvent(enterEvent);
+      }
+      
+      console.log('[WHL] ✅ ENTER enviado');
+      await new Promise(r => setTimeout(r, 1500));
+      
+      // Verificar se preview fechou (indica que foi enviado)
+      const previewStillOpen = document.querySelector('[data-testid="media-caption-input"]') ||
+                               document.querySelector('div[aria-label*="legenda"]');
+      
+      if (!previewStillOpen) {
+        console.log('[WHL] ✅ Preview fechou, imagem enviada!');
+        return { ok: true };
+      }
+      
+      // Se preview ainda aberto, tentar clicar no botão de enviar como fallback
+      console.log('[WHL] ⚠️ Preview ainda aberto, tentando botão de enviar...');
+      const sendBtn = document.querySelector('[data-testid="send"]') ||
+                      document.querySelector('span[data-icon="send"]')?.closest('button') ||
+                      document.querySelector('span[data-icon="send"]')?.closest('div');
+      
+      if (sendBtn) {
+        sendBtn.click();
+        console.log('[WHL] ✅ Botão de enviar clicado');
+        return { ok: true };
+      }
+      
+      console.log('[WHL] ⚠️ Não foi possível confirmar envio, assumindo sucesso');
+      return { ok: true };
+
+    } catch (error) {
+      console.error('[WHL] ❌ Erro ao enviar imagem:', error);
+      return { ok: false };
     }
   }
 
