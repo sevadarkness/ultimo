@@ -617,38 +617,78 @@
     }
     
     console.log('[WHL] ⌨️ Digitando texto manualmente...');
+    console.log('[WHL] Texto a digitar:', text.substring(0, 50) + '...');
     
-    // Aguardar campo carregar
+    // Aguardar campo carregar com mais tentativas
     let msgInput = null;
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 15; i++) {
       msgInput = getMessageInputField();
+      console.log(`[WHL] Tentativa ${i+1}/15 - Campo encontrado:`, !!msgInput);
       if (msgInput) break;
       await new Promise(r => setTimeout(r, 500));
     }
     
     if (!msgInput) {
-      console.log('[WHL] ❌ Campo de mensagem não encontrado após 5s');
+      console.log('[WHL] ❌ Campo de mensagem não encontrado após 7.5s');
+      // Log dos seletores para debug
+      console.log('[WHL] Debug seletores:');
+      console.log('[WHL]   aria-label^="Digitar":', !!document.querySelector('div[aria-label^="Digitar na conversa"][contenteditable="true"]'));
+      console.log('[WHL]   data-tab="10":', !!document.querySelector('div[data-tab="10"][contenteditable="true"]'));
+      console.log('[WHL]   #main footer div:', !!document.querySelector('#main footer div[contenteditable="true"]'));
+      console.log('[WHL]   footer div:', !!document.querySelector('footer div[contenteditable="true"]'));
       return false;
     }
     
+    console.log('[WHL] ✅ Campo de mensagem encontrado');
+    
     // Focar no campo
     msgInput.focus();
-    await new Promise(r => setTimeout(r, 200));
+    await new Promise(r => setTimeout(r, 300));
     
     // Limpar campo existente
     msgInput.textContent = '';
     msgInput.dispatchEvent(new Event('input', { bubbles: true }));
-    await new Promise(r => setTimeout(r, 100));
+    await new Promise(r => setTimeout(r, 150));
     
-    // Digitar usando execCommand (funciona com React)
+    // MÉTODO 1: execCommand (funciona com React)
+    console.log('[WHL] Tentando Método 1: execCommand...');
     document.execCommand('insertText', false, text);
     msgInput.dispatchEvent(new Event('input', { bubbles: true }));
-    
     await new Promise(r => setTimeout(r, 300));
     
-    // Verificar se texto foi inserido
-    const inserted = msgInput.textContent.trim().length > 0;
-    console.log('[WHL]', inserted ? '✅' : '❌', 'Texto digitado:', text.substring(0, 30) + '...');
+    let inserted = msgInput.textContent.trim().length > 0;
+    console.log('[WHL] Método 1 resultado:', inserted ? '✅ Sucesso' : '❌ Falhou');
+    
+    // MÉTODO 2: textContent + InputEvent
+    if (!inserted) {
+      console.log('[WHL] Tentando Método 2: textContent + InputEvent...');
+      msgInput.textContent = text;
+      msgInput.dispatchEvent(new InputEvent('input', { 
+        bubbles: true, 
+        inputType: 'insertText',
+        data: text 
+      }));
+      await new Promise(r => setTimeout(r, 300));
+      inserted = msgInput.textContent.trim().length > 0;
+      console.log('[WHL] Método 2 resultado:', inserted ? '✅ Sucesso' : '❌ Falhou');
+    }
+    
+    // MÉTODO 3: Digitação caractere por caractere
+    if (!inserted) {
+      console.log('[WHL] Tentando Método 3: digitação caractere por caractere...');
+      msgInput.focus();
+      msgInput.textContent = '';
+      for (const char of text) {
+        msgInput.textContent += char;
+        msgInput.dispatchEvent(new Event('input', { bubbles: true }));
+        await new Promise(r => setTimeout(r, 15));
+      }
+      await new Promise(r => setTimeout(r, 300));
+      inserted = msgInput.textContent.trim().length > 0;
+      console.log('[WHL] Método 3 resultado:', inserted ? '✅ Sucesso' : '❌ Falhou');
+    }
+    
+    console.log('[WHL]', inserted ? '✅' : '❌', 'Texto final no campo:', msgInput.textContent.substring(0, 50) + '...');
     
     return inserted;
   }
@@ -785,7 +825,7 @@
       }
       
       // Se só tem botão OK sem campo de mensagem, provavelmente é erro
-      if (okButton && !document.querySelector('#main footer p._aupe')) {
+      if (okButton && !getMessageInputField()) {
         console.log('[WHL] ❌ Botão OK sem campo de mensagem = erro');
         return true;
       }
@@ -817,11 +857,11 @@
     const start = Date.now();
     
     while (Date.now() - start < timeout) {
-      // Verificar se o chat abriu (footer com campo de mensagem existe)
-      const messageField = document.querySelector('#main footer p._aupe') ||
-                           document.querySelector('footer._ak1i div.copyable-area');
+      // Usar getMessageInputField() que tem seletores corretos
+      const messageField = getMessageInputField();
       
       if (messageField) {
+        console.log('[WHL] ✅ Chat aberto - campo de mensagem encontrado');
         return true;
       }
       
@@ -833,6 +873,7 @@
       await new Promise(r => setTimeout(r, 500));
     }
     
+    console.log('[WHL] ⚠️ Timeout aguardando chat abrir');
     return false;
   }
 
@@ -841,11 +882,22 @@
    * CORRIGIDO: Usa mesmos seletores que getMessageInput() para consistência
    */
   function getMessageInputField() {
-    return document.querySelector('div[aria-label^="Digitar na conversa"][contenteditable="true"]') ||
-           document.querySelector('div[data-tab="10"][contenteditable="true"]') ||
-           document.querySelector('#main footer div[contenteditable="true"]') ||
-           document.querySelector('footer div[contenteditable="true"]') ||
-           document.querySelector('#main footer p[contenteditable="true"]');
+    const selectors = [
+      'div[aria-label^="Digitar na conversa"][contenteditable="true"]',
+      'div[aria-label^="Type a message"][contenteditable="true"]',
+      'div[data-tab="10"][contenteditable="true"]',
+      '#main footer div[contenteditable="true"]',
+      'footer div[contenteditable="true"]',
+      '#main footer p[contenteditable="true"]',
+      'div.copyable-text[contenteditable="true"]'
+    ];
+    
+    for (const selector of selectors) {
+      const el = document.querySelector(selector);
+      if (el) return el;
+    }
+    
+    return null;
   }
 
   /**
@@ -1501,110 +1553,6 @@
       await render();
       console.log('[WHL] 🎉 Campanha finalizada!');
     }
-  }
-
-  // DEPRECATED: Old processCampaignStep (uses page reload)
-  async function processCampaignStep() {
-    const msgInput = getMessageInput();
-    if (!msgInput) return false;
-    
-    msgInput.focus();
-    
-    // Disparar Enter
-    const enterEvent = new KeyboardEvent('keydown', {
-      key: 'Enter',
-      code: 'Enter',
-      keyCode: 13,
-      which: 13,
-      bubbles: true,
-      cancelable: true
-    });
-    msgInput.dispatchEvent(enterEvent);
-    
-    return true;
-  }
-
-  async function waitForPageLoad() {
-    const maxWait = 20000;
-    const start = Date.now();
-    
-    while (Date.now() - start < maxWait) {
-      // Verificar se o campo de mensagem E botão de enviar existem
-      const messageInput = getMessageInput();
-      const sendButton = getSendButton();
-      
-      if (messageInput && sendButton) {
-        console.log('[WHL] ✅ Chat carregado, pronto para enviar');
-        return true;
-      }
-      
-      // Log de debug
-      if (Date.now() - start > 5000) {
-        console.log('[WHL] Aguardando chat carregar...', {
-          messageInput: !!messageInput,
-          sendButton: !!sendButton
-        });
-      }
-      
-      await new Promise(r => setTimeout(r, 500));
-    }
-    
-    console.log('[WHL] ⚠️ Timeout aguardando chat carregar');
-    return false;
-  }
-
-  async function autoSendMessage() {
-    console.log('[WHL] Tentando enviar mensagem...');
-    
-    // Aguardar um pouco para garantir que a mensagem foi preenchida via URL
-    await new Promise(r => setTimeout(r, 2000));
-    
-    // Tentar encontrar o botão de enviar
-    const sendButton = getSendButton();
-    
-    if (sendButton) {
-      console.log('[WHL] Botão de enviar encontrado:', sendButton);
-      
-      // Simular clique robusto
-      simulateClick(sendButton);
-      console.log('[WHL] Clique simulado no botão de enviar');
-      
-      // Aguardar um pouco
-      await new Promise(r => setTimeout(r, 1000));
-      
-      // Verificar se a mensagem foi enviada (campo de input deve estar vazio)
-      const msgInput = getMessageInput();
-      if (msgInput && msgInput.textContent.trim() === '') {
-        console.log('[WHL] ✅ Mensagem enviada com sucesso!');
-        return true;
-      }
-      
-      // Se ainda tem texto, tentar via Enter
-      console.log('[WHL] Tentando enviar via tecla Enter...');
-      await sendViaEnterKey();
-      await new Promise(r => setTimeout(r, 1000));
-      
-      return true;
-    }
-    
-    // Fallback: tentar enviar via Enter direto
-    console.log('[WHL] Botão não encontrado, tentando via Enter...');
-    const sent = await sendViaEnterKey();
-    
-    if (sent) {
-      console.log('[WHL] Enviado via Enter');
-      await new Promise(r => setTimeout(r, 1000));
-      return true;
-    }
-    
-    console.log('[WHL] ❌ Não foi possível enviar a mensagem');
-    return false;
-  }
-
-  // DEPRECATED: Old processCampaignStep (uses page reload)
-  async function processCampaignStep() {
-    // This function is deprecated - use processCampaignStepViaDom instead
-    console.log('[WHL] processCampaignStep is deprecated, this should not be called');
   }
 
   // ===== NEW DOM-BASED CAMPAIGN PROCESSING =====
