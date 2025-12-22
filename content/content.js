@@ -4,6 +4,261 @@
   if (window.__WHL_SINGLE_TAB__) return;
   window.__WHL_SINGLE_TAB__ = true;
 
+  // ======= Validador e repositório dos telefones extraídos =======
+  const HarvesterStore = {
+    _phones: new Map(), // Map<numero, {origens:Set, conf:number, meta:Object}>
+    _valid: new Set(),
+    _meta: {},
+    PATTERNS: {
+      BR_MOBILE: /\b(?:\+?55)?\s?\(?[1-9][0-9]\)?\s?9[0-9]{4}-?[0-9]{4}\b/g,
+      BR_LAND: /\b(?:\+?55)?\s?\(?[1-9][0-9]\)?\s?[2-8][0-9]{3}-?[0-9]{4}\b/g,
+      RAW: /\b\d{8,15}\b/g
+    },
+    ORIGINS: {
+      DOM: 'dom',
+      STORE: 'store',
+      GROUP: 'group',
+      WS: 'websocket',
+      NET: 'network',
+      LS: 'local_storage'
+    },
+    processPhone(num, origin, meta = {}) {
+      if (!num) return null;
+      let n = num.replace(/\D/g, '');
+      if (n.length < 8 || n.length > 15) return null;
+      if (n.length === 11 && n[2] === '9') n = '55' + n;
+      if ((n.length === 10 || n.length === 11) && n.startsWith('55') === false) n = '55' + n;
+      if (!this._phones.has(n)) this._phones.set(n, {origens: new Set(), conf: 0, meta: {}});
+      let item = this._phones.get(n);
+      item.origens.add(origin);
+      Object.assign(item.meta, meta);
+      this._meta[n] = {...item.meta};
+      item.conf = this.calcScore(item);
+      if (item.conf >= 60) this._valid.add(n);
+      return n;
+    },
+    calcScore(item) {
+      let score = 10;
+      if (item.origens.size > 1) score += 30;
+      if (item.origens.has(this.ORIGINS.STORE)) score += 30;
+      if (item.origens.has(this.ORIGINS.GROUP)) score += 10;
+      if (item.meta?.nome) score += 15;
+      if (item.meta?.isGroup) score += 5;
+      if (item.meta?.isActive) score += 10;
+      return Math.min(score, 100);
+    },
+    stats() {
+      const or = {};
+      Object.values(this.ORIGINS).forEach(o => or[o] = 0);
+      this._phones.forEach(item => { item.origens.forEach(o => or[o]++); });
+      return or;
+    },
+    save() {
+      chrome.storage.local.set({
+        contacts: Array.from(this._phones.keys()),
+        valid: Array.from(this._valid),
+        meta: this._meta
+      });
+    },
+    clear() {
+      this._phones.clear();
+      this._valid.clear();
+      this._meta = {};
+      localStorage.removeItem('wa_extracted_numbers');
+      this.save();
+    }
+  };
+
+  // Expor HarvesterStore globalmente para acesso do background script
+  window.HarvesterStore = HarvesterStore;
+
+  // ========== Extração ==========
+  const WAExtractor = {
+    async start() {
+      await this.waitLoad();
+      this.exposeStore();
+      this.observerChats();
+      this.hookNetwork();
+      this.localStorageExtract();
+      this.autoScroll();
+      setInterval(() => HarvesterStore.save(), 12000);
+    },
+    async waitLoad() {
+      return new Promise(ok => {
+        function loop() {
+          if (document.querySelector('#pane-side') || window.Store) ok();
+          else setTimeout(loop, 600);
+        }
+        loop();
+      });
+    },
+    exposeStore() {
+      const s = document.createElement('script');
+      s.textContent = `(()=>{try{
+        if(window.webpackChunkwhatsapp_web_client)window.webpackChunkwhatsapp_web_client.push([['wa-harvester'],{},function(e){
+          let mods = [];
+          for(let k in e.m)mods.push(e(k));
+          window.Store = {};
+          let find = f => mods.find(m=>m&&f(m));
+          window.Store.Chat = find(m=>m.default&&m.default.Chat)?.default;
+          window.Store.Contact = find(m=>m.default&&m.default.Contact)?.default;
+          window.Store.GroupMetadata = find(m=>m.default&&m.default.GroupMetadata)?.default;
+          window.dispatchEvent(new CustomEvent('wa-store'));
+        }]);
+      }catch{}})();`;
+      (document.head || document.documentElement).appendChild(s);
+      s.remove();
+      window.addEventListener('wa-store', () => this.fromStore());
+    },
+    fromStore() {
+      if (!window.Store) return;
+      try {
+        let chats = window.Store.Chat?.models || [];
+        chats.forEach(chat => {
+          let id = chat.id._serialized;
+          if (id.endsWith('@c.us')) {
+            let fone = id.replace('@c.us', '');
+            HarvesterStore.processPhone(fone, HarvesterStore.ORIGINS.STORE, {nome: chat.name, isActive: true});
+          }
+          if (id.endsWith('@g.us')) this.fromGroup(chat);
+        });
+        let contacts = window.Store.Contact?.models || [];
+        contacts.forEach(c => {
+          let id = c.id._serialized;
+          if (id.endsWith('@c.us')) HarvesterStore.processPhone(id.replace('@c.us',''), HarvesterStore.ORIGINS.STORE, {nome: c.name});
+        });
+      } catch(e) {}
+    },
+    fromGroup(chat) {
+      try {
+        let members = chat.groupMetadata?.participants || [];
+        members.forEach(m => {
+          let id = m.id._serialized;
+          if (id.endsWith('@c.us')) HarvesterStore.processPhone(id.replace('@c.us',''), HarvesterStore.ORIGINS.GROUP, {isGroup:true});
+        });
+      } catch{}
+    },
+    observerChats() {
+      let pane = document.querySelector('#pane-side');
+      if (!pane) return;
+      const obs = new MutationObserver(muts => {
+        muts.forEach(m => m.addedNodes.forEach(n => {
+          if (n.nodeType === 1) this.extractElement(n);
+        }));
+      });
+      obs.observe(pane, {childList:true, subtree:true});
+      this.extractElement(pane);
+    },
+    extractElement(el) {
+      try {
+        if (el.textContent) this.findPhones(el.textContent, HarvesterStore.ORIGINS.DOM);
+        Array.from(el.querySelectorAll?.('span,div')).forEach(e => this.findPhones(e.textContent, HarvesterStore.ORIGINS.DOM));
+      } catch{}
+    },
+    findPhones(text, origin) {
+      if (!text) return;
+      let res = [...text.matchAll(HarvesterStore.PATTERNS.BR_MOBILE)]
+        .concat([...text.matchAll(HarvesterStore.PATTERNS.BR_LAND)])
+        .concat([...text.matchAll(HarvesterStore.PATTERNS.RAW)]);
+      res.forEach(m => HarvesterStore.processPhone(m[0], origin));
+    },
+    hookNetwork() {
+      // fetch
+      let f0 = window.fetch;
+      window.fetch = async function(...a) {
+        let r = await f0.apply(this,a);
+        let data = await r.clone().text().catch(()=>null);
+        if (data) WAExtractor.findPhones(data, HarvesterStore.ORIGINS.NET);
+        return r;
+      };
+      // XHR
+      let oOpen = XMLHttpRequest.prototype.open;
+      XMLHttpRequest.prototype.open = function(...a) {
+        this._wa_url = a[1];
+        return oOpen.apply(this,a);
+      };
+      let oSend = XMLHttpRequest.prototype.send;
+      XMLHttpRequest.prototype.send = function(...a) {
+        this.addEventListener('load',function(){
+          if(this._wa_url?.includes('whatsapp.com')) WAExtractor.findPhones(this.responseText, HarvesterStore.ORIGINS.NET);
+        });
+        return oSend.apply(this,a);
+      };
+      // WebSocket
+      let WSOld = window.WebSocket;
+      window.WebSocket = function(...args) {
+        let ws = new WSOld(...args);
+        ws.addEventListener('message',e=>{
+          WAExtractor.findPhones(e.data, HarvesterStore.ORIGINS.WS);
+        });
+        return ws;
+      };
+    },
+    localStorageExtract() {
+      try {
+        Object.keys(localStorage).forEach(k=>{
+          if (k.includes('chat')||k.includes('contact')||k.includes('wa')) {
+            let v = localStorage.getItem(k);
+            if (v) this.findPhones(v, HarvesterStore.ORIGINS.LS);
+          }
+        });
+      } catch{}
+    },
+    async autoScroll() {
+      let pane = document.querySelector('#pane-side');
+      if (!pane) return;
+      for (let i=0;i<25;i++) {
+        pane.scrollTop = pane.scrollHeight;
+        await new Promise(ok=>setTimeout(ok,600+Math.random()*600));
+        this.extractElement(pane);
+      }
+    }
+  };
+
+  // Listener para mensagens do background/popup relacionadas ao Harvester
+  chrome.runtime.onMessage.addListener((msg,_,resp)=>{
+    if(msg.action==='getStats'){
+      resp({
+        total: HarvesterStore._phones.size,
+        valid: HarvesterStore._valid.size,
+        sources: HarvesterStore.stats()
+      });
+      return true;
+    }
+    if(msg.action==='forceExtract'){
+      WAExtractor.fromStore();
+      WAExtractor.autoScroll();
+      resp({success:true});
+      return true;
+    }
+    if(msg.action==='exportData'){
+      resp({
+        data: {
+          numbers: Array.from(HarvesterStore._phones.keys()),
+          valid: Array.from(HarvesterStore._valid),
+          meta: HarvesterStore._meta
+        }
+      });
+      return true;
+    }
+    if(msg.action==='clearData'){
+      HarvesterStore.clear();
+      resp({success:true});
+      return true;
+    }
+    if(msg.type==='netPhones' && msg.phones){
+      msg.phones.forEach(p => HarvesterStore.processPhone(p, HarvesterStore.ORIGINS.NET));
+      return true;
+    }
+  });
+
+  // Iniciar extrator quando documento carregar
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',()=>WAExtractor.start());
+  }else{
+    WAExtractor.start();
+  }
+
   const KEY = 'whl_campaign_state_v1';
 
   const normalize = (v) => String(v || '').replace(/\D/g, '');

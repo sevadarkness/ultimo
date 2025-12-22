@@ -13,12 +13,20 @@
     "default_popup": "popup/popup.html"
   },
   "permissions": [
+    "activeTab",
     "tabs",
-    "storage"
+    "storage",
+    "webRequest",
+    "downloads",
+    "scripting"
   ],
   "host_permissions": [
-    "https://web.whatsapp.com/*"
+    "https://web.whatsapp.com/*",
+    "wss://web.whatsapp.com/*"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": [
