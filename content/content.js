@@ -23,11 +23,11 @@
       panelVisible: true,
       isRunning: false,
       isPaused: false,
-      delayMin: 5,
-      delayMax: 10,
+      delayMin: 2,
+      delayMax: 6,
       continueOnError: true,
       imageData: null,
-      retryMax: 2,
+      retryMax: 0,
       scheduleAt: '',
       typingEffect: true,
       typingDelayMs: 35,
@@ -143,6 +143,66 @@
       }
       @media (max-width: 520px){
         #whlPanel .settings-grid{grid-template-columns:1fr}
+      }
+
+
+      /* ===== TABS SYSTEM ===== */
+      #whlPanel .whl-tabs {
+        display: flex;
+        gap: 0;
+        margin-bottom: 12px;
+        border-bottom: 2px solid rgba(111,0,255,.35);
+      }
+
+      #whlPanel .whl-tab {
+        flex: 1;
+        padding: 12px 16px;
+        background: rgba(255,255,255,.05);
+        border: none;
+        border-bottom: 3px solid transparent;
+        color: rgba(255,255,255,.6);
+        font-weight: 700;
+        font-size: 13px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      #whlPanel .whl-tab:hover {
+        background: rgba(255,255,255,.10);
+        color: rgba(255,255,255,.9);
+      }
+
+      #whlPanel .whl-tab.active {
+        background: rgba(111,0,255,.15);
+        border-bottom: 3px solid rgba(111,0,255,.85);
+        color: #fff;
+      }
+
+      #whlPanel .whl-tab-content {
+        display: none;
+      }
+
+      #whlPanel .whl-tab-content.active {
+        display: block;
+      }
+
+      /* ===== QUEUE TABLE CONTAINER ===== */
+      #whlPanel .whl-queue-container {
+        max-height: 350px;
+        overflow-y: auto;
+        border: 1px solid rgba(255,255,255,.10);
+        border-radius: 12px;
+        background: rgba(0,0,0,.15);
+        margin-top: 10px;
+      }
+
+      #whlPanel tbody tr:nth-child(even) {
+        background: rgba(255,255,255,.03);
+      }
+
+      #whlPanel tbody tr.current {
+        background: rgba(111,0,255,.20);
+        border-left: 3px solid rgba(111,0,255,.85);
       }
 
 
@@ -273,205 +333,218 @@
         <button class="iconbtn" id="whlHide" title="Ocultar">—</button>
       </div>
 
-      <div class="card">
-        <div class="title" style="font-size:13px">⚙️ Configurações de Automação</div>
-
-        <div class="settings-wrap">
-          <div class="settings-section-title">Parâmetros</div>
-          <div class="settings-table">
-            <div class="settings-row">
-              <div class="settings-label">
-                <div class="k">🕐 Delay mínimo</div>
-                <div class="d">Tempo mínimo entre envios (seg)</div>
-              </div>
-              <div class="settings-control">
-                <input type="number" id="whlDelayMin" min="1" max="120" value="5" />
-              </div>
-            </div>
-
-            <div class="settings-row">
-              <div class="settings-label">
-                <div class="k">🕐 Delay máximo</div>
-                <div class="d">Tempo máximo entre envios (seg)</div>
-              </div>
-              <div class="settings-control">
-                <input type="number" id="whlDelayMax" min="1" max="120" value="10" />
-              </div>
-            </div>
-
-            <div class="settings-row">
-              <div class="settings-label">
-                <div class="k">🔄 Retry</div>
-                <div class="d">Tentativas extras em falha</div>
-              </div>
-              <div class="settings-control">
-                <input type="number" id="whlRetryMax" min="0" max="5" value="2" />
-              </div>
-            </div>
-
-            <div class="settings-row">
-              <div class="settings-label">
-                <div class="k">📅 Agendamento</div>
-                <div class="d">Inicia no horário definido</div>
-              </div>
-              <div class="settings-control">
-                <input type="datetime-local" id="whlScheduleAt" />
-              </div>
-            </div>
-          </div>
-
-          <div class="settings-section-title" style="margin-top:14px">Opções</div>
-          <div class="settings-table">
-            <div class="settings-row toggle">
-              <div class="settings-label">
-                <div class="k">✅ Continuar em erros</div>
-                <div class="d">Não interromper campanha</div>
-              </div>
-              <div class="settings-control">
-                <input type="checkbox" id="whlContinueOnError" checked />
-              </div>
-            </div>
-
-            <div class="settings-row toggle">
-              <div class="settings-label">
-                <div class="k">⌨️ Efeito digitação</div>
-                <div class="d">Simula digitação humana (para legendas)</div>
-              </div>
-              <div class="settings-control">
-                <input type="checkbox" id="whlTypingEffect" checked />
-              </div>
-            </div>
-          </div>
-
-          <div class="settings-footer tiny" id="whlSelectorHealth"></div>
-        </div>
+      <!-- Tabs no topo do painel -->
+      <div class="whl-tabs">
+        <button class="whl-tab active" data-tab="principal">📱 Principal</button>
+        <button class="whl-tab" data-tab="config">⚙️ Configurações</button>
       </div>
 
-      
-<div class="card" id="whlExtractCard">
-  <div class="title" style="font-size:13px">Extrair contatos</div>
-  <div class="muted">Coleta números disponíveis no WhatsApp Web e lista aqui (1 por linha).</div>
+      <!-- Conteúdo da Aba Principal -->
+      <div class="whl-tab-content active" id="whl-tab-principal">
+        
+        <div class="card" id="whlExtractCard">
+          <div class="title" style="font-size:13px">Extrair contatos</div>
+          <div class="muted">Coleta números disponíveis no WhatsApp Web e lista aqui (1 por linha).</div>
 
-  <div class="row" style="margin-top:10px">
-    <button class="success" style="flex:1" id="whlExtractContacts">📥 Extrair contatos</button>
-    <button style="width:150px" id="whlCopyExtracted">🔁 Copiar → Números</button>
-  </div>
+          <div class="row" style="margin-top:10px">
+            <button class="success" style="flex:1" id="whlExtractContacts">📥 Extrair contatos</button>
+            <button style="width:150px" id="whlCopyExtracted">🔁 Copiar → Números</button>
+          </div>
 
-  <div id="whlExtractProgress" style="display:none;margin-top:10px">
-    <div class="progress-bar">
-      <div class="progress-fill" id="whlExtractProgressFill" style="width:0%"></div>
-    </div>
-    <div class="tiny" style="margin-top:6px;text-align:center" id="whlExtractProgressText">0%</div>
-  </div>
+          <div id="whlExtractProgress" style="display:none;margin-top:10px">
+            <div class="progress-bar">
+              <div class="progress-fill" id="whlExtractProgressFill" style="width:0%"></div>
+            </div>
+            <div class="tiny" style="margin-top:6px;text-align:center" id="whlExtractProgressText">0%</div>
+          </div>
 
-  <textarea id="whlExtractedNumbers" placeholder="Clique em 'Extrair contatos'…" style="margin-top:10px;min-height:140px"></textarea>
-  <div class="tiny" id="whlExtractStatus" style="margin-top:6px;opacity:.8"></div>
-  
-  <button class="primary" style="width:100%;margin-top:8px" id="whlExportExtractedCsv">📥 Extrair CSV</button>
-</div>
+          <textarea id="whlExtractedNumbers" placeholder="Clique em 'Extrair contatos'…" style="margin-top:10px;min-height:140px"></textarea>
+          <div class="tiny" id="whlExtractStatus" style="margin-top:6px;opacity:.8"></div>
+          
+          <button class="primary" style="width:100%;margin-top:8px" id="whlExportExtractedCsv">📥 Extrair CSV</button>
+        </div>
 
-<div class="card">
-        <div class="title" style="font-size:13px">Números (um por linha)</div>
-        <div class="muted">Cole sua lista aqui. Ex: 5511999998888</div>
-        <textarea id="whlNumbers" placeholder="5511999998888
+        <div class="card">
+          <div class="title" style="font-size:13px">Números (um por linha)</div>
+          <div class="muted">Cole sua lista aqui. Ex: 5511999998888</div>
+          <textarea id="whlNumbers" placeholder="5511999998888
 5511988887777"></textarea>
 
-        <div style="margin-top:10px">
-          <div class="muted">📊 Importar CSV (phone,message opcional)</div>
-          <input id="whlCsv" type="file" accept=".csv,text/csv" />
-        </div>
-
-        <div class="title" style="font-size:13px;margin-top:10px">Mensagem padrão</div>
-        <textarea id="whlMsg" placeholder="Digite sua mensagem…"></textarea>
-
-        <div style="margin-top:10px">
-          <div class="muted">📸 Selecionar imagem (será enviada automaticamente)</div>
-          <div class="row" style="margin-top:6px">
-            <button id="whlSelectImageBtn" style="flex:1">📎 Anexar Imagem</button>
-            <button id="whlClearImageBtn" style="width:120px" title="Remover imagem">🗑️ Remover</button>
+          <div style="margin-top:10px">
+            <div class="muted">📊 Importar CSV (phone,message opcional)</div>
+            <input id="whlCsv" type="file" accept=".csv,text/csv" />
           </div>
-          <input id="whlImage" type="file" accept="image/*" style="display:none" />
-          <div class="tiny" id="whlImageHint" style="margin-top:6px"></div>
-        </div>
 
-        <div class="row" style="margin-top:10px">
-          <button style="flex:1" id="whlSaveDraft">💾 Salvar</button>
-          <button style="flex:1" id="whlLoadDraft">📂 Carregar</button>
-        </div>
+          <div class="title" style="font-size:13px;margin-top:10px">Mensagem padrão</div>
+          <textarea id="whlMsg" placeholder="Digite sua mensagem…"></textarea>
 
-        <div class="card" style="margin-top:10px">
-          <div class="title" style="font-size:13px">📱 Preview (WhatsApp)</div>
-          <div class="muted">Como vai aparecer no WhatsApp:</div>
-          <div class="wa-chat">
-            <div class="wa-bubble">
-              <img id="whlPreviewImg" alt="preview" style="display:none;width:100%;max-width:260px;border-radius:12px;margin-bottom:8px;border:1px solid rgba(255,255,255,.10)" />
-              <div id="whlPreviewText" style="white-space:pre-wrap"></div>
-              <div class="wa-time"><span id="whlPreviewMeta"></span><span class="wa-ticks">✓✓</span></div>
+          <div style="margin-top:10px">
+            <div class="muted">📸 Selecionar imagem (será enviada automaticamente)</div>
+            <div class="row" style="margin-top:6px">
+              <button id="whlSelectImageBtn" style="flex:1">📎 Anexar Imagem</button>
+              <button id="whlClearImageBtn" style="width:120px" title="Remover imagem">🗑️ Remover</button>
+            </div>
+            <input id="whlImage" type="file" accept="image/*" style="display:none" />
+            <div class="tiny" id="whlImageHint" style="margin-top:6px"></div>
+          </div>
+
+          <div class="card" style="margin-top:10px">
+            <div class="title" style="font-size:13px">📱 Preview (WhatsApp)</div>
+            <div class="muted">Como vai aparecer no WhatsApp:</div>
+            <div class="wa-chat">
+              <div class="wa-bubble">
+                <img id="whlPreviewImg" alt="preview" style="display:none;width:100%;max-width:260px;border-radius:12px;margin-bottom:8px;border:1px solid rgba(255,255,255,.10)" />
+                <div id="whlPreviewText" style="white-space:pre-wrap"></div>
+                <div class="wa-time"><span id="whlPreviewMeta"></span><span class="wa-ticks">✓✓</span></div>
+              </div>
             </div>
           </div>
+
+          <div class="row">
+            <button class="primary" style="flex:1" id="whlBuild">Gerar tabela</button>
+            <button style="width:170px" id="whlClear">Limpar</button>
+          </div>
+
+          <div class="tiny" id="whlHint"></div>
         </div>
 
+        <div class="card">
+          <div class="title" style="font-size:13px">📊 Progresso da Campanha</div>
+          
+          <div class="stats">
+            <div class="stat-item">
+              <div class="muted">Enviados</div>
+              <span class="stat-value" id="whlStatSent">0</span>
+            </div>
+            <div class="stat-item">
+              <div class="muted">Falhas</div>
+              <span class="stat-value" id="whlStatFailed">0</span>
+            </div>
+            <div class="stat-item">
+              <div class="muted">Pendentes</div>
+              <span class="stat-value" id="whlStatPending">0</span>
+            </div>
+          </div>
 
-        <div class="row">
-          <button class="primary" style="flex:1" id="whlBuild">Gerar tabela</button>
-          <button style="width:170px" id="whlClear">Limpar</button>
+          <div class="progress-bar">
+            <div class="progress-fill" id="whlProgressFill" style="width:0%"></div>
+          </div>
+          <div class="tiny" style="margin-top:6px;text-align:center" id="whlProgressText">0%</div>
+
+          <div class="row" style="margin-top:10px">
+            <button class="success" style="flex:1" id="whlStartCampaign">▶️ Iniciar Campanha</button>
+            <button class="warning" style="width:100px" id="whlPauseCampaign">⏸️ Pausar</button>
+            <button class="danger" style="width:100px" id="whlStopCampaign">⏹️ Parar</button>
+          </div>
         </div>
 
-        <div class="tiny" id="whlHint"></div>
+        <div class="card">
+          <div class="title" style="font-size:13px">Tabela / Fila</div>
+          <div class="muted" id="whlMeta">0 contato(s)</div>
+
+          <div class="whl-queue-container">
+            <table>
+              <thead><tr><th>#</th><th>Número</th><th>Status</th><th>Ações</th></tr></thead>
+              <tbody id="whlTable"></tbody>
+            </table>
+          </div>
+
+          <div class="row" style="margin-top:8px">
+            <button style="flex:1" id="whlSkip">Pular atual</button>
+            <button class="danger" style="width:170px" id="whlWipe">Zerar fila</button>
+          </div>
+
+          <div class="tiny" id="whlStatus" style="margin-top:8px"></div>
+        </div>
+
       </div>
 
-      <div class="card">
-        <div class="title" style="font-size:13px">📊 Progresso da Campanha</div>
-        
-        <div class="stats">
-          <div class="stat-item">
-            <div class="muted">Enviados</div>
-            <span class="stat-value" id="whlStatSent">0</span>
+      <!-- Conteúdo da Aba Configurações -->
+      <div class="whl-tab-content" id="whl-tab-config">
+
+        <div class="card">
+          <div class="title" style="font-size:13px">⚙️ Configurações de Automação</div>
+
+          <div class="settings-wrap">
+            <div class="settings-section-title">Parâmetros</div>
+            <div class="settings-table">
+              <div class="settings-row">
+                <div class="settings-label">
+                  <div class="k">🕐 Delay mínimo</div>
+                  <div class="d">Tempo mínimo entre envios (seg)</div>
+                </div>
+                <div class="settings-control">
+                  <input type="number" id="whlDelayMin" min="1" max="120" value="2" />
+                </div>
+              </div>
+
+              <div class="settings-row">
+                <div class="settings-label">
+                  <div class="k">🕐 Delay máximo</div>
+                  <div class="d">Tempo máximo entre envios (seg)</div>
+                </div>
+                <div class="settings-control">
+                  <input type="number" id="whlDelayMax" min="1" max="120" value="6" />
+                </div>
+              </div>
+
+              <div class="settings-row">
+                <div class="settings-label">
+                  <div class="k">🔄 Retry</div>
+                  <div class="d">Tentativas extras em falha</div>
+                </div>
+                <div class="settings-control">
+                  <input type="number" id="whlRetryMax" min="0" max="5" value="0" />
+                </div>
+              </div>
+
+              <div class="settings-row">
+                <div class="settings-label">
+                  <div class="k">📅 Agendamento</div>
+                  <div class="d">Inicia no horário definido</div>
+                </div>
+                <div class="settings-control">
+                  <input type="datetime-local" id="whlScheduleAt" />
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-section-title" style="margin-top:14px">Opções</div>
+            <div class="settings-table">
+              <div class="settings-row toggle">
+                <div class="settings-label">
+                  <div class="k">✅ Continuar em erros</div>
+                  <div class="d">Não interromper campanha</div>
+                </div>
+                <div class="settings-control">
+                  <input type="checkbox" id="whlContinueOnError" checked />
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-footer tiny" id="whlSelectorHealth"></div>
           </div>
-          <div class="stat-item">
-            <div class="muted">Falhas</div>
-            <span class="stat-value" id="whlStatFailed">0</span>
+        </div>
+
+        <div class="card">
+          <div class="title" style="font-size:13px">💾 Rascunhos</div>
+          
+          <div class="row" style="margin-top:10px">
+            <button style="flex:1" id="whlSaveDraft">💾 Salvar</button>
+            <button style="flex:1" id="whlLoadDraft">📂 Carregar</button>
           </div>
-          <div class="stat-item">
-            <div class="muted">Pendentes</div>
-            <span class="stat-value" id="whlStatPending">0</span>
+        </div>
+
+        <div class="card">
+          <div class="title" style="font-size:13px">📈 Relatórios</div>
+          
+          <div class="row" style="margin-top:10px">
+            <button style="flex:1" id="whlExportReport">📈 Exportar relatório</button>
+            <button style="flex:1" id="whlCopyFailed">📋 Copiar falhas</button>
           </div>
+          <div class="tiny" id="whlReportHint" style="margin-top:6px"></div>
         </div>
 
-        <div class="progress-bar">
-          <div class="progress-fill" id="whlProgressFill" style="width:0%"></div>
-        </div>
-        <div class="tiny" style="margin-top:6px;text-align:center" id="whlProgressText">0%</div>
-
-        <div class="row" style="margin-top:10px">
-          <button class="success" style="flex:1" id="whlStartCampaign">▶️ Iniciar Campanha</button>
-          <button class="warning" style="width:100px" id="whlPauseCampaign">⏸️ Pausar</button>
-          <button class="danger" style="width:100px" id="whlStopCampaign">⏹️ Parar</button>
-        </div>
-      </div>
-
-      
-        <div class="row" style="margin-top:10px">
-          <button style="flex:1" id="whlExportReport">📈 Exportar relatório</button>
-          <button style="flex:1" id="whlCopyFailed">📋 Copiar falhas</button>
-        </div>
-        <div class="tiny" id="whlReportHint" style="margin-top:6px"></div>
-
-      <div class="card">
-        <div class="title" style="font-size:13px">Tabela / Fila</div>
-        <div class="muted" id="whlMeta">0 contato(s)</div>
-
-        <table>
-          <thead><tr><th>#</th><th>Número</th><th>Status</th><th>Ações</th></tr></thead>
-          <tbody id="whlTable"></tbody>
-        </table>
-
-        <div class="row" style="margin-top:8px">
-          <button style="flex:1" id="whlSkip">Pular atual</button>
-          <button class="danger" style="width:170px" id="whlWipe">Zerar fila</button>
-        </div>
-
-        <div class="tiny" id="whlStatus" style="margin-top:8px"></div>
       </div>
     `;
     document.body.appendChild(panel);
@@ -651,13 +724,32 @@
       for (let i = 0; i < text.length; i++) {
         const char = text[i];
         
-        // Inserir caractere
+        // NOVO: Tratar quebra de linha
+        if (char === '\n') {
+          // Simular Shift+Enter para quebra de linha no WhatsApp
+          const shiftEnterEvent = new KeyboardEvent('keydown', {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            which: 13,
+            shiftKey: true, // IMPORTANTE: Shift+Enter
+            bubbles: true,
+            cancelable: true
+          });
+          msgInput.dispatchEvent(shiftEnterEvent);
+          
+          // Delay maior para quebra de linha
+          await new Promise(r => setTimeout(r, 150));
+          continue;
+        }
+        
+        // Inserir caractere normal
         document.execCommand('insertText', false, char);
         msgInput.dispatchEvent(new Event('input', { bubbles: true }));
         
         // Delay variável baseado no caractere
         let delay;
-        if (['.', '!', '?', '\n'].includes(char)) {
+        if (['.', '!', '?'].includes(char)) {
           // Pausa maior após pontuação
           delay = 100 + Math.random() * 150; // 100-250ms
         } else if ([',', ';', ':'].includes(char)) {
@@ -1653,10 +1745,8 @@
     if (continueOnErrorEl) continueOnErrorEl.checked = !!state.continueOnError;
     const retryEl = document.getElementById('whlRetryMax');
     const schedEl = document.getElementById('whlScheduleAt');
-    const typingEl = document.getElementById('whlTypingEffect');
-    if (retryEl) retryEl.value = state.retryMax ?? 2;
+    if (retryEl) retryEl.value = state.retryMax ?? 0;
     if (schedEl && (schedEl.value||'') !== (state.scheduleAt||'')) schedEl.value = state.scheduleAt || '';
-    if (typingEl) typingEl.checked = !!state.typingEffect;
     // Preview
     const curp = state.queue[state.index];
     const phone = curp?.phone || '';
@@ -1748,6 +1838,12 @@
     state.queue.forEach((c, i) => {
       const tr = document.createElement('tr');
       const pill = c.status || 'pending';
+      
+      // Highlight current item
+      if (i === state.index && state.isRunning) {
+        tr.classList.add('current');
+      }
+      
       tr.innerHTML = `
         <td>${i+1}</td>
         <td><span class="tip" data-tip="${c.valid===false ? 'Número inválido (8 a 15 dígitos). Ex: 5511999998888' : ''}">${c.phone}${c.valid===false ? ' ⚠️' : ''}</span></td>
@@ -1856,8 +1952,8 @@
       panelVisible: true,
       isRunning: false,
       isPaused: false,
-      delayMin: 5,
-      delayMax: 10,
+      delayMin: 2,
+      delayMax: 6,
       continueOnError: true,
       stats: { sent: 0, failed: 0, pending: 0 }
     });
@@ -1866,6 +1962,20 @@
 
   async function bindOnce() {
     ensurePanel();
+
+    // Tab switching functionality
+    document.querySelectorAll('.whl-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        // Remover active de todas as tabs
+        document.querySelectorAll('.whl-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.whl-tab-content').forEach(c => c.classList.remove('active'));
+        
+        // Adicionar active na tab clicada
+        tab.classList.add('active');
+        const tabId = tab.dataset.tab;
+        document.getElementById(`whl-tab-${tabId}`).classList.add('active');
+      });
+    });
 
     
 // ===== WHL: Bind Extrator Isolado ao Painel =====
@@ -2028,12 +2138,6 @@ try {
       await setState(st);
       await render();
     });
-    // Typing
-    document.getElementById('whlTypingEffect').addEventListener('change', async (e) => {
-      const st = await getState();
-      st.typingEffect = !!e.target.checked;
-      await setState(st);
-    });
     // CSV
     document.getElementById('whlCsv').addEventListener('change', async (e) => {
       const file = e.target.files?.[0];
@@ -2104,9 +2208,19 @@ try {
     document.getElementById('whlLoadDraft').addEventListener('click', async () => {
       const st = await getState();
       const keys = Object.keys(st.drafts||{});
-      if (!keys.length) return alert('Nenhum rascunho salvo.');
-      const name = prompt('Digite o nome:\n'+keys.join('\n'), keys[0]) || '';
-      if (!st.drafts?.[name]) return;
+      
+      if (!keys.length) {
+        // Mostrar mensagem clara
+        alert('Nenhum rascunho salvo.\n\nPara salvar um rascunho, preencha os campos e clique em "Salvar".');
+        return;
+      }
+      
+      const name = prompt('Rascunhos disponíveis:\n\n' + keys.map((k, i) => `${i+1}. ${k}`).join('\n') + '\n\nDigite o nome do rascunho:', keys[0]);
+      if (!name || !st.drafts[name]) {
+        if (name) alert(`Rascunho "${name}" não encontrado.`);
+        return;
+      }
+      
       const d = st.drafts[name];
       st.numbersText = d.numbersText||''; st.message=d.message||''; st.imageData=d.imageData||null;
       st.delayMin = d.delayMin ?? st.delayMin; st.delayMax = d.delayMax ?? st.delayMax;
@@ -2114,6 +2228,8 @@ try {
       st.typingEffect = d.typingEffect ?? st.typingEffect;
       await setState(st);
       await render();
+      
+      alert(`Rascunho "${name}" carregado com sucesso!`);
     });
     // Report
     document.getElementById('whlExportReport').addEventListener('click', async ()=>{ await whlExportReportCSV(); const h=document.getElementById('whlReportHint'); if(h) h.textContent='✅ Exportado.'; });
