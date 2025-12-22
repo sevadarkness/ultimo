@@ -31,8 +31,9 @@
       scheduleAt: '',
       typingEffect: true,
       typingDelayMs: 35,
-      overlayMode: true,
-      fallbackMode: true,
+      urlNavigationInProgress: false,
+      currentPhoneNumber: '',
+      currentMessage: '',
       drafts: {},
       lastReport: null,
       selectorHealth: { ok: true, issues: [] },
@@ -622,7 +623,7 @@
    * Para texto: https://web.whatsapp.com/send?phone=NUM&text=MSG
    * Para imagem: https://web.whatsapp.com/send?phone=NUM
    */
-  async function sendViaURL(numero, mensagem, imagemFile = null) {
+  async function sendViaURL(numero, mensagem, hasImage = false) {
     const cleanNumber = String(numero).replace(/\D/g, '');
     
     if (!cleanNumber) {
@@ -634,7 +635,7 @@
     let url = `https://web.whatsapp.com/send?phone=${cleanNumber}`;
     
     // Se for apenas texto (sem imagem), adicionar texto na URL
-    if (mensagem && !imagemFile) {
+    if (mensagem && !hasImage) {
       url += `&text=${encodeURIComponent(mensagem)}`;
     }
     
@@ -645,7 +646,6 @@
     st.urlNavigationInProgress = true;
     st.currentPhoneNumber = cleanNumber;
     st.currentMessage = mensagem;
-    st.currentImageFile = imagemFile;
     await setState(st);
     
     // Navegar para a URL (isso vai causar reload da página)
@@ -865,9 +865,10 @@
     console.log('[WHL] Mensagem:', message ? message.substring(0, 50) + '...' : '(sem texto)');
     
     const st = await getState();
+    const hasImage = !!st.imageData;
     
     // Usar sendViaURL que navega para a URL apropriada
-    await sendViaURL(phoneNumber, message, st.imageData);
+    await sendViaURL(phoneNumber, message, hasImage);
     
     // NOTA: A função sendViaURL causa um reload da página
     // A continuação do envio acontece em checkAndResumeCampaignAfterURLNavigation()
@@ -1902,7 +1903,7 @@ try {
       st.drafts[name] = {
         numbersText: st.numbersText, message: st.message, imageData: st.imageData,
         delayMin: st.delayMin, delayMax: st.delayMax, retryMax: st.retryMax,
-        scheduleAt: st.scheduleAt, typingEffect: st.typingEffect, overlayMode: st.overlayMode, fallbackMode: st.fallbackMode
+        scheduleAt: st.scheduleAt, typingEffect: st.typingEffect
       };
       await setState(st);
       await render();
@@ -1917,7 +1918,7 @@ try {
       st.numbersText = d.numbersText||''; st.message=d.message||''; st.imageData=d.imageData||null;
       st.delayMin = d.delayMin ?? st.delayMin; st.delayMax = d.delayMax ?? st.delayMax;
       st.retryMax = d.retryMax ?? st.retryMax; st.scheduleAt = d.scheduleAt||'';
-      st.typingEffect = d.typingEffect ?? st.typingEffect; st.overlayMode=d.overlayMode ?? st.overlayMode; st.fallbackMode=d.fallbackMode ?? st.fallbackMode;
+      st.typingEffect = d.typingEffect ?? st.typingEffect;
       await setState(st);
       await render();
     });
