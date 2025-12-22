@@ -608,15 +608,16 @@
 
   /**
    * Digita texto no campo de mensagem usando DOM manipulation
-   * ATUALIZADO: 3 métodos fallback com logs detalhados
+   * ATUALIZADO: Suporta digitação humanizada com delays variáveis
    */
-  async function typeMessageInField(text) {
+  async function typeMessageInField(text, humanLike = true) {
     if (!text || !text.trim()) {
       console.log('[WHL] ⚠️ Texto vazio, pulando digitação');
       return true;
     }
     
     console.log('[WHL] ⌨️ Digitando texto:', text.substring(0, 50) + '...');
+    console.log('[WHL] Modo:', humanLike ? 'Humanizado 🧑' : 'Rápido ⚡');
     
     // Aguardar campo com mais tentativas
     let msgInput = null;
@@ -643,47 +644,53 @@
     msgInput.dispatchEvent(new Event('input', { bubbles: true }));
     await new Promise(r => setTimeout(r, 200));
     
-    // MÉTODO 1: execCommand
-    console.log('[WHL] Método 1: execCommand...');
-    document.execCommand('insertText', false, text);
-    msgInput.dispatchEvent(new Event('input', { bubbles: true }));
-    await new Promise(r => setTimeout(r, 300));
-    
-    let ok = msgInput.textContent.trim().length > 0;
-    if (ok) {
-      console.log('[WHL] ✅ Método 1 funcionou');
-      return true;
-    }
-    
-    // MÉTODO 2: textContent + InputEvent
-    console.log('[WHL] Método 2: textContent + InputEvent...');
-    msgInput.textContent = text;
-    msgInput.dispatchEvent(new InputEvent('input', { 
-      bubbles: true, 
-      inputType: 'insertText',
-      data: text 
-    }));
-    await new Promise(r => setTimeout(r, 300));
-    
-    ok = msgInput.textContent.trim().length > 0;
-    if (ok) {
-      console.log('[WHL] ✅ Método 2 funcionou');
-      return true;
-    }
-    
-    // MÉTODO 3: caractere por caractere
-    console.log('[WHL] Método 3: caractere por caractere...');
-    msgInput.focus();
-    msgInput.textContent = '';
-    for (const char of text) {
-      msgInput.textContent += char;
+    if (humanLike) {
+      // DIGITAÇÃO HUMANIZADA - caractere por caractere com delays variáveis
+      console.log('[WHL] 🧑 Digitando com aspecto humano...');
+      
+      for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        
+        // Inserir caractere
+        document.execCommand('insertText', false, char);
+        msgInput.dispatchEvent(new Event('input', { bubbles: true }));
+        
+        // Delay variável baseado no caractere
+        let delay;
+        if (['.', '!', '?', '\n'].includes(char)) {
+          // Pausa maior após pontuação
+          delay = 100 + Math.random() * 150; // 100-250ms
+        } else if ([',', ';', ':'].includes(char)) {
+          // Pausa média após vírgulas
+          delay = 60 + Math.random() * 80; // 60-140ms
+        } else if (char === ' ') {
+          // Pausa leve após espaços
+          delay = 30 + Math.random() * 50; // 30-80ms
+        } else {
+          // Delay normal para letras
+          delay = 25 + Math.random() * 55; // 25-80ms
+        }
+        
+        // Ocasionalmente fazer uma pausa maior (simula pensamento)
+        if (Math.random() < 0.02) { // 2% de chance
+          delay += 200 + Math.random() * 300; // +200-500ms extra
+        }
+        
+        await new Promise(r => setTimeout(r, delay));
+      }
+      
+      console.log('[WHL] ✅ Digitação humanizada concluída');
+    } else {
+      // DIGITAÇÃO RÁPIDA - usar execCommand
+      console.log('[WHL] ⚡ Digitação rápida...');
+      document.execCommand('insertText', false, text);
       msgInput.dispatchEvent(new Event('input', { bubbles: true }));
-      await new Promise(r => setTimeout(r, 20));
     }
+    
     await new Promise(r => setTimeout(r, 300));
     
-    ok = msgInput.textContent.trim().length > 0;
-    console.log('[WHL]', ok ? '✅ Método 3 funcionou' : '❌ Todos os métodos falharam');
+    const ok = msgInput.textContent.trim().length > 0;
+    console.log('[WHL]', ok ? '✅ Texto digitado com sucesso' : '❌ Falha na digitação');
     return ok;
   }
 
@@ -1378,30 +1385,27 @@
     const cur = st.queue[st.index];
     let success = false;
     
-    // Se tem imagem, usar fluxo correto
+    // Se tem imagem, usar fluxo correto: TEXTO PRIMEIRO, DEPOIS IMAGEM
     if (st.imageData) {
-      console.log('[WHL] 📸 Modo IMAGEM detectado');
-      
-      // 1. PRIMEIRO: Se tiver texto, NÃO digitar agora (será a legenda)
-      // O texto será digitado no campo de legenda após anexar a imagem
-      
-      // 2. Anexar e enviar a imagem (com legenda se houver)
-      console.log('[WHL] 📸 Anexando imagem...');
-      const imageResult = await sendImageWithCaption(st.imageData, st.currentMessage);
+      console.log('[WHL] 📸 Modo TEXTO + IMAGEM');
+      const imageResult = await sendTextWithImage(st.imageData, st.currentMessage);
       success = imageResult && imageResult.ok;
       
       if (success) {
-        console.log('[WHL] ✅ Imagem enviada');
+        console.log('[WHL] ✅ Texto + Imagem enviados');
       } else {
-        console.log('[WHL] ❌ Falha ao enviar imagem');
+        console.log('[WHL] ❌ Falha ao enviar texto + imagem');
       }
     } else if (st.currentMessage) {
       // MODO TEXTO: URL abriu o chat, agora digitar e enviar
       console.log('[WHL] 📝 Modo TEXTO: digitando mensagem...');
       await new Promise(r => setTimeout(r, 2000));
       
+      // Obter configuração de typing effect
+      const useHumanTyping = st.typingEffect !== false; // default true
+      
       // SEMPRE digitar o texto manualmente (não confiar na URL)
-      const typed = await typeMessageInField(st.currentMessage);
+      const typed = await typeMessageInField(st.currentMessage, useHumanTyping);
       if (!typed) {
         console.log('[WHL] ❌ Falha ao digitar texto');
         success = false;
@@ -2288,8 +2292,9 @@ try {
   }
 
   /**
-   * Anexa imagem e digita legenda manualmente
+   * DEPRECATED: Anexa imagem e digita legenda manualmente
    * ATUALIZADO: Usa seletores CONFIRMADOS pelo usuário
+   * NOTA: Esta função é mantida como fallback. Use sendTextWithImage() ao invés desta.
    */
   async function sendImageWithCaption(imageData, captionText) {
     console.log('[WHL] 📸 Iniciando envio de imagem...');
@@ -2390,6 +2395,118 @@ try {
 
     } catch (error) {
       console.error('[WHL] ❌ Erro ao enviar imagem:', error);
+      return { ok: false };
+    }
+  }
+
+  /**
+   * NOVA FUNÇÃO: Envia texto + imagem na ordem correta
+   * FLUXO: 1. Digita texto PRIMEIRO, 2. Anexa imagem, 3. Envia
+   * Isso garante que o texto aparece como legenda da imagem
+   */
+  async function sendTextWithImage(imageData, messageText) {
+    console.log('[WHL] 📸 Enviando texto + imagem...');
+    console.log('[WHL] Texto:', messageText?.substring(0, 50) + '...');
+
+    try {
+      // PASSO 1: Digitar o texto PRIMEIRO no campo de mensagem normal
+      if (messageText && messageText.trim()) {
+        console.log('[WHL] ⌨️ PASSO 1: Digitando texto primeiro...');
+        
+        // Obter configuração de typing effect do estado
+        const st = await getState();
+        const useHumanTyping = st.typingEffect !== false; // default true
+        
+        const typed = await typeMessageInField(messageText, useHumanTyping);
+        if (!typed) {
+          console.log('[WHL] ❌ Falha ao digitar texto');
+          return { ok: false };
+        }
+        console.log('[WHL] ✅ Texto digitado');
+        await new Promise(r => setTimeout(r, 500));
+      }
+
+      // PASSO 2: Converter base64 para blob
+      const response = await fetch(imageData);
+      const blob = await response.blob();
+      const file = new File([blob], 'image.jpg', { type: blob.type });
+
+      // PASSO 3: Clicar no botão de anexar
+      console.log('[WHL] 📎 PASSO 2: Clicando no botão de anexar...');
+      const attachBtn = document.querySelector('[aria-label="Anexar"]');
+      if (!attachBtn) {
+        console.log('[WHL] ❌ Botão de anexar não encontrado');
+        return { ok: false };
+      }
+
+      attachBtn.click();
+      console.log('[WHL] ✅ Botão de anexar clicado');
+      await new Promise(r => setTimeout(r, 1000));
+
+      // PASSO 4: Encontrar input de arquivo
+      console.log('[WHL] 📁 PASSO 3: Anexando imagem...');
+      let imageInput = null;
+      for (let i = 0; i < 10; i++) {
+        imageInput = document.querySelector('input[accept*="image"]');
+        if (imageInput) break;
+        await new Promise(r => setTimeout(r, 200));
+      }
+      
+      if (!imageInput) {
+        console.log('[WHL] ❌ Input de imagem não encontrado');
+        return { ok: false };
+      }
+
+      // PASSO 5: Anexar arquivo
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(file);
+      imageInput.files = dataTransfer.files;
+      imageInput.dispatchEvent(new Event('change', { bubbles: true }));
+      
+      console.log('[WHL] ✅ Imagem anexada, aguardando preview...');
+      await new Promise(r => setTimeout(r, 2500));
+
+      // PASSO 6: Verificar se o texto aparece como legenda no preview
+      // Se não aparecer, digitar no campo de legenda
+      const dialog = document.querySelector('[role="dialog"]');
+      if (dialog && messageText && messageText.trim()) {
+        const captionBox = dialog.querySelector('div[contenteditable="true"]');
+        if (captionBox && captionBox.textContent.trim().length === 0) {
+          console.log('[WHL] ⌨️ Digitando legenda no preview...');
+          captionBox.focus();
+          await new Promise(r => setTimeout(r, 200));
+          document.execCommand('insertText', false, messageText);
+          captionBox.dispatchEvent(new Event('input', { bubbles: true }));
+          await new Promise(r => setTimeout(r, 300));
+        }
+      }
+
+      // PASSO 7: Clicar no botão de enviar
+      console.log('[WHL] 📤 PASSO 4: Enviando...');
+      await new Promise(r => setTimeout(r, 500));
+      
+      let sendBtn = null;
+      if (dialog) {
+        sendBtn = dialog.querySelector('[aria-label="Enviar"]') ||
+                  [...dialog.querySelectorAll('button')].find(b => !b.disabled);
+      }
+      
+      if (!sendBtn) {
+        sendBtn = document.querySelector('[aria-label="Enviar"]');
+      }
+      
+      if (sendBtn) {
+        sendBtn.click();
+        console.log('[WHL] ✅ Enviado com sucesso!');
+        await new Promise(r => setTimeout(r, 2000));
+        return { ok: true };
+      }
+      
+      console.log('[WHL] ❌ Botão de enviar não encontrado');
+      return { ok: false };
+
+    } catch (error) {
+      console.error('[WHL] ❌ Erro:', error);
       return { ok: false };
     }
   }
