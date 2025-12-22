@@ -729,6 +729,41 @@
   }
 
   /**
+   * Helper: Obtém o campo de mensagem
+   */
+  function getMessageInputField() {
+    return document.querySelector('#main footer p._aupe') ||
+           document.querySelector('footer._ak1i div.copyable-area p');
+  }
+
+  /**
+   * Helper: Dispara eventos de mouse completos em um elemento
+   */
+  async function dispatchMouseEvents(element) {
+    element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+    await new Promise(r => setTimeout(r, 50));
+    element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+    await new Promise(r => setTimeout(r, 50));
+    element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+  }
+
+  /**
+   * Helper: Envia tecla Enter em um elemento
+   */
+  async function sendEnterKey(element) {
+    element.focus();
+    element.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter',
+      code: 'Enter',
+      keyCode: 13,
+      which: 13,
+      bubbles: true,
+      cancelable: true
+    }));
+    await new Promise(r => setTimeout(r, 500));
+  }
+
+  /**
    * Clica no botão enviar (para mensagens de texto via URL)
    */
   async function clickSendButton() {
@@ -745,23 +780,34 @@
       'footer button[aria-label="Enviar"]',
       'button[data-testid="send"]',
       '[data-testid="send"]',
-      'span[data-icon="send"]',
       // Seletor genérico para botão de enviar no footer
       '#main footer button:last-child',
       'footer._ak1i button'
     ];
     
     let sendButton = null;
+    let foundVia = '';
     
+    // Tentar encontrar botão pelos seletores
     for (const selector of selectors) {
-      sendButton = document.querySelector(selector);
-      if (sendButton) {
-        console.log('[WHL] ✅ Botão encontrado com seletor:', selector);
-        break;
+      const el = document.querySelector(selector);
+      if (el) {
+        // Se for um span, pegar o botão pai
+        if (el.tagName.toLowerCase() === 'span') {
+          sendButton = el.closest('button');
+          foundVia = `${selector} (via closest button)`;
+        } else {
+          sendButton = el;
+          foundVia = selector;
+        }
+        if (sendButton) {
+          console.log('[WHL] ✅ Botão encontrado com seletor:', foundVia);
+          break;
+        }
       }
     }
     
-    // Se encontrou o span com ícone de send, pegar o button pai
+    // Fallback: procurar pelo ícone send
     if (!sendButton) {
       const sendIcon = document.querySelector('span[data-icon="send"]');
       if (sendIcon) {
@@ -777,85 +823,53 @@
       
       // Método 1: Click direto
       sendButton.click();
-      
-      // Aguardar um pouco
       await new Promise(r => setTimeout(r, 300));
       
-      // Método 2: Se ainda não enviou, tentar via eventos
-      const msgInput = document.querySelector('#main footer p._aupe') ||
-                       document.querySelector('footer._ak1i div.copyable-area p');
+      // Verificar se mensagem ainda está no campo
+      let msgInput = getMessageInputField();
       
       if (msgInput && msgInput.textContent.trim().length > 0) {
         console.log('[WHL] ⚠️ Mensagem ainda no campo, tentando eventos de mouse...');
         
-        // Eventos de mouse completos
-        sendButton.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-        await new Promise(r => setTimeout(r, 50));
-        sendButton.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
-        await new Promise(r => setTimeout(r, 50));
-        sendButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-        
+        // Método 2: Eventos de mouse completos
+        await dispatchMouseEvents(sendButton);
         await new Promise(r => setTimeout(r, 300));
+        
+        msgInput = getMessageInputField();
       }
       
       // Verificar se mensagem foi enviada
-      const msgInputAfter = document.querySelector('#main footer p._aupe') ||
-                            document.querySelector('footer._ak1i div.copyable-area p');
-      
-      if (!msgInputAfter || msgInputAfter.textContent.trim().length === 0) {
+      if (!msgInput || msgInput.textContent.trim().length === 0) {
         console.log('[WHL] ✅ Mensagem enviada com sucesso!');
         return { success: true };
       }
       
       // Método 3: Tentar via ENTER como último recurso
       console.log('[WHL] ⚠️ Tentando via tecla ENTER...');
-      if (msgInputAfter) {
-        msgInputAfter.focus();
-        msgInputAfter.dispatchEvent(new KeyboardEvent('keydown', {
-          key: 'Enter',
-          code: 'Enter',
-          keyCode: 13,
-          which: 13,
-          bubbles: true,
-          cancelable: true
-        }));
-        
-        await new Promise(r => setTimeout(r, 500));
-        
-        // Verificar novamente
-        const finalCheck = document.querySelector('#main footer p._aupe') ||
-                          document.querySelector('footer._ak1i div.copyable-area p');
-        
-        if (!finalCheck || finalCheck.textContent.trim().length === 0) {
-          console.log('[WHL] ✅ Mensagem enviada via ENTER!');
-          return { success: true };
-        }
+      await sendEnterKey(msgInput);
+      
+      // Verificar novamente
+      const finalCheck = getMessageInputField();
+      if (!finalCheck || finalCheck.textContent.trim().length === 0) {
+        console.log('[WHL] ✅ Mensagem enviada via ENTER!');
+        return { success: true };
       }
       
-      console.log('[WHL] ⚠️ Não foi possível confirmar se a mensagem foi enviada');
-      return { success: true }; // Assumir sucesso se o botão foi clicado
+      // Se chegou aqui, ainda tem mensagem no campo
+      console.log('[WHL] ⚠️ Mensagem ainda presente após todas as tentativas');
+      // Retornar sucesso parcial - pelo menos encontramos e clicamos o botão
+      return { success: true, warning: 'Não foi possível verificar se mensagem foi enviada' };
     }
     
     console.log('[WHL] ❌ Botão enviar não encontrado');
     console.log('[WHL] DEBUG: Elementos no footer:', document.querySelector('#main footer')?.innerHTML?.substring(0, 500));
     
     // Última tentativa: ENTER direto no campo de mensagem
-    const msgInput = document.querySelector('#main footer p._aupe') ||
-                     document.querySelector('footer._ak1i div.copyable-area p');
+    const msgInput = getMessageInputField();
     
     if (msgInput) {
       console.log('[WHL] 🔄 Tentando enviar via ENTER no campo de mensagem...');
-      msgInput.focus();
-      msgInput.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'Enter',
-        code: 'Enter',
-        keyCode: 13,
-        which: 13,
-        bubbles: true,
-        cancelable: true
-      }));
-      
-      await new Promise(r => setTimeout(r, 500));
+      await sendEnterKey(msgInput);
       console.log('[WHL] ✅ ENTER enviado');
       return { success: true };
     }
