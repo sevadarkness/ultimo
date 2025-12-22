@@ -31,8 +31,9 @@
       scheduleAt: '',
       typingEffect: true,
       typingDelayMs: 35,
-      overlayMode: true,
-      fallbackMode: true,
+      urlNavigationInProgress: false,
+      currentPhoneNumber: '',
+      currentMessage: '',
       drafts: {},
       lastReport: null,
       selectorHealth: { ok: true, issues: [] },
@@ -267,7 +268,7 @@
             <span>WhatsHybrid Lite</span>
             <span class="status-badge stopped" id="whlStatusBadge">Parado</span>
           </div>
-          <div class="muted">Modo <b>automático</b>: configure e inicie a campanha. A extensão envia tudo sozinha!</div>
+          <div class="muted">Modo <b>automático via URL</b>: configure e inicie a campanha. A extensão envia tudo sozinha!</div>
         </div>
         <button class="iconbtn" id="whlHide" title="Ocultar">—</button>
       </div>
@@ -334,30 +335,10 @@
             <div class="settings-row toggle">
               <div class="settings-label">
                 <div class="k">⌨️ Efeito digitação</div>
-                <div class="d">Simula digitação humana</div>
+                <div class="d">Simula digitação humana (para legendas)</div>
               </div>
               <div class="settings-control">
                 <input type="checkbox" id="whlTypingEffect" checked />
-              </div>
-            </div>
-
-            <div class="settings-row toggle">
-              <div class="settings-label">
-                <div class="k">🎭 Overlay busca</div>
-                <div class="d">Destaque no campo de pesquisa</div>
-              </div>
-              <div class="settings-control">
-                <input type="checkbox" id="whlOverlayMode" checked />
-              </div>
-            </div>
-
-            <div class="settings-row toggle">
-              <div class="settings-label">
-                <div class="k">🧠 Fallback DOM→URL</div>
-                <div class="d">Tentar URL se DOM falhar</div>
-              </div>
-              <div class="settings-control">
-                <input type="checkbox" id="whlFallbackMode" checked />
               </div>
             </div>
           </div>
@@ -531,34 +512,14 @@
 
   async function whlUpdateSelectorHealth() {
     const issues = [];
-    if (!getSearchInput()) issues.push('Campo de busca não encontrado');
+    // Verificar se campo de mensagem existe (para envio de imagem)
+    if (!getMessageInput()) issues.push('Campo de mensagem não encontrado');
     const st = await getState();
     st.selectorHealth = { ok: issues.length===0, issues };
     await setState(st);
   }
 
-  function whlEnsureOverlay() {
-    let ov = document.getElementById('whlOverlay');
-    if (ov) return ov;
-    ov = document.createElement('div');
-    ov.id = 'whlOverlay';
-    ov.style.cssText = 'position:fixed;inset:0;z-index:999998;pointer-events:none;background:rgba(0,0,0,.55);display:none';
-    document.body.appendChild(ov);
-    return ov;
-  }
-  function whlOverlayOn(el) {
-    const st = window.__whl_cached_state__ || null;
-    if (st && !st.overlayMode) return;
-    const ov = whlEnsureOverlay();
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    ov.innerHTML = `<div style="position:absolute;left:${r.left-6}px;top:${r.top-6}px;width:${r.width+12}px;height:${r.height+12}px;border:2px solid rgba(0,255,255,.6);border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,.55)"></div>`;
-    ov.style.display = 'block';
-  }
-  function whlOverlayOff() {
-    const ov = document.getElementById('whlOverlay');
-    if (ov) ov.style.display = 'none';
-  }
+  // DEPRECATED: Overlay functions removed - not needed for URL mode
 
   async function whlExportReportCSV() {
     const st = await getState();
@@ -631,15 +592,8 @@
 
   // ===== DOM SELECTORS (UPDATED WITH CORRECT WHATSAPP WEB STRUCTURE) =====
   
-  // Campo de busca para pesquisar contato/número (SELETORES EXATOS)
-  // IMPORTANTE: Campo de pesquisa está na SIDEBAR (#side), não no main
-  function getSearchInput() {
-    return (
-      document.querySelector('div#side._ak9p p._aupe.copyable-text') ||
-      document.querySelector('div#side._ak9p div.lexical-rich-text-input p._aupe') ||
-      document.querySelector('#side p._aupe')
-    );
-  }
+  // NOTA: getSearchInput removido - modo DOM de busca não é mais usado
+  // A extensão agora usa APENAS navegação via URL
 
   // Campo de mensagem para digitar (SELETORES EXATOS)
   // IMPORTANTE: Campo de mensagem está no MAIN ou FOOTER, não na sidebar
@@ -660,162 +614,139 @@
     );
   }
 
-  // Resultado da busca (SELETORES EXATOS - APENAS CONVERSAS)
-  function getSearchResults() {
-    // Pegar resultados que estão em CONVERSAS, não em MENSAGENS
-    const results = document.querySelectorAll('div#pane-side div._ak72');
-    
-    // Filtrar apenas os que estão na seção de Conversas
-    return [...results].filter(el => {
-      // Verificar se está na seção de Conversas (não Mensagens)
-      const parent = el.closest('div[role="grid"]') || el.closest('div[role="listbox"]');
-      if (!parent) return false;
-      
-      // Verificar se há um header "Mensagens" acima (se sim, ignorar)
-      const prevSibling = parent.previousElementSibling;
-      if (prevSibling && prevSibling.textContent.includes('Mensagens')) {
-        return false; // Está na seção de Mensagens, ignorar
-      }
-      
-      return true;
-    });
-  }
+  // NOTA: getSearchResults removido - não é mais necessário para modo URL
 
-  // ===== NEW CORE FUNCTIONS (CORRECT WHATSAPP WEB IMPLEMENTATION) =====
+  // ===== NEW URL-BASED FUNCTIONS (REPLACING DOM SEARCH) =====
 
   /**
-   * Abre um chat via busca DOM com os seletores exatos
-   * Implementa polling para aguardar resultados aparecerem
-   * APENAS aceita resultados de CONVERSAS, não de MENSAGENS
+   * Envia mensagem via URL (modo exclusivo)
+   * Para texto: https://web.whatsapp.com/send?phone=NUM&text=MSG
+   * Para imagem: https://web.whatsapp.com/send?phone=NUM
    */
-  async function openChatBySearch(numero, options = {}) {
-    const {
-      timeout = 6000,
-      interval = 150,
-      debug = true
-    } = options;
-
-    const log = (...args) => debug && console.log('[WHL]', ...args);
-
+  async function sendViaURL(numero, mensagem, hasImage = false) {
     const cleanNumber = String(numero).replace(/\D/g, '');
+    
     if (!cleanNumber) {
-      log('❌ Número inválido');
-      return false;
-    }
-
-    // IMPORTANTE: Campo de pesquisa está na SIDEBAR (#side)
-    const searchInput = getSearchInput();
-    
-    if (!searchInput) {
-      log('❌ Campo de pesquisa não encontrado');
-      return false;
-    }
-
-    // Limpar campo primeiro
-    searchInput.focus();
-    await new Promise(r => setTimeout(r, 100));
-    document.execCommand('selectAll', false, null);
-    document.execCommand('delete', false, null);
-    searchInput.textContent = '';
-    searchInput.innerHTML = '';
-    searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-    await new Promise(r => setTimeout(r, 200));
-
-    // Digitar o número
-    searchInput.focus();
-    document.execCommand('insertText', false, cleanNumber);
-    searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-    
-    log('✅ Número digitado na busca:', cleanNumber);
-
-    // Aguardar resultados aparecerem
-    await new Promise(r => setTimeout(r, 2000));
-
-    // Verificar se há resultado em CONVERSAS
-    const results = document.querySelectorAll('div#pane-side div._ak72');
-    
-    if (!results.length) {
-      log('❌ Nenhum resultado encontrado');
-      return false;
-    }
-
-    // Verificar se está em Conversas (não Mensagens)
-    // Procurar pelo header "Conversas" vs "Mensagens"
-    const paneSide = document.querySelector('#pane-side');
-    
-    let isInConversas = false;
-    for (const result of results) {
-      // Verificar se o resultado está na seção de Mensagens
-      let currentElement = result;
-      let isInMessages = false;
-      
-      // Subir na árvore DOM procurando por indicador de seção "Mensagens"
-      while (currentElement && currentElement !== paneSide) {
-        const text = currentElement.textContent || '';
-        const prevSibling = currentElement.previousElementSibling;
-        
-        // Se encontrar "Mensagens" antes do resultado, está na seção errada
-        if (prevSibling && prevSibling.textContent && prevSibling.textContent.includes('Mensagens')) {
-          isInMessages = true;
-          break;
-        }
-        
-        currentElement = currentElement.parentElement;
-      }
-      
-      // Só clicar se NÃO estiver em Mensagens
-      if (!isInMessages) {
-        result.click();
-        isInConversas = true;
-        log('✅ Chat aberto (seção Conversas)');
-        break;
-      }
+      console.log('[WHL] ❌ Número inválido');
+      return { success: false, error: 'Número inválido' };
     }
     
-    if (!isInConversas) {
-      log('❌ Resultado apenas em Mensagens, não em Conversas');
-      return false;
+    // Construir URL
+    let url = `https://web.whatsapp.com/send?phone=${cleanNumber}`;
+    
+    // Se for apenas texto (sem imagem), adicionar texto na URL
+    if (mensagem && !hasImage) {
+      url += `&text=${encodeURIComponent(mensagem)}`;
     }
-
-    log('✅ Chat aberto');
-    return true;
+    
+    console.log('[WHL] 🔗 Navegando para:', url);
+    
+    // Salvar estado antes de navegar (para retomar após reload)
+    const st = await getState();
+    st.urlNavigationInProgress = true;
+    st.currentPhoneNumber = cleanNumber;
+    st.currentMessage = mensagem;
+    await setState(st);
+    
+    // Navegar para a URL (isso vai causar reload da página)
+    window.location.href = url;
+    
+    // NOTA: O código abaixo não será executado devido ao reload
+    // A continuação acontece em checkAndResumeCampaignAfterURLNavigation()
+    return { success: true, navigating: true };
   }
 
   /**
-   * Envia mensagem de texto usando BOTÃO DE ENVIAR (não ENTER)
+   * Verifica se há popup de erro após navegação via URL
    */
-  async function sendTextMessage(texto) {
-    const input = getMessageInput();
-
-    if (!input) {
-      console.log('[WHL] ❌ Campo de texto não encontrado');
-      return false;
-    }
-
-    input.focus();
-    await new Promise(r => setTimeout(r, 100));
+  async function checkForErrorPopup() {
+    // Aguardar um pouco para popup aparecer
+    await new Promise(r => setTimeout(r, 1000));
     
-    document.execCommand('selectAll', false, null);
-    document.execCommand('delete', false, null);
-    document.execCommand('insertText', false, texto);
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-
-    console.log('[WHL] ✅ Mensagem digitada');
+    // Procurar por popup de erro
+    const popup = document.querySelector('div[data-animate-modal-popup="true"]');
+    const okButton = [...document.querySelectorAll('button')]
+      .find(b => b.innerText.trim().toUpperCase() === 'OK');
     
-    await new Promise(r => setTimeout(r, 300));
+    // Verificar se há mensagem de erro
+    const errorMessages = [
+      'número de telefone compartilhado por url é inválido',
+      'phone number shared via url is invalid',
+      'número inválido',
+      'invalid phone number'
+    ];
     
-    // Clicar no botão de enviar (NÃO usar ENTER)
-    const sendBtn = getSendButton();
-    if (!sendBtn) {
-      console.log('[WHL] ❌ Botão de enviar não encontrado');
-      return false;
+    const pageText = document.body.innerText.toLowerCase();
+    for (const msg of errorMessages) {
+      if (pageText.includes(msg.toLowerCase())) {
+        return true;
+      }
     }
     
-    sendBtn.click();
-    console.log('[WHL] ✅ Mensagem enviada via botão');
-    
-    return true;
+    return okButton !== undefined && popup !== undefined;
   }
+
+  /**
+   * Fecha popup de erro
+   */
+  async function closeErrorPopup() {
+    const okButton = [...document.querySelectorAll('button')]
+      .find(b => b.innerText.trim().toUpperCase() === 'OK');
+    
+    if (okButton) {
+      okButton.click();
+      await new Promise(r => setTimeout(r, 500));
+      console.log('[WHL] ✅ Popup de erro fechado');
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Aguarda o chat abrir após navegação via URL
+   */
+  async function waitForChatToOpen(timeout = 10000) {
+    const start = Date.now();
+    
+    while (Date.now() - start < timeout) {
+      // Verificar se o chat abriu (footer com campo de mensagem existe)
+      const messageField = document.querySelector('#main footer p._aupe') ||
+                           document.querySelector('footer._ak1i div.copyable-area');
+      
+      if (messageField) {
+        return true;
+      }
+      
+      // Verificar se há erro
+      if (await checkForErrorPopup()) {
+        return false;
+      }
+      
+      await new Promise(r => setTimeout(r, 500));
+    }
+    
+    return false;
+  }
+
+  /**
+   * Clica no botão enviar (para mensagens de texto via URL)
+   */
+  async function clickSendButton() {
+    const sendButton = document.querySelector('footer._ak1i div._ak1r button') ||
+                       document.querySelector('footer._ak1i button[aria-label="Enviar"]') ||
+                       document.querySelector('button[data-testid="send"]');
+    
+    if (sendButton) {
+      sendButton.click();
+      console.log('[WHL] ✅ Mensagem enviada');
+      return { success: true };
+    }
+    
+    console.log('[WHL] ❌ Botão enviar não encontrado');
+    return { success: false, error: 'Botão enviar não encontrado' };
+  }
+
+  // DEPRECATED: sendTextMessage removido - agora usa clickSendButton() após navegação via URL
 
   /**
    * Fecha popup de número inválido
@@ -912,216 +843,35 @@
     return true;
   }
 
-  // Função para limpar campo de pesquisa (IMPLEMENTAÇÃO EXATA)
-  async function clearSearchField() {
-    const searchInput = getSearchInput();
-    
-    if (!searchInput) {
-      console.log('[WHL] ❌ Campo de pesquisa não encontrado');
-      return false;
-    }
-    
-    searchInput.focus();
-    await new Promise(r => setTimeout(r, 100));
-    
-    // Selecionar tudo e deletar
-    document.execCommand('selectAll', false, null);
-    document.execCommand('delete', false, null);
-    
-    // Forçar limpeza
-    searchInput.textContent = '';
-    searchInput.innerHTML = '';
-    
-    // Disparar evento
-    searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-    
-    await new Promise(r => setTimeout(r, 100));
-    
-    console.log('[WHL] ✅ Campo de pesquisa limpo');
-    return true;
-  }
+  // DEPRECATED: clearSearchField removido - modo URL não precisa de busca
 
-  // Função auxiliar para aguardar resultados de busca com polling
-  async function waitForSearchResults(maxWaitMs = 5000) {
-    const startTime = Date.now();
-    const checkInterval = 300; // Verificar a cada 300ms
-    
-    // Seletores alternativos para resultados de busca
-    const resultSelectors = [
-      'div[role="option"][data-testid="cell-frame-container"]',
-      '[data-testid="cell-frame-container"]',
-      'div[role="option"]',
-      'div[data-testid="chat-list"] [role="listitem"]',
-      '[role="listitem"][data-id]'
-    ];
-    
-    while (Date.now() - startTime < maxWaitMs) {
-      // Tentar todos os seletores
-      for (const selector of resultSelectors) {
-        const result = document.querySelector(selector);
-        if (result) {
-          console.log('[WHL] ✅ Resultado encontrado com seletor:', selector);
-          return result;
-        }
-      }
-      
-      // Log de progresso a cada segundo
-      const elapsed = Date.now() - startTime;
-      if (elapsed % 1000 < checkInterval) {
-        console.log(`[WHL] Aguardando resultados... ${Math.round(elapsed/1000)}s`);
-      }
-      
-      await new Promise(r => setTimeout(r, checkInterval));
-    }
-    
-    console.log('[WHL] ⏱️ Timeout: Nenhum resultado encontrado após', maxWaitMs, 'ms');
-    return null;
-  }
+  // DEPRECATED: waitForSearchResults removido - modo URL não usa busca DOM
 
-  // Função para abrir chat via DOM (sem reload!) - UPDATED WITH NEW IMPLEMENTATION
-  async function openChatViaDom(phoneNumber) {
-    console.log('[WHL] ========================================');
-    console.log('[WHL] ABRINDO CHAT VIA DOM (NEW IMPLEMENTATION)');
-    console.log('[WHL] Número:', phoneNumber);
-    console.log('[WHL] ========================================');
-    
-    // Limpar campo de pesquisa antes de começar
-    await clearSearchField();
-    
-    // Usar a nova função openChatBySearch
-    const success = await openChatBySearch(phoneNumber, {
-      timeout: 6000,
-      interval: 150,
-      debug: true
-    });
-    
-    if (success) {
-      // Aguardar chat carregar
-      console.log('[WHL] Aguardando chat carregar...');
-      await new Promise(r => setTimeout(r, 2000));
-      return { success: true, hasResults: true };
-    } else {
-      // Tentar fechar popup de número inválido se existir
-      closeInvalidNumberPopup();
-      await clearSearchField();
-      return { success: false, hasResults: false };
-    }
-  }
+  // DEPRECATED: openChatViaDom removido - modo URL substitui completamente
 
-  // Função para digitar mensagem via DOM
-  async function typeMessageViaDom(message) {
-    console.log('[WHL] ========================================');
-    console.log('[WHL] DIGITANDO MENSAGEM');
-    console.log('[WHL] ========================================');
-    
-    // Aguardar campo de mensagem aparecer (máx 15 segundos)
-    let msgBox = null;
-    for (let i = 0; i < 30; i++) {
-      msgBox = getMessageInput();
-      
-      if (msgBox) {
-        // Verificar que NÃO é o campo de busca (extra safety check)
-        const ariaLabel = msgBox.getAttribute('aria-label') || '';
-        const dataTab = msgBox.getAttribute('data-tab');
-        
-        if (ariaLabel.includes('pesquisa') || ariaLabel.includes('Search') || dataTab === '3') {
-          console.log('[WHL] ⚠️ Campo de busca detectado, continuando...');
-          msgBox = null;
-        } else {
-          console.log('[WHL] ✅ Campo de mensagem encontrado');
-          break;
-        }
-      }
-      
-      if (i % 5 === 0) {
-        console.log('[WHL] Aguardando campo de mensagem... tentativa', i + 1);
-      }
-      await new Promise(r => setTimeout(r, 500));
-    }
-    
-    if (!msgBox) {
-      console.log('[WHL] ❌ Campo de mensagem não encontrado');
-      return false;
-    }
-    
-    // Digitar mensagem usando execCommand (FUNCIONA!)
-    const typed = await typeInField(msgBox, message);
-    if (!typed) {
-      console.log('[WHL] ❌ Falha ao digitar mensagem');
-      return false;
-    }
-    
-    console.log('[WHL] ✅ Mensagem digitada');
-    return true;
-  }
+  // DEPRECATED: typeMessageViaDom removido - modo URL não precisa digitar via DOM
 
-  // Função principal de envio via DOM (sem reload!) - UPDATED WITH NEW FLOW
-  async function sendMessageViaDom(phoneNumber, message) {
+  // ===== MAIN SENDING FUNCTION (URL MODE ONLY) =====
+  
+  /**
+   * Função principal de envio usando APENAS URL
+   * Não mais usa busca via DOM
+   */
+  async function sendMessageViaURL(phoneNumber, message) {
     console.log('[WHL] ████████████████████████████████████████');
-    console.log('[WHL] ███ ENVIANDO MENSAGEM VIA DOM ███');
+    console.log('[WHL] ███ ENVIANDO MENSAGEM VIA URL ███');
     console.log('[WHL] ████████████████████████████████████████');
     console.log('[WHL] Para:', phoneNumber);
-    console.log('[WHL] Mensagem:', message.substring(0, 50) + '...');
+    console.log('[WHL] Mensagem:', message ? message.substring(0, 50) + '...' : '(sem texto)');
     
-    // 1. Abrir chat via busca DOM
-    const chatResult = await openChatViaDom(phoneNumber);
-    
-    if (!chatResult.hasResults || !chatResult.success) {
-      console.log('[WHL] ❌ FALHA: Não conseguiu abrir o chat');
-      await clearSearchField();
-      return false;
-    }
-    
-    // 2. Se tem imagem, enviar a imagem
     const st = await getState();
-    if (st.imageData) {
-      const imgRes = await sendImage(st.imageData, message, !!st.typingEffect);
-      // se enviou a mídia com legenda, finaliza aqui
-      if (imgRes && imgRes.ok && imgRes.captionApplied) {
-        console.log('[WHL] ✅ Imagem enviada com legenda');
-        await clearSearchField();
-        return true;
-      }
-      // se enviou a mídia sem legenda, segue para enviar o texto separado
-      if (imgRes && imgRes.ok && !imgRes.captionApplied) {
-        console.log('[WHL] ✅ Imagem enviada, agora enviando texto separado');
-        await new Promise(r => setTimeout(r, 900));
-      }
-    }
+    const hasImage = !!st.imageData;
     
-    // 3. Aguardar campo de mensagem aparecer
-    let attempts = 0;
-    let msgInput = null;
-    while (attempts < 30 && !msgInput) {
-      msgInput = getMessageInput();
-      if (!msgInput) {
-        await new Promise(r => setTimeout(r, 500));
-        attempts++;
-      }
-    }
+    // Usar sendViaURL que navega para a URL apropriada
+    await sendViaURL(phoneNumber, message, hasImage);
     
-    if (!msgInput) {
-      console.log('[WHL] ❌ FALHA: Campo de mensagem não encontrado');
-      await clearSearchField();
-      return false;
-    }
-    
-    // 4. Enviar mensagem usando a nova função sendTextMessage
-    await new Promise(r => setTimeout(r, 300));
-    const sent = await sendTextMessage(message);
-    
-    if (!sent) {
-      console.log('[WHL] ❌ FALHA: Não conseguiu enviar a mensagem');
-      await clearSearchField();
-      return false;
-    }
-    
-    await new Promise(r => setTimeout(r, 1500));
-    await clearSearchField();
-    
-    console.log('[WHL] ████████████████████████████████████████');
-    console.log('[WHL] ███ ✅ MENSAGEM ENVIADA COM SUCESSO! ███');
-    console.log('[WHL] ████████████████████████████████████████');
+    // NOTA: A função sendViaURL causa um reload da página
+    // A continuação do envio acontece em checkAndResumeCampaignAfterURLNavigation()
     return true;
   }
 
@@ -1381,54 +1131,128 @@
     return false;
   }
 
-  // Função para verificar e retomar campanha após reload (URL fallback)
-  async function checkAndResumeCampaign() {
+  // Função para verificar e retomar campanha após navegação via URL
+  async function checkAndResumeCampaignAfterURLNavigation() {
     const st = await getState();
     
-    // Se a campanha estava rodando e está em modo fallback
-    if (st.isRunning && st.fallbackMode) {
-      console.log('[WHL] 🔄 Retomando campanha após navegação URL...');
+    // Verificar se estamos retomando após navegação URL
+    if (!st.urlNavigationInProgress) {
+      return;
+    }
+    
+    console.log('[WHL] 🔄 Retomando campanha após navegação URL...');
+    
+    // Aguardar página carregar completamente
+    await new Promise(r => setTimeout(r, 4000));
+    
+    // Verificar se há popup de erro
+    const hasError = await checkForErrorPopup();
+    if (hasError) {
+      console.log('[WHL] ❌ Número não encontrado no WhatsApp');
+      await closeErrorPopup();
       
-      // Aguardar página carregar completamente
-      await new Promise(r => setTimeout(r, 3000));
-      
-      // Verificar se estamos em uma página de envio (tem o campo de mensagem)
-      const msgInput = getMessageInput();
-      if (msgInput) {
-        console.log('[WHL] ✅ Página carregada, tentando enviar mensagem...');
-        
-        // Tentar enviar a mensagem atual
-        const sent = await autoSendMessage();
-        
-        const cur = st.queue[st.index];
-        if (cur) {
-          if (sent) {
-            cur.status = 'sent';
-            console.log('[WHL] ✅ Mensagem enviada via URL');
-          } else {
-            cur.status = 'failed';
-            console.log('[WHL] ❌ Falha no envio via URL');
-          }
-          
-          delete cur.fallbackAttempt;
-          st.index++;
-          await setState(st);
-          await render();
-        }
-        
-        // Continuar com a próxima mensagem após delay
-        const delay = getRandomDelay(st.delayMin, st.delayMax);
-        console.log(`[WHL] Aguardando ${Math.round(delay/1000)}s antes do próximo...`);
-        
-        campaignInterval = setTimeout(() => {
-          processCampaignStepViaDom();
-        }, delay);
-      } else {
-        console.log('[WHL] ⚠️ Página não carregou corretamente, continuando...');
-        st.index++;
-        await setState(st);
-        scheduleCampaignStepViaDom();
+      // Marcar como falha
+      const cur = st.queue[st.index];
+      if (cur) {
+        cur.status = 'failed';
+        cur.errorReason = 'Número não encontrado no WhatsApp';
       }
+      
+      st.urlNavigationInProgress = false;
+      st.index++;
+      await setState(st);
+      await render();
+      
+      // Continuar com próximo
+      scheduleCampaignStepViaDom();
+      return;
+    }
+    
+    // Verificar se chat abriu
+    const chatOpened = await waitForChatToOpen();
+    if (!chatOpened) {
+      console.log('[WHL] ❌ Chat não abriu');
+      
+      // Marcar como falha
+      const cur = st.queue[st.index];
+      if (cur) {
+        cur.status = 'failed';
+        cur.errorReason = 'Chat não abriu';
+      }
+      
+      st.urlNavigationInProgress = false;
+      st.index++;
+      await setState(st);
+      await render();
+      
+      // Continuar com próximo
+      scheduleCampaignStepViaDom();
+      return;
+    }
+    
+    console.log('[WHL] ✅ Chat aberto');
+    
+    // Processar envio conforme o tipo
+    const cur = st.queue[st.index];
+    let success = false;
+    
+    // Se tem imagem, anexar e enviar
+    if (st.imageData) {
+      console.log('[WHL] 📸 Enviando imagem...');
+      const imageResult = await sendImage(st.imageData, st.currentMessage, !!st.typingEffect);
+      success = imageResult && imageResult.ok;
+      
+      if (success) {
+        console.log('[WHL] ✅ Imagem enviada');
+      } else {
+        console.log('[WHL] ❌ Falha ao enviar imagem');
+      }
+    } else if (st.currentMessage) {
+      // Se é apenas texto, clicar no botão enviar
+      // (texto já foi inserido via URL parameter)
+      console.log('[WHL] 📝 Enviando texto...');
+      await new Promise(r => setTimeout(r, 1000));
+      const sendResult = await clickSendButton();
+      success = sendResult && sendResult.success;
+      
+      if (success) {
+        console.log('[WHL] ✅ Texto enviado');
+      } else {
+        console.log('[WHL] ❌ Falha ao enviar texto');
+      }
+    }
+    
+    // Atualizar estado
+    if (cur) {
+      if (success) {
+        cur.status = 'sent';
+        console.log(`[WHL] ✅ Sucesso: ${cur.phone}`);
+      } else {
+        cur.status = 'failed';
+        cur.errorReason = 'Falha no envio';
+        console.log(`[WHL] ❌ Falha: ${cur.phone}`);
+      }
+    }
+    
+    st.urlNavigationInProgress = false;
+    st.index++;
+    await setState(st);
+    await render();
+    
+    // Continuar com próximo após delay
+    if (st.index < st.queue.length && st.isRunning) {
+      const delay = getRandomDelay(st.delayMin, st.delayMax);
+      console.log(`[WHL] ⏳ Aguardando ${Math.round(delay/1000)}s antes do próximo...`);
+      
+      campaignInterval = setTimeout(() => {
+        processCampaignStepViaDom();
+      }, delay);
+    } else if (st.index >= st.queue.length) {
+      // Campanha finalizada
+      st.isRunning = false;
+      await setState(st);
+      await render();
+      console.log('[WHL] 🎉 Campanha finalizada!');
     }
   }
 
@@ -1538,7 +1362,7 @@
 
   // ===== NEW DOM-BASED CAMPAIGN PROCESSING =====
 
-  // Loop da campanha via DOM (substituindo processCampaignStep)
+  // Loop da campanha via URL (substituindo modo DOM)
   async function processCampaignStepViaDom() {
     const st = await getState();
     
@@ -1597,52 +1421,11 @@
     await setState(st);
     await render();
     
-    // Enviar via DOM
-    const sent = await sendMessageViaDom(cur.phone, st.message);
+    // Enviar via URL (isso vai causar reload da página)
+    await sendMessageViaURL(cur.phone, st.message);
     
-    if (sent) {
-      cur.status = 'sent';
-      console.log('[WHL] ✅ Enviado com sucesso');
-      delete cur.retryPending;
-      await setState(st);
-      await render();
-    } else {
-      // Falhou - registrar como falha
-      console.log('[WHL] ❌ Falha no envio');
-      cur.status = 'failed';
-      delete cur.retryPending;
-      await setState(st);
-      await render();
-      
-      // Se continueOnError está desabilitado, parar
-      if (!st.continueOnError) {
-        st.isRunning = false;
-        await setState(st);
-        await render();
-        return;
-      }
-    }
-    
-    // Avançar para próximo
-    st.index++;
-    await setState(st);
-    await render();
-    
-    // Se ainda há mais, agendar próximo com delay
-    if (st.index < st.queue.length) {
-      const delay = getRandomDelay(st.delayMin, st.delayMax);
-      console.log(`[WHL] Aguardando ${Math.round(delay/1000)}s antes do próximo...`);
-      
-      campaignInterval = setTimeout(() => {
-        processCampaignStepViaDom();
-      }, delay);
-    } else {
-      // Campanha finalizada
-      st.isRunning = false;
-      await setState(st);
-      await render();
-      console.log('[WHL] 🎉 Campanha finalizada!');
-    }
+    // NOTA: A função sendMessageViaURL causa um reload da página
+    // A continuação do envio acontece em checkAndResumeCampaignAfterURLNavigation()
   }
 
   function scheduleCampaignStepViaDom() {
@@ -1675,9 +1458,9 @@
     await setState(st);
     await render();
 
-    console.log('[WHL] 🚀 Campanha iniciada (modo DOM)');
+    console.log('[WHL] 🚀 Campanha iniciada (modo URL)');
     
-    // Usar modo DOM (sem reload!)
+    // Usar modo URL (com reload de página)
     processCampaignStepViaDom();
   }
 
@@ -1738,13 +1521,9 @@
     const retryEl = document.getElementById('whlRetryMax');
     const schedEl = document.getElementById('whlScheduleAt');
     const typingEl = document.getElementById('whlTypingEffect');
-    const overlayEl = document.getElementById('whlOverlayMode');
-    const fbEl = document.getElementById('whlFallbackMode');
     if (retryEl) retryEl.value = state.retryMax ?? 2;
     if (schedEl && (schedEl.value||'') !== (state.scheduleAt||'')) schedEl.value = state.scheduleAt || '';
     if (typingEl) typingEl.checked = !!state.typingEffect;
-    if (overlayEl) overlayEl.checked = !!state.overlayMode;
-    if (fbEl) fbEl.checked = !!state.fallbackMode;
     // Preview
     const curp = state.queue[state.index];
     const phone = curp?.phone || '';
@@ -1849,7 +1628,7 @@
       };
     });
 
-    document.getElementById('whlHint').textContent = 'Modo automático: configure os delays e clique em "Iniciar Campanha"';
+    document.getElementById('whlHint').textContent = 'Modo automático via URL: configure os delays e clique em "Iniciar Campanha"';
 
     const cur = state.queue[state.index];
     if (state.isRunning && !state.isPaused) {
@@ -2087,18 +1866,6 @@ try {
       st.typingEffect = !!e.target.checked;
       await setState(st);
     });
-    // Overlay
-    document.getElementById('whlOverlayMode').addEventListener('change', async (e) => {
-      const st = await getState();
-      st.overlayMode = !!e.target.checked;
-      await setState(st);
-    });
-    // Fallback
-    document.getElementById('whlFallbackMode').addEventListener('change', async (e) => {
-      const st = await getState();
-      st.fallbackMode = !!e.target.checked;
-      await setState(st);
-    });
     // CSV
     document.getElementById('whlCsv').addEventListener('change', async (e) => {
       const file = e.target.files?.[0];
@@ -2136,7 +1903,7 @@ try {
       st.drafts[name] = {
         numbersText: st.numbersText, message: st.message, imageData: st.imageData,
         delayMin: st.delayMin, delayMax: st.delayMax, retryMax: st.retryMax,
-        scheduleAt: st.scheduleAt, typingEffect: st.typingEffect, overlayMode: st.overlayMode, fallbackMode: st.fallbackMode
+        scheduleAt: st.scheduleAt, typingEffect: st.typingEffect
       };
       await setState(st);
       await render();
@@ -2151,7 +1918,7 @@ try {
       st.numbersText = d.numbersText||''; st.message=d.message||''; st.imageData=d.imageData||null;
       st.delayMin = d.delayMin ?? st.delayMin; st.delayMax = d.delayMax ?? st.delayMax;
       st.retryMax = d.retryMax ?? st.retryMax; st.scheduleAt = d.scheduleAt||'';
-      st.typingEffect = d.typingEffect ?? st.typingEffect; st.overlayMode=d.overlayMode ?? st.overlayMode; st.fallbackMode=d.fallbackMode ?? st.fallbackMode;
+      st.typingEffect = d.typingEffect ?? st.typingEffect;
       await setState(st);
       await render();
     });
@@ -2201,8 +1968,8 @@ try {
     await whlUpdateSelectorHealth();
     await render();
     
-    // Check and resume campaign if needed (for URL fallback)
-    await checkAndResumeCampaign();
+    // Check and resume campaign if needed (for URL navigation)
+    await checkAndResumeCampaignAfterURLNavigation();
     
     console.log('[WHL] Extension initialized');
   })();
