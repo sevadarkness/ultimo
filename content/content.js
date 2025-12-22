@@ -2441,7 +2441,7 @@ try {
       const attachBtn = document.querySelector('[data-testid="clip"]') ||
                         document.querySelector('span[data-icon="clip"]')?.closest('button') ||
                         document.querySelector('[aria-label="Anexar"]') ||
-                        document.querySelector('span[data-icon="attach-menu-plus"]')?.closest('div');
+                        document.querySelector('span[data-icon="attach-menu-plus"]')?.closest('button');
       
       if (!attachBtn) {
         console.log('[WHL] ❌ Botão de anexar não encontrado');
