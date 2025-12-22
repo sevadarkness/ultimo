@@ -605,13 +605,32 @@
     );
   }
 
-  // Botão de enviar (SELETORES EXATOS)
+  /**
+   * Encontra o botão de enviar de forma robusta
+   * Funciona para texto, imagem, documento, vídeo
+   * Não depende de classes CSS ou data-attributes
+   */
+  function findSendButton() {
+    // Primeiro: verificar se há modal/dialog aberto (imagem, vídeo, doc)
+    const dialog = document.querySelector('[role="dialog"]');
+    if (dialog) {
+      const btn = [...dialog.querySelectorAll('button')].find(b => !b.disabled);
+      if (btn) return btn;
+    }
+
+    // Segundo: verificar no footer (texto normal)
+    const footer = document.querySelector('footer');
+    if (footer) {
+      const btn = [...footer.querySelectorAll('button')].find(b => !b.disabled);
+      if (btn) return btn;
+    }
+
+    return null;
+  }
+
+  // Botão de enviar (MÉTODO PROFISSIONAL - não depende de classes)
   function getSendButton() {
-    return (
-      document.querySelector('footer._ak1i div._ak1r button') ||
-      document.querySelector('footer._ak1i button[aria-label="Enviar"]') ||
-      document.querySelector('[data-testid="send"]')
-    );
+    return findSendButton();
   }
 
   // NOTA: getSearchResults removido - não é mais necessário para modo URL
@@ -782,19 +801,48 @@
   }
 
   /**
-   * Helper: Envia tecla Enter em um elemento
+   * Helper: Envia tecla Enter em um elemento com fallback para botão
    */
   async function sendEnterKey(element) {
-    element.focus();
-    element.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Enter',
-      code: 'Enter',
-      keyCode: 13,
-      which: 13,
-      bubbles: true,
-      cancelable: true
-    }));
+    if (!element) return false;
+    
+    // Encontrar o elemento contenteditable pai
+    const editableDiv = element.closest('div[contenteditable="true"]') || 
+                        element.closest('div.copyable-area') ||
+                        element;
+    
+    editableDiv.focus();
+    await new Promise(r => setTimeout(r, 100));
+    
+    // Disparar eventos de teclado completos (keydown, keypress, keyup)
+    const events = ['keydown', 'keypress', 'keyup'];
+    for (const eventType of events) {
+      const event = new KeyboardEvent(eventType, {
+        key: 'Enter',
+        code: 'Enter',
+        keyCode: 13,
+        which: 13,
+        charCode: eventType === 'keypress' ? 13 : 0,
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        view: window
+      });
+      editableDiv.dispatchEvent(event);
+      await new Promise(r => setTimeout(r, 50));
+    }
+    
+    await new Promise(r => setTimeout(r, 300));
+    
+    // FALLBACK: Usar método profissional para encontrar e clicar no botão
+    const sendButton = findSendButton();
+    if (sendButton) {
+      console.log('[WHL] 🔘 Clicando no botão de enviar (fallback)');
+      sendButton.click();
+    }
+    
     await new Promise(r => setTimeout(r, 500));
+    return true;
   }
 
   /**
@@ -1319,31 +1367,53 @@
         console.log('[WHL] ❌ Falha ao enviar imagem');
       }
     } else if (st.currentMessage) {
-      // Se é apenas texto, enviar via ENTER
-      // (texto já foi inserido via URL parameter)
-      console.log('[WHL] 📝 Enviando texto via ENTER...');
-      await new Promise(r => setTimeout(r, 1000));
+      // Se é apenas texto, enviar via botão profissional
+      console.log('[WHL] 📝 Enviando texto...');
+      await new Promise(r => setTimeout(r, 2000));
       
-      // Obter o campo de mensagem usando helper
-      const msgInput = getMessageInputField();
-      
-      if (msgInput) {
-        // Enviar tecla ENTER usando helper
-        await sendEnterKey(msgInput);
-        console.log('[WHL] ✅ ENTER enviado');
+      // Tentar até 3 vezes
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        console.log(`[WHL] Tentativa ${attempt}/3...`);
         
-        // Verificar se mensagem foi enviada
-        const checkInput = getMessageInputField();
-        success = !checkInput || checkInput.textContent.trim().length === 0;
-      } else {
-        console.log('[WHL] ❌ Campo de mensagem não encontrado');
-        success = false;
+        // Método 1: Clicar no botão de enviar diretamente
+        const sendBtn = findSendButton();
+        if (sendBtn) {
+          console.log('[WHL] ✅ Botão de enviar encontrado');
+          sendBtn.click();
+          await new Promise(r => setTimeout(r, 1000));
+          
+          // Verificar se foi enviado
+          const msgInput = getMessageInputField();
+          if (!msgInput || msgInput.textContent.trim().length === 0) {
+            success = true;
+            console.log('[WHL] ✅ Mensagem enviada com sucesso!');
+            break;
+          }
+        }
+        
+        // Método 2: Tentar via ENTER como fallback
+        if (!success && attempt < 3) {
+          const msgInput = getMessageInputField();
+          if (msgInput) {
+            await sendEnterKey(msgInput);
+            await new Promise(r => setTimeout(r, 1000));
+            
+            const checkInput = getMessageInputField();
+            if (!checkInput || checkInput.textContent.trim().length === 0) {
+              success = true;
+              console.log('[WHL] ✅ Mensagem enviada via ENTER!');
+              break;
+            }
+          }
+        }
+        
+        await new Promise(r => setTimeout(r, 500));
       }
       
       if (success) {
         console.log('[WHL] ✅ Texto enviado');
       } else {
-        console.log('[WHL] ❌ Falha ao enviar texto');
+        console.log('[WHL] ❌ Falha ao enviar texto após 3 tentativas');
       }
     }
     
@@ -2205,8 +2275,7 @@ try {
       }
 
       // Find and click send button in image preview
-      const sendBtn = document.querySelector('[data-testid="send"]') ||
-                      document.querySelector('span[data-icon="send"]')?.closest('button');
+      const sendBtn = findSendButton();
 
       if (sendBtn) {
         sendBtn.click();
@@ -2339,9 +2408,7 @@ try {
       
       // Se preview ainda aberto, tentar clicar no botão de enviar como fallback
       console.log('[WHL] ⚠️ Preview ainda aberto, tentando botão de enviar...');
-      const sendBtn = document.querySelector('[data-testid="send"]') ||
-                      document.querySelector('span[data-icon="send"]')?.closest('button') ||
-                      document.querySelector('span[data-icon="send"]')?.closest('div');
+      const sendBtn = findSendButton();
       
       if (sendBtn) {
         sendBtn.click();
