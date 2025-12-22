@@ -785,16 +785,69 @@
    * Helper: Envia tecla Enter em um elemento
    */
   async function sendEnterKey(element) {
-    element.focus();
-    element.dispatchEvent(new KeyboardEvent('keydown', {
+    if (!element) return false;
+    
+    // Encontrar o elemento contenteditable pai
+    const editableDiv = element.closest('div[contenteditable="true"]') || 
+                        element.closest('div.copyable-area') ||
+                        element;
+    
+    editableDiv.focus();
+    await new Promise(r => setTimeout(r, 100));
+    
+    // Método 1: KeyboardEvent com todas as propriedades
+    const keydownEvent = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      code: 'Enter',
+      keyCode: 13,
+      which: 13,
+      charCode: 13,
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      view: window
+    });
+    editableDiv.dispatchEvent(keydownEvent);
+    
+    // Método 2: Também disparar keypress e keyup
+    const keypressEvent = new KeyboardEvent('keypress', {
+      key: 'Enter',
+      code: 'Enter',
+      keyCode: 13,
+      which: 13,
+      charCode: 13,
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      view: window
+    });
+    editableDiv.dispatchEvent(keypressEvent);
+    
+    const keyupEvent = new KeyboardEvent('keyup', {
       key: 'Enter',
       code: 'Enter',
       keyCode: 13,
       which: 13,
       bubbles: true,
-      cancelable: true
-    }));
+      cancelable: true,
+      composed: true,
+      view: window
+    });
+    editableDiv.dispatchEvent(keyupEvent);
+    
+    await new Promise(r => setTimeout(r, 300));
+    
+    // Método 3: Se ainda não enviou, tentar clicar no botão de enviar
+    const sendButton = document.querySelector('button[data-testid="send"]') ||
+                       document.querySelector('span[data-icon="send"]')?.closest('button') ||
+                       document.querySelector('footer._ak1i div._ak1r button');
+    
+    if (sendButton) {
+      sendButton.click();
+    }
+    
     await new Promise(r => setTimeout(r, 500));
+    return true;
   }
 
   /**
@@ -1321,23 +1374,41 @@
     } else if (st.currentMessage) {
       // Se é apenas texto, enviar via ENTER
       // (texto já foi inserido via URL parameter)
-      console.log('[WHL] 📝 Enviando texto via ENTER...');
-      await new Promise(r => setTimeout(r, 1000));
+      console.log('[WHL] 📝 Enviando texto...');
+      await new Promise(r => setTimeout(r, 2000)); // Aumentar espera
       
-      // Obter o campo de mensagem usando helper
-      const msgInput = getMessageInputField();
-      
-      if (msgInput) {
-        // Enviar tecla ENTER usando helper
-        await sendEnterKey(msgInput);
-        console.log('[WHL] ✅ ENTER enviado');
+      // Tentar até 3 vezes
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        console.log(`[WHL] Tentativa ${attempt}/3...`);
         
-        // Verificar se mensagem foi enviada
-        const checkInput = getMessageInputField();
-        success = !checkInput || checkInput.textContent.trim().length === 0;
-      } else {
-        console.log('[WHL] ❌ Campo de mensagem não encontrado');
-        success = false;
+        const msgInput = getMessageInputField();
+        if (msgInput) {
+          await sendEnterKey(msgInput);
+          await new Promise(r => setTimeout(r, 1000));
+          
+          // Verificar se foi enviado
+          const checkInput = getMessageInputField();
+          if (!checkInput || checkInput.textContent.trim().length === 0) {
+            success = true;
+            break;
+          }
+        }
+        
+        // Se não funcionou, tentar clicar no botão diretamente
+        if (attempt < 3) {
+          const sendBtn = document.querySelector('button[data-testid="send"]') ||
+                          document.querySelector('span[data-icon="send"]')?.closest('button');
+          if (sendBtn) {
+            sendBtn.click();
+            await new Promise(r => setTimeout(r, 1000));
+            
+            const checkInput = getMessageInputField();
+            if (!checkInput || checkInput.textContent.trim().length === 0) {
+              success = true;
+              break;
+            }
+          }
+        }
       }
       
       if (success) {
