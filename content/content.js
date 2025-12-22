@@ -2836,20 +2836,18 @@ try {
    * NOVA FUNÇÃO: Envia texto + imagem na ordem correta
    * FLUXO: 1. Digita texto PRIMEIRO, 2. Anexa imagem, 3. Envia
    * Isso garante que o texto aparece como legenda da imagem
+   * ATUALIZADO: Melhora detecção do botão correto de "Fotos e vídeos"
    */
   async function sendTextWithImage(imageData, messageText) {
-    console.log('[WHL] 📸 Enviando texto + imagem...');
+    console.log('[WHL] 📸 Enviando FOTO (não sticker)...');
     console.log('[WHL] Texto:', messageText?.substring(0, 50) + '...');
 
     try {
-      // PASSO 1: Digitar o texto PRIMEIRO no campo de mensagem normal (MANTER COMO ESTÁ)
+      // PASSO 1: Digitar o texto PRIMEIRO (se houver)
       if (messageText && messageText.trim()) {
         console.log('[WHL] ⌨️ PASSO 1: Digitando texto primeiro...');
-        
-        // Obter configuração de typing effect do estado
         const st = await getState();
-        const useHumanTyping = st.typingEffect !== false; // default true
-        
+        const useHumanTyping = st.typingEffect !== false;
         const typed = await typeMessageInField(messageText, useHumanTyping);
         if (!typed) {
           console.log('[WHL] ❌ Falha ao digitar texto');
@@ -2863,43 +2861,42 @@ try {
       const response = await fetch(imageData);
       const blob = await response.blob();
       
-      // Determinar extensão e tipo MIME corretos
-      let extension = 'jpg';
+      // Determinar tipo MIME e extensão
       let mimeType = blob.type || 'image/jpeg';
-
-      // IMPORTANTE: Se for webp, converter para jpeg para evitar ser tratado como sticker
-      if (mimeType.includes('webp')) {
-        console.log('[WHL] ⚠️ Imagem webp detectada, mantendo mas forçando como foto');
-        // Mantém webp mas garante que vai pelo input de fotos
-        extension = 'webp';
-      } else if (mimeType.includes('png')) {
+      let extension = 'jpg';
+      
+      if (mimeType.includes('png')) {
         extension = 'png';
       } else if (mimeType.includes('gif')) {
         extension = 'gif';
-      } else if (mimeType.includes('bmp')) {
-        extension = 'bmp';
-      } else {
-        // Forçar jpeg por padrão
-        mimeType = 'image/jpeg';
-        extension = 'jpg';
+      } else if (mimeType.includes('webp')) {
+        // IMPORTANTE: Se for webp, será enviada como foto (não sticker)
+        console.log('[WHL] ⚠️ Imagem webp detectada, será enviada como foto (não sticker)');
+        extension = 'webp';
       }
-
-      // Criar arquivo com tipo correto e timestamp para evitar cache
+      
       const timestamp = Date.now();
       const file = new File([blob], `foto_${timestamp}.${extension}`, { 
         type: mimeType,
         lastModified: timestamp
       });
 
-      console.log('[WHL] 📷 Enviando como FOTO (não sticker):', {
+      console.log('[WHL] 📷 Arquivo preparado:', {
         tipo: mimeType,
         tamanho: `${(blob.size / 1024).toFixed(1)} KB`,
         nome: file.name
       });
 
-      // PASSO 3: Clicar no botão de anexar
+      // PASSO 3: Clicar no botão de anexar (ícone de clipe)
       console.log('[WHL] 📎 PASSO 2: Clicando no botão de anexar...');
-      const attachBtn = document.querySelector('[aria-label="Anexar"]');
+      
+      const attachBtn = document.querySelector('[data-testid="attach-clip"]') ||
+                        document.querySelector('[data-testid="clip"]') ||
+                        document.querySelector('span[data-icon="attach-menu-plus"]')?.closest('button') ||
+                        document.querySelector('span[data-icon="clip"]')?.closest('button') ||
+                        document.querySelector('[aria-label="Anexar"]') ||
+                        document.querySelector('[title="Anexar"]');
+      
       if (!attachBtn) {
         console.log('[WHL] ❌ Botão de anexar não encontrado');
         return { ok: false };
@@ -2907,56 +2904,102 @@ try {
 
       attachBtn.click();
       console.log('[WHL] ✅ Botão de anexar clicado');
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 800));
 
-      // PASSO 4: Clicar especificamente em "Fotos e vídeos" (NÃO em figurinha!)
-      console.log('[WHL] 🖼️ Procurando opção "Fotos e vídeos"...');
-      const allButtons = document.querySelectorAll('button, div[role="button"], span[role="button"]');
-      let photoVideoBtn = null;
+      // PASSO 4: CRÍTICO - Clicar especificamente em "Fotos e vídeos"
+      // O menu de anexar tem várias opções: Documento, Câmera, Sticker, Fotos e vídeos
+      // Precisamos clicar em "Fotos e vídeos" para enviar como FOTO
+      console.log('[WHL] 🖼️ PASSO 3: Procurando "Fotos e vídeos"...');
       
-      for (const btn of allButtons) {
-        const label = btn.getAttribute('aria-label') || btn.textContent || '';
-        if (label.includes('Fotos') || label.includes('vídeos') || label.includes('Photos') || label.includes('videos')) {
-          photoVideoBtn = btn;
-          console.log('[WHL] ✅ Encontrou botão de Fotos e vídeos');
-          break;
+      // Método 1: Procurar por data-testid específico
+      let photosBtn = document.querySelector('[data-testid="attach-image"]') ||
+                      document.querySelector('[data-testid="mi-attach-media"]');
+      
+      // Método 2: Procurar por aria-label ou texto
+      if (!photosBtn) {
+        const menuItems = document.querySelectorAll('li, button, div[role="button"], span[role="button"]');
+        for (const item of menuItems) {
+          const label = (item.getAttribute('aria-label') || item.textContent || '').toLowerCase();
+          // Procurar por "fotos", "vídeos", "photos", "videos" - mas NÃO "figurinha" ou "sticker"
+          if ((label.includes('foto') || label.includes('photo') || label.includes('vídeo') || label.includes('video') || label.includes('mídia') || label.includes('media')) && 
+              !label.includes('figurinha') && !label.includes('sticker') && !label.includes('adesivo')) {
+            photosBtn = item;
+            console.log('[WHL] ✅ Encontrou opção de mídia:', label);
+            break;
+          }
         }
       }
       
-      // Se encontrou, clicar nele
-      if (photoVideoBtn) {
-        photoVideoBtn.click();
+      // Método 3: Procurar pelo ícone específico
+      if (!photosBtn) {
+        const icons = document.querySelectorAll('span[data-icon]');
+        for (const icon of icons) {
+          const iconName = icon.getAttribute('data-icon') || '';
+          // Ícones de mídia: gallery, image, photo
+          if (iconName.includes('gallery') || iconName.includes('image') || iconName.includes('photo')) {
+            photosBtn = icon.closest('li') || icon.closest('button') || icon.closest('div[role="button"]');
+            if (photosBtn) {
+              console.log('[WHL] ✅ Encontrou ícone de mídia:', iconName);
+              break;
+            }
+          }
+        }
+      }
+      
+      if (photosBtn) {
+        photosBtn.click();
         console.log('[WHL] ✅ Clicou em Fotos e vídeos');
         await new Promise(r => setTimeout(r, 500));
       } else {
-        console.log('[WHL] ⚠️ Botão de Fotos e vídeos não encontrado, usando input padrão');
+        console.log('[WHL] ⚠️ Opção "Fotos e vídeos" não encontrada, tentando input direto');
       }
 
-      // PASSO 5: Encontrar input de arquivo CORRETO (não o de sticker)
-      console.log('[WHL] 📁 PASSO 3: Anexando imagem...');
-      let imageInput = null;
+      // PASSO 5: Encontrar o input CORRETO (NÃO o de sticker)
+      console.log('[WHL] 📁 PASSO 4: Procurando input de fotos...');
       
-      // O input de fotos/vídeos aceita image/* e video/*
-      // O input de sticker aceita apenas image/webp
+      let imageInput = null;
       const allInputs = document.querySelectorAll('input[type="file"]');
       
+      console.log('[WHL] Inputs encontrados:', allInputs.length);
+      
+      // Prioridade 1: Input com accept que inclui image/* ou video/*
       for (const input of allInputs) {
         const accept = input.getAttribute('accept') || '';
-        // Preferir input que aceita image/* (fotos) e NÃO é apenas webp (sticker)
-        if (accept.includes('image/') && !accept.match(/^image\/webp$/)) {
+        console.log('[WHL] Analisando input:', accept);
+        
+        // EVITAR input de sticker (apenas image/webp)
+        if (accept === 'image/webp' || accept.match(/^image\/webp$/)) {
+          console.log('[WHL] ⚠️ Ignorando input de sticker:', accept);
+          continue;
+        }
+        
+        // Preferir input que aceita múltiplos tipos de imagem ou vídeo
+        if (accept.includes('image/') && (accept.includes(',') || accept.includes('video'))) {
           imageInput = input;
-          console.log('[WHL] ✅ Input de fotos encontrado:', accept);
+          console.log('[WHL] ✅ Input de fotos/vídeos encontrado:', accept);
           break;
         }
       }
       
-      // Fallback: qualquer input de imagem que não seja só webp
+      // Prioridade 2: Qualquer input de imagem que não seja só webp
       if (!imageInput) {
         for (const input of allInputs) {
           const accept = input.getAttribute('accept') || '';
           if (accept.includes('image') && !accept.match(/^image\/webp$/)) {
             imageInput = input;
-            console.log('[WHL] ✅ Input de imagem encontrado (fallback):', accept);
+            console.log('[WHL] ✅ Input de imagem encontrado (fallback 1):', accept);
+            break;
+          }
+        }
+      }
+      
+      // Prioridade 3: Input com accept="*" ou muito genérico
+      if (!imageInput) {
+        for (const input of allInputs) {
+          const accept = input.getAttribute('accept') || '';
+          if (accept === '*' || accept === '*/*' || accept.includes('*')) {
+            imageInput = input;
+            console.log('[WHL] ✅ Input genérico encontrado:', accept);
             break;
           }
         }
@@ -2964,18 +3007,24 @@ try {
       
       // Último fallback
       if (!imageInput) {
-        imageInput = document.querySelector('input[accept*="image"]');
-        if (imageInput) {
-          console.log('[WHL] ⚠️ Usando input genérico de imagem');
+        // Pegar qualquer input que não seja só webp
+        for (const input of allInputs) {
+          const accept = input.getAttribute('accept') || '';
+          if (accept !== 'image/webp') {
+            imageInput = input;
+            console.log('[WHL] ⚠️ Usando input disponível:', accept);
+            break;
+          }
         }
       }
       
       if (!imageInput) {
-        console.log('[WHL] ❌ Input de imagem não encontrado');
+        console.log('[WHL] ❌ Nenhum input de imagem adequado encontrado');
         return { ok: false };
       }
 
-      // PASSO 5: Anexar arquivo (MANTER COMO ESTÁ)
+      // PASSO 6: Anexar arquivo
+      console.log('[WHL] 📎 Anexando imagem ao input...');
       const dataTransfer = new DataTransfer();
       dataTransfer.items.add(file);
       imageInput.files = dataTransfer.files;
@@ -2984,19 +3033,22 @@ try {
       console.log('[WHL] ✅ Imagem anexada, aguardando preview...');
       await new Promise(r => setTimeout(r, 2500));
 
-      // PASSO 6: PRIMEIRO ENVIO - Enviar a IMAGEM (MANTER COMO ESTÁ)
-      console.log('[WHL] 📤 PASSO 4: Enviando IMAGEM...');
-      await new Promise(r => setTimeout(r, 500));
+      // PASSO 7: Enviar a imagem
+      console.log('[WHL] 📤 PASSO 5: Enviando IMAGEM...');
       
-      const dialog = document.querySelector('[role="dialog"]');
+      // Procurar botão de enviar no dialog/preview
       let sendBtn = null;
+      const dialog = document.querySelector('[role="dialog"]');
+      
       if (dialog) {
-        sendBtn = dialog.querySelector('[aria-label="Enviar"]') ||
-                  [...dialog.querySelectorAll('button')].find(b => !b.disabled);
+        sendBtn = dialog.querySelector('[data-testid="send"]') ||
+                  dialog.querySelector('[aria-label="Enviar"]') ||
+                  dialog.querySelector('button:not([disabled])');
       }
       
       if (!sendBtn) {
-        sendBtn = document.querySelector('[aria-label="Enviar"]');
+        sendBtn = document.querySelector('[data-testid="send"]') ||
+                  document.querySelector('[aria-label="Enviar"]');
       }
       
       if (sendBtn) {
@@ -3007,14 +3059,10 @@ try {
         return { ok: false };
       }
 
-      // ============================================
-      // NOVO: PASSO 7 - SEGUNDO ENVIO - Enviar o TEXTO
-      // ============================================
+      // PASSO 8: Aguardar dialog fechar e enviar texto (se houver)
       console.log('[WHL] ⏳ Aguardando dialog fechar...');
       
-      // Aguardar o dialog da imagem fechar
-      const MAX_DIALOG_CLOSE_ATTEMPTS = 20;
-      for (let i = 0; i < MAX_DIALOG_CLOSE_ATTEMPTS; i++) {
+      for (let i = 0; i < 20; i++) {
         const dialogStillOpen = document.querySelector('[role="dialog"]');
         if (!dialogStillOpen) {
           console.log('[WHL] ✅ Dialog fechou');
@@ -3023,17 +3071,15 @@ try {
         await new Promise(r => setTimeout(r, 300));
       }
       
-      // Aguardar um pouco mais para garantir
       await new Promise(r => setTimeout(r, 1500));
       
       // Verificar se ainda tem texto no campo de mensagem
       const msgField = getMessageInputField();
       if (msgField && msgField.textContent.trim().length > 0) {
-        console.log('[WHL] 📤 PASSO 5: Enviando TEXTO...');
-        console.log('[WHL] Texto no campo:', msgField.textContent.substring(0, 30) + '...');
+        console.log('[WHL] 📤 PASSO 6: Enviando TEXTO...');
         
-        // Encontrar botão de enviar do chat normal (não do dialog)
         const textSendBtn = document.querySelector('footer [aria-label="Enviar"]') ||
+                            document.querySelector('[data-testid="send"]') ||
                             document.querySelector('[aria-label="Enviar"]');
         
         if (textSendBtn) {
@@ -3041,19 +3087,13 @@ try {
           console.log('[WHL] ✅ TEXTO enviado!');
           await new Promise(r => setTimeout(r, 1500));
         } else {
-          console.log('[WHL] ⚠️ Botão de enviar para texto não encontrado, tentando via ENTER...');
-          
-          // Fallback: enviar via ENTER usando a função helper existente
           await sendEnterKey(msgField);
-          
           console.log('[WHL] ✅ ENTER enviado para texto');
           await new Promise(r => setTimeout(r, 1500));
         }
-      } else {
-        console.log('[WHL] ℹ️ Campo de mensagem vazio, apenas imagem foi enviada');
       }
 
-      console.log('[WHL] ✅ Texto + Imagem enviados com sucesso!');
+      console.log('[WHL] ✅ Texto + Foto enviados com sucesso!');
       return { ok: true };
 
     } catch (error) {
