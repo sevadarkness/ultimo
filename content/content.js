@@ -1628,7 +1628,7 @@
       };
     });
 
-    document.getElementById('whlHint').textContent = 'Modo automático: configure os delays e clique em "Iniciar Campanha"';
+    document.getElementById('whlHint').textContent = 'Modo automático via URL: configure os delays e clique em "Iniciar Campanha"';
 
     const cur = state.queue[state.index];
     if (state.isRunning && !state.isPaused) {
