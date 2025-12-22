@@ -631,46 +631,62 @@
 
   // ===== DOM SELECTORS (UPDATED WITH CORRECT WHATSAPP WEB STRUCTURE) =====
   
-  // Campo de busca para pesquisar contato/número (SELETORES CORRETOS)
+  // Campo de busca para pesquisar contato/número (SELETORES EXATOS)
   // IMPORTANTE: Campo de pesquisa está na SIDEBAR (#side), não no main
   function getSearchInput() {
     return (
-      document.querySelector('#side div[contenteditable="true"][data-tab="3"]') ||
-      document.querySelector('#side div[contenteditable="true"][role="textbox"]')
+      document.querySelector('div#side._ak9p p._aupe.copyable-text') ||
+      document.querySelector('div#side._ak9p div.lexical-rich-text-input p._aupe') ||
+      document.querySelector('#side p._aupe')
     );
   }
 
-  // Campo de mensagem para digitar (SELETORES CORRETOS)
+  // Campo de mensagem para digitar (SELETORES EXATOS)
   // IMPORTANTE: Campo de mensagem está no MAIN ou FOOTER, não na sidebar
   function getMessageInput() {
     return (
-      document.querySelector('#main div[contenteditable="true"][data-tab="10"]') ||
-      document.querySelector('footer div[contenteditable="true"]') ||
-      document.querySelector('#main div.lexical-rich-text-input p._aupe') ||
-      document.querySelector('footer div.lexical-rich-text-input p._aupe')
+      document.querySelector('#main footer p._aupe.copyable-text') ||
+      document.querySelector('footer._ak1i div.copyable-area p') ||
+      document.querySelector('#main footer p._aupe')
     );
   }
 
-  // Botão de enviar
+  // Botão de enviar (SELETORES EXATOS)
   function getSendButton() {
     return (
-      document.querySelector('[data-testid="send"]') ||
-      document.querySelector('span[data-icon="send"]')?.closest('button') ||
-      document.querySelector('[aria-label="Enviar"]') ||
-      document.querySelector('[aria-label="Send"]')
+      document.querySelector('footer._ak1i div._ak1r button') ||
+      document.querySelector('footer._ak1i button[aria-label="Enviar"]') ||
+      document.querySelector('[data-testid="send"]')
     );
   }
 
-  // Resultado da busca (ESTRUTURA CORRETA)
+  // Resultado da busca (SELETORES EXATOS - APENAS CONVERSAS)
   function getSearchResults() {
-    return document.querySelectorAll('#pane-side div[role="grid"] div[role="row"]');
+    // Pegar resultados que estão em CONVERSAS, não em MENSAGENS
+    const results = document.querySelectorAll('div#pane-side div._ak72');
+    
+    // Filtrar apenas os que estão na seção de Conversas
+    return [...results].filter(el => {
+      // Verificar se está na seção de Conversas (não Mensagens)
+      const parent = el.closest('div[role="grid"]') || el.closest('div[role="listbox"]');
+      if (!parent) return false;
+      
+      // Verificar se há um header "Mensagens" acima (se sim, ignorar)
+      const prevSibling = parent.previousElementSibling;
+      if (prevSibling && prevSibling.textContent.includes('Mensagens')) {
+        return false; // Está na seção de Mensagens, ignorar
+      }
+      
+      return true;
+    });
   }
 
   // ===== NEW CORE FUNCTIONS (CORRECT WHATSAPP WEB IMPLEMENTATION) =====
 
   /**
-   * Abre um chat via busca DOM com os seletores corretos
+   * Abre um chat via busca DOM com os seletores exatos
    * Implementa polling para aguardar resultados aparecerem
+   * APENAS aceita resultados de CONVERSAS, não de MENSAGENS
    */
   async function openChatBySearch(numero, options = {}) {
     const {
@@ -712,47 +728,61 @@
     
     log('✅ Número digitado na busca:', cleanNumber);
 
-    const start = Date.now();
+    // Aguardar resultados aparecerem
+    await new Promise(r => setTimeout(r, 2000));
 
-    return new Promise((resolve) => {
-      const timer = setInterval(() => {
-        if (Date.now() - start > timeout) {
-          clearInterval(timer);
-          log('❌ Timeout: nenhum resultado encontrado');
-          resolve(false);
-          return;
+    // Verificar se há resultado em CONVERSAS
+    const results = document.querySelectorAll('div#pane-side div._ak72');
+    
+    if (!results.length) {
+      log('❌ Nenhum resultado encontrado');
+      return false;
+    }
+
+    // Verificar se está em Conversas (não Mensagens)
+    // Procurar pelo header "Conversas" vs "Mensagens"
+    const paneSide = document.querySelector('#pane-side');
+    
+    let isInConversas = false;
+    for (const result of results) {
+      // Verificar se o resultado está na seção de Mensagens
+      let currentElement = result;
+      let isInMessages = false;
+      
+      // Subir na árvore DOM procurando por indicador de seção "Mensagens"
+      while (currentElement && currentElement !== paneSide) {
+        const text = currentElement.textContent || '';
+        const prevSibling = currentElement.previousElementSibling;
+        
+        // Se encontrar "Mensagens" antes do resultado, está na seção errada
+        if (prevSibling && prevSibling.textContent && prevSibling.textContent.includes('Mensagens')) {
+          isInMessages = true;
+          break;
         }
+        
+        currentElement = currentElement.parentElement;
+      }
+      
+      // Só clicar se NÃO estiver em Mensagens
+      if (!isInMessages) {
+        result.click();
+        isInConversas = true;
+        log('✅ Chat aberto (seção Conversas)');
+        break;
+      }
+    }
+    
+    if (!isInConversas) {
+      log('❌ Resultado apenas em Mensagens, não em Conversas');
+      return false;
+    }
 
-        const resultados = [...getSearchResults()]
-          .map(row => {
-            const clickable = row.querySelector('div._ak72');
-            if (!clickable) return null;
-
-            const texto = row.innerText.replace(/\s+/g, ' ').trim();
-            if (!texto || texto === 'Conversas' || texto === 'Mensagens') return null;
-
-            return { texto, elemento: clickable };
-          })
-          .filter(Boolean);
-
-        if (!resultados.length) return;
-
-        const contato =
-          resultados.find(r => r.texto.includes(cleanNumber)) ||
-          resultados[0];
-
-        if (contato) {
-          clearInterval(timer);
-          contato.elemento.click();
-          log('✅ Contato aberto:', contato.texto);
-          resolve(true);
-        }
-      }, interval);
-    });
+    log('✅ Chat aberto');
+    return true;
   }
 
   /**
-   * Envia mensagem de texto usando ENTER
+   * Envia mensagem de texto usando BOTÃO DE ENVIAR (não ENTER)
    */
   async function sendTextMessage(texto) {
     const input = getMessageInput();
@@ -763,20 +793,27 @@
     }
 
     input.focus();
+    await new Promise(r => setTimeout(r, 100));
+    
     document.execCommand('selectAll', false, null);
     document.execCommand('delete', false, null);
     document.execCommand('insertText', false, texto);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
 
-    // ENTER envia texto
-    input.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Enter',
-      code: 'Enter',
-      keyCode: 13,
-      which: 13,
-      bubbles: true
-    }));
-
-    console.log('[WHL] ✅ Mensagem enviada via ENTER');
+    console.log('[WHL] ✅ Mensagem digitada');
+    
+    await new Promise(r => setTimeout(r, 300));
+    
+    // Clicar no botão de enviar (NÃO usar ENTER)
+    const sendBtn = getSendButton();
+    if (!sendBtn) {
+      console.log('[WHL] ❌ Botão de enviar não encontrado');
+      return false;
+    }
+    
+    sendBtn.click();
+    console.log('[WHL] ✅ Mensagem enviada via botão');
+    
     return true;
   }
 
@@ -790,26 +827,6 @@
     if (okBtn) {
       okBtn.click();
       console.log('[WHL] ✅ Popup de número inválido fechado');
-      return true;
-    }
-    return false;
-  }
-
-  /**
-   * Limpa o campo de pesquisa (NOVA IMPLEMENTAÇÃO)
-   */
-  async function clearSearchFieldNew() {
-    // IMPORTANTE: Campo de pesquisa está na SIDEBAR (#side)
-    const searchInput = getSearchInput();
-
-    if (searchInput) {
-      searchInput.focus();
-      document.execCommand('selectAll', false, null);
-      document.execCommand('delete', false, null);
-      searchInput.textContent = '';
-      searchInput.innerHTML = '';
-      searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-      console.log('[WHL] ✅ Campo de pesquisa limpo');
       return true;
     }
     return false;
@@ -895,57 +912,30 @@
     return true;
   }
 
-  // Função para limpar campo de pesquisa
+  // Função para limpar campo de pesquisa (IMPLEMENTAÇÃO EXATA)
   async function clearSearchField() {
-    // IMPORTANTE: Campo de pesquisa está na SIDEBAR (#side), não no main
     const searchInput = getSearchInput();
     
     if (!searchInput) {
-      console.log('[WHL] ⚠️ Campo de pesquisa não encontrado na sidebar');
+      console.log('[WHL] ❌ Campo de pesquisa não encontrado');
       return false;
     }
     
-    // Método 1: Focus + SelectAll + Delete
     searchInput.focus();
     await new Promise(r => setTimeout(r, 100));
     
-    // Selecionar todo e deletar
+    // Selecionar tudo e deletar
     document.execCommand('selectAll', false, null);
     document.execCommand('delete', false, null);
     
-    // Limpar também via propriedades
+    // Forçar limpeza
     searchInput.textContent = '';
     searchInput.innerHTML = '';
     
-    // Disparar eventos
+    // Disparar evento
     searchInput.dispatchEvent(new Event('input', { bubbles: true }));
     
     await new Promise(r => setTimeout(r, 100));
-    
-    // Verificar se limpou
-    const content = searchInput.textContent.trim();
-    if (content) {
-      console.log('[WHL] ⚠️ Campo ainda contém:', content);
-      
-      // Tentar método alternativo: simular Ctrl+A e Backspace
-      searchInput.focus();
-      searchInput.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'a',
-        code: 'KeyA',
-        ctrlKey: true,
-        bubbles: true
-      }));
-      await new Promise(r => setTimeout(r, 50));
-      searchInput.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'Backspace',
-        code: 'Backspace',
-        bubbles: true
-      }));
-      
-      // Forçar limpeza
-      searchInput.textContent = '';
-      searchInput.innerHTML = '';
-    }
     
     console.log('[WHL] ✅ Campo de pesquisa limpo');
     return true;
