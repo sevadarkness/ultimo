@@ -604,36 +604,41 @@
   // CORRIGIDO: Mais seletores para melhor compatibilidade
   function getMessageInput() {
     return (
+      document.querySelector('div[aria-label^="Digitar na conversa"][contenteditable="true"]') ||
+      document.querySelector('div[data-tab="10"][contenteditable="true"]') ||
+      document.querySelector('div[data-tab="10"]') ||
       document.querySelector('#main footer div[contenteditable="true"]') ||
       document.querySelector('#main footer p[contenteditable="true"]') ||
       document.querySelector('footer div[contenteditable="true"]') ||
       document.querySelector('#main footer p._aupe.copyable-text') ||
       document.querySelector('footer._ak1i div.copyable-area p') ||
-      document.querySelector('#main footer p._aupe') ||
-      document.querySelector('div[data-tab="10"]')
+      document.querySelector('#main footer p._aupe')
     );
   }
 
   /**
    * Encontra o botão de enviar de forma robusta
    * Funciona para texto, imagem, documento, vídeo
-   * Não depende de classes CSS ou data-attributes
-   * CORRIGIDO: Melhor busca com múltiplos seletores
+   * Usa seletores exatos conforme especificação
+   * CORRIGIDO: Prioriza [data-testid="send"] e span[data-icon="send"]
    */
   function findSendButton() {
     // Primeiro: verificar se há modal/dialog aberto (imagem, vídeo, doc)
     const dialog = document.querySelector('[role="dialog"]');
     if (dialog) {
-      // Procurar botão com span que contenha ícone de enviar
+      // Método 1: Procurar por [data-testid="send"]
+      const testIdBtn = dialog.querySelector('[data-testid="send"]');
+      if (testIdBtn && !testIdBtn.disabled) return testIdBtn;
+      
+      // Método 2: Procurar botão com span que contenha ícone de enviar
       const sendIcon = dialog.querySelector('span[data-icon="send"]');
       if (sendIcon) {
         const btn = sendIcon.closest('button');
         if (btn && !btn.disabled) return btn;
       }
       
-      // Fallback: primeiro botão não-disabled
+      // Fallback: último botão não-disabled
       const buttons = [...dialog.querySelectorAll('button')].filter(b => !b.disabled);
-      // Preferir o último botão (geralmente é o de enviar)
       if (buttons.length > 0) {
         return buttons[buttons.length - 1];
       }
@@ -642,7 +647,11 @@
     // Segundo: verificar no footer (texto normal)
     const footer = document.querySelector('footer');
     if (footer) {
-      // Procurar botão com span que contenha ícone de enviar
+      // Método 1: Procurar por [data-testid="send"]
+      const testIdBtn = footer.querySelector('[data-testid="send"]');
+      if (testIdBtn && !testIdBtn.disabled) return testIdBtn;
+      
+      // Método 2: Procurar botão com span que contenha ícone de enviar
       const sendIcon = footer.querySelector('span[data-icon="send"]');
       if (sendIcon) {
         const btn = sendIcon.closest('button');
@@ -657,6 +666,11 @@
     // Terceiro: Procurar em #main (caso footer não seja encontrado)
     const main = document.querySelector('#main');
     if (main) {
+      // Método 1: Procurar por [data-testid="send"]
+      const testIdBtn = main.querySelector('[data-testid="send"]');
+      if (testIdBtn && !testIdBtn.disabled) return testIdBtn;
+      
+      // Método 2: Procurar por span[data-icon="send"]
       const sendIcon = main.querySelector('span[data-icon="send"]');
       if (sendIcon) {
         const btn = sendIcon.closest('button');
@@ -822,15 +836,17 @@
 
   /**
    * Helper: Obtém o campo de mensagem
-   * CORRIGIDO: Mais seletores para melhor compatibilidade
+   * CORRIGIDO: Usa mesmos seletores que getMessageInput() para consistência
    */
   function getMessageInputField() {
-    return document.querySelector('#main footer div[contenteditable="true"]') ||
+    return document.querySelector('div[aria-label^="Digitar na conversa"][contenteditable="true"]') ||
+           document.querySelector('div[data-tab="10"][contenteditable="true"]') ||
+           document.querySelector('div[data-tab="10"]') ||
+           document.querySelector('#main footer div[contenteditable="true"]') ||
            document.querySelector('#main footer p[contenteditable="true"]') ||
            document.querySelector('footer div[contenteditable="true"]') ||
            document.querySelector('#main footer p._aupe') ||
-           document.querySelector('footer._ak1i div.copyable-area p') ||
-           document.querySelector('div[data-tab="10"]');
+           document.querySelector('footer._ak1i div.copyable-area p');
   }
 
   /**
@@ -2281,12 +2297,12 @@ try {
 
 
   // ===== IMAGE AUTO SEND (FROM ORIGINAL) =====
-  // CORRIGIDO: Melhor busca do botão de anexar
+  // CORRIGIDO: Prioriza seletores exatos [data-testid="clip"] e span[data-icon="clip"]
   function getAttachButton() {
       return (
-        document.querySelector('button[aria-label*="Anexar"]') ||
         document.querySelector('[data-testid="clip"]') ||
         document.querySelector('span[data-icon="clip"]')?.closest('button') ||
+        document.querySelector('button[aria-label*="Anexar"]') ||
         document.querySelector('[aria-label="Anexar"]') ||
         document.querySelector('span[data-icon="attach-menu-plus"]')?.closest('button') ||
         document.querySelector('footer button[title*="Anexar"]')
