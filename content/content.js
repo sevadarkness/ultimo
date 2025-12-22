@@ -2521,7 +2521,8 @@ try {
       console.log('[WHL] ⏳ Aguardando dialog fechar...');
       
       // Aguardar o dialog da imagem fechar
-      for (let i = 0; i < 20; i++) {
+      const MAX_DIALOG_CLOSE_ATTEMPTS = 20;
+      for (let i = 0; i < MAX_DIALOG_CLOSE_ATTEMPTS; i++) {
         const dialogStillOpen = document.querySelector('[role="dialog"]');
         if (!dialogStillOpen) {
           console.log('[WHL] ✅ Dialog fechou');
@@ -2550,19 +2551,8 @@ try {
         } else {
           console.log('[WHL] ⚠️ Botão de enviar para texto não encontrado, tentando via ENTER...');
           
-          // Fallback: enviar via ENTER
-          msgField.focus();
-          await new Promise(r => setTimeout(r, 200));
-          
-          const enterEvent = new KeyboardEvent('keydown', {
-            key: 'Enter',
-            code: 'Enter',
-            keyCode: 13,
-            which: 13,
-            bubbles: true,
-            cancelable: true
-          });
-          msgField.dispatchEvent(enterEvent);
+          // Fallback: enviar via ENTER usando a função helper existente
+          await sendEnterKey(msgField);
           
           console.log('[WHL] ✅ ENTER enviado para texto');
           await new Promise(r => setTimeout(r, 1500));
