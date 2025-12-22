@@ -608,7 +608,7 @@
 
   /**
    * Digita texto no campo de mensagem usando DOM manipulation
-   * Funciona melhor que passar texto via URL
+   * ATUALIZADO: 3 métodos fallback com logs detalhados
    */
   async function typeMessageInField(text) {
     if (!text || !text.trim()) {
@@ -616,119 +616,93 @@
       return true;
     }
     
-    console.log('[WHL] ⌨️ Digitando texto manualmente...');
-    console.log('[WHL] Texto a digitar:', text.substring(0, 50) + '...');
+    console.log('[WHL] ⌨️ Digitando texto:', text.substring(0, 50) + '...');
     
-    // Aguardar campo carregar com mais tentativas
+    // Aguardar campo com mais tentativas
     let msgInput = null;
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 20; i++) {
       msgInput = getMessageInputField();
-      console.log(`[WHL] Tentativa ${i+1}/15 - Campo encontrado:`, !!msgInput);
       if (msgInput) break;
+      console.log(`[WHL] Aguardando campo... tentativa ${i+1}/20`);
       await new Promise(r => setTimeout(r, 500));
     }
     
     if (!msgInput) {
-      console.log('[WHL] ❌ Campo de mensagem não encontrado após 7.5s');
-      // Log dos seletores para debug
-      console.log('[WHL] Debug seletores:');
-      console.log('[WHL]   aria-label^="Digitar":', !!document.querySelector('div[aria-label^="Digitar na conversa"][contenteditable="true"]'));
-      console.log('[WHL]   data-tab="10":', !!document.querySelector('div[data-tab="10"][contenteditable="true"]'));
-      console.log('[WHL]   #main footer div:', !!document.querySelector('#main footer div[contenteditable="true"]'));
-      console.log('[WHL]   footer div:', !!document.querySelector('footer div[contenteditable="true"]'));
+      console.log('[WHL] ❌ Campo de mensagem não encontrado');
       return false;
     }
     
-    console.log('[WHL] ✅ Campo de mensagem encontrado');
+    console.log('[WHL] ✅ Campo encontrado');
     
-    // Focar no campo
+    // Focar
     msgInput.focus();
     await new Promise(r => setTimeout(r, 300));
     
-    // Limpar campo existente
+    // Limpar
     msgInput.textContent = '';
     msgInput.dispatchEvent(new Event('input', { bubbles: true }));
-    await new Promise(r => setTimeout(r, 150));
+    await new Promise(r => setTimeout(r, 200));
     
-    // MÉTODO 1: execCommand (funciona com React)
-    console.log('[WHL] Tentando Método 1: execCommand...');
+    // MÉTODO 1: execCommand
+    console.log('[WHL] Método 1: execCommand...');
     document.execCommand('insertText', false, text);
     msgInput.dispatchEvent(new Event('input', { bubbles: true }));
     await new Promise(r => setTimeout(r, 300));
     
-    let inserted = msgInput.textContent.trim().length > 0;
-    console.log('[WHL] Método 1 resultado:', inserted ? '✅ Sucesso' : '❌ Falhou');
+    let ok = msgInput.textContent.trim().length > 0;
+    if (ok) {
+      console.log('[WHL] ✅ Método 1 funcionou');
+      return true;
+    }
     
     // MÉTODO 2: textContent + InputEvent
-    if (!inserted) {
-      console.log('[WHL] Tentando Método 2: textContent + InputEvent...');
-      msgInput.textContent = text;
-      msgInput.dispatchEvent(new InputEvent('input', { 
-        bubbles: true, 
-        inputType: 'insertText',
-        data: text 
-      }));
-      await new Promise(r => setTimeout(r, 300));
-      inserted = msgInput.textContent.trim().length > 0;
-      console.log('[WHL] Método 2 resultado:', inserted ? '✅ Sucesso' : '❌ Falhou');
+    console.log('[WHL] Método 2: textContent + InputEvent...');
+    msgInput.textContent = text;
+    msgInput.dispatchEvent(new InputEvent('input', { 
+      bubbles: true, 
+      inputType: 'insertText',
+      data: text 
+    }));
+    await new Promise(r => setTimeout(r, 300));
+    
+    ok = msgInput.textContent.trim().length > 0;
+    if (ok) {
+      console.log('[WHL] ✅ Método 2 funcionou');
+      return true;
     }
     
-    // MÉTODO 3: Digitação caractere por caractere
-    if (!inserted) {
-      console.log('[WHL] Tentando Método 3: digitação caractere por caractere...');
-      msgInput.focus();
-      msgInput.textContent = '';
-      for (const char of text) {
-        msgInput.textContent += char;
-        msgInput.dispatchEvent(new Event('input', { bubbles: true }));
-        await new Promise(r => setTimeout(r, 15));
-      }
-      await new Promise(r => setTimeout(r, 300));
-      inserted = msgInput.textContent.trim().length > 0;
-      console.log('[WHL] Método 3 resultado:', inserted ? '✅ Sucesso' : '❌ Falhou');
+    // MÉTODO 3: caractere por caractere
+    console.log('[WHL] Método 3: caractere por caractere...');
+    msgInput.focus();
+    msgInput.textContent = '';
+    for (const char of text) {
+      msgInput.textContent += char;
+      msgInput.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 20));
     }
+    await new Promise(r => setTimeout(r, 300));
     
-    console.log('[WHL]', inserted ? '✅' : '❌', 'Texto final no campo:', msgInput.textContent.substring(0, 50) + '...');
-    
-    return inserted;
+    ok = msgInput.textContent.trim().length > 0;
+    console.log('[WHL]', ok ? '✅ Método 3 funcionou' : '❌ Todos os métodos falharam');
+    return ok;
   }
 
   /**
    * Encontra o botão de enviar de forma robusta
-   * Funciona para texto, imagem, documento, vídeo
-   * Usa seletores exatos conforme especificação
-   * CORRIGIDO: Prioriza [data-testid="send"] e span[data-icon="send"]
+   * ATUALIZADO: Usa APENAS seletores CONFIRMADOS pelo usuário
    */
   function findSendButton() {
     // Primeiro: verificar se há modal/dialog aberto (imagem, vídeo, doc)
     const dialog = document.querySelector('[role="dialog"]');
     if (dialog) {
-      const sendBtn = dialog.querySelector('[data-testid="send"]') ||
-                      dialog.querySelector('span[data-icon="send"]')?.closest('button') ||
-                      dialog.querySelector('[aria-label="Enviar"]') ||
-                      dialog.querySelector('[aria-label="Send"]');
-      if (sendBtn && !sendBtn.disabled) return sendBtn;
-      
-      // Fallback: primeiro botão habilitado no dialog
-      const btn = [...dialog.querySelectorAll('button')].find(b => !b.disabled);
-      if (btn) return btn;
+      const btn = dialog.querySelector('[aria-label="Enviar"]') ||
+                  dialog.querySelector('button');
+      if (btn && !btn.disabled) return btn;
     }
-
-    // Segundo: verificar no footer (texto normal)
-    const footer = document.querySelector('footer');
-    if (footer) {
-      const sendBtn = footer.querySelector('[data-testid="send"]') ||
-                      footer.querySelector('span[data-icon="send"]')?.closest('button') ||
-                      footer.querySelector('[aria-label="Enviar"]') ||
-                      footer.querySelector('[aria-label="Send"]');
-      if (sendBtn && !sendBtn.disabled) return sendBtn;
-      
-      // Fallback: primeiro botão habilitado no footer
-      const btn = [...footer.querySelectorAll('button')].find(b => !b.disabled);
-      if (btn) return btn;
-    }
-
-    return null;
+    
+    // Depois: verificar no footer (mensagem normal)
+    return document.querySelector('[aria-label="Enviar"]') ||
+           document.querySelector('footer button:not([disabled])');
   }
 
   // Botão de enviar (MÉTODO PROFISSIONAL - não depende de classes)
@@ -777,59 +751,28 @@
 
   /**
    * Verifica se há popup de erro após navegação via URL
-   * ATUALIZADO: Detecção mais agressiva com múltiplas tentativas
+   * CORRIGIDO: Remove busca de texto que causa falso positivo
+   * APENAS verifica se tem botão OK SEM campo de mensagem
    */
   async function checkForErrorPopup() {
-    // NÃO aguardar muito - verificar imediatamente e várias vezes
+    // Aguardar um pouco para popup aparecer (se existir)
+    await new Promise(r => setTimeout(r, 1000));
     
-    for (let attempt = 0; attempt < 5; attempt++) {
-      await new Promise(r => setTimeout(r, 500));
-      
-      // Método 1: Procurar por popup modal
-      const popup = document.querySelector('div[data-animate-modal-popup="true"]');
-      const modal = document.querySelector('div[role="dialog"]');
-      const alertDialog = document.querySelector('[role="alertdialog"]');
-      
-      // Método 2: Procurar por botão OK (indica popup de erro)
-      const okButton = [...document.querySelectorAll('button')]
-        .find(b => b.innerText.trim().toUpperCase() === 'OK');
-      
-      // Método 3: Verificar mensagens de erro no texto da página
-      const errorMessages = [
-        'número de telefone compartilhado por url é inválido',
-        'phone number shared via url is invalid',
-        'número inválido',
-        'invalid phone number',
-        'não foi possível',
-        'could not',
-        'número não existe',
-        'number does not exist',
-        'não está no whatsapp',
-        'is not on whatsapp',
-        'não encontrado',
-        'not found'
-      ];
-      
-      const pageText = document.body.innerText.toLowerCase();
-      for (const msg of errorMessages) {
-        if (pageText.includes(msg.toLowerCase())) {
-          console.log('[WHL] ❌ Erro detectado:', msg);
-          return true;
-        }
-      }
-      
-      // Se encontrou popup com botão OK, é erro
-      if ((popup || modal || alertDialog) && okButton) {
-        console.log('[WHL] ❌ Popup de erro detectado');
-        return true;
-      }
-      
-      // Se só tem botão OK sem campo de mensagem, provavelmente é erro
-      if (okButton && !getMessageInputField()) {
-        console.log('[WHL] ❌ Botão OK sem campo de mensagem = erro');
+    // Procurar por botão OK (indica popup de erro real)
+    const okButton = [...document.querySelectorAll('button')]
+      .find(b => b.innerText.trim().toUpperCase() === 'OK');
+    
+    // SÓ é erro se tem botão OK E NÃO tem campo de mensagem
+    if (okButton) {
+      const messageField = getMessageInputField();
+      if (!messageField) {
+        console.log('[WHL] ❌ Popup de erro detectado (botão OK sem campo de mensagem)');
         return true;
       }
     }
+    
+    // NÃO verificar texto na página - causa falso positivo!
+    // REMOVIDO: busca por 'não encontrado', 'invalid', etc no pageText
     
     return false;
   }
@@ -852,21 +795,24 @@
 
   /**
    * Aguarda o chat abrir após navegação via URL
+   * ATUALIZADO: Usa getMessageInputField() e lógica de erro corrigida
    */
-  async function waitForChatToOpen(timeout = 10000) {
+  async function waitForChatToOpen(timeout = 15000) {
+    console.log('[WHL] Aguardando chat abrir...');
     const start = Date.now();
     
     while (Date.now() - start < timeout) {
-      // Usar getMessageInputField() que tem seletores corretos
       const messageField = getMessageInputField();
-      
       if (messageField) {
         console.log('[WHL] ✅ Chat aberto - campo de mensagem encontrado');
         return true;
       }
       
-      // Verificar se há erro
-      if (await checkForErrorPopup()) {
+      // Verificar erro APENAS se tem botão OK sem campo de mensagem
+      const okButton = [...document.querySelectorAll('button')]
+        .find(b => b.innerText.trim().toUpperCase() === 'OK');
+      if (okButton && !getMessageInputField()) {
+        console.log('[WHL] ❌ Popup de erro detectado');
         return false;
       }
       
@@ -879,25 +825,13 @@
 
   /**
    * Helper: Obtém o campo de mensagem
-   * CORRIGIDO: Usa mesmos seletores que getMessageInput() para consistência
+   * ATUALIZADO: Usa APENAS seletores CONFIRMADOS pelo usuário
    */
   function getMessageInputField() {
-    const selectors = [
-      'div[aria-label^="Digitar na conversa"][contenteditable="true"]',
-      'div[aria-label^="Type a message"][contenteditable="true"]',
-      'div[data-tab="10"][contenteditable="true"]',
-      '#main footer div[contenteditable="true"]',
-      'footer div[contenteditable="true"]',
-      '#main footer p[contenteditable="true"]',
-      'div.copyable-text[contenteditable="true"]'
-    ];
-    
-    for (const selector of selectors) {
-      const el = document.querySelector(selector);
-      if (el) return el;
-    }
-    
-    return null;
+    // Seletores CONFIRMADOS que funcionam:
+    return document.querySelector('div[aria-label="Digitar na conversa"][contenteditable="true"]') ||
+           document.querySelector('div[data-tab="10"][contenteditable="true"]') ||
+           document.querySelector('footer div[contenteditable="true"]');
   }
 
   /**
@@ -2231,32 +2165,14 @@ try {
 
 
   // ===== IMAGE AUTO SEND (FROM ORIGINAL) =====
-  // CORRIGIDO: Prioriza seletores exatos [data-testid="clip"] e span[data-icon="clip"]
+  // ATUALIZADO: Usa APENAS seletor CONFIRMADO pelo usuário
   function getAttachButton() {
-    const selectors = [
-      '[data-testid="clip"]',
-      'span[data-icon="clip"]',
-      'button[aria-label*="Anexar"]',
-      '[aria-label="Anexar"]',
-      'span[data-icon="attach-menu-plus"]',
-      'footer button[title*="Anexar"]'
-    ];
-    
-    for (const selector of selectors) {
-      let el = document.querySelector(selector);
-      
-      // Se for span, pegar o botão pai
-      if (el && el.tagName === 'SPAN') {
-        el = el.closest('button');
-      }
-      
-      if (el) {
-        console.log('[WHL] 🔍 Botão de anexar encontrado:', selector);
-        return el;
-      }
+    const btn = document.querySelector('[aria-label="Anexar"]');
+    if (btn) {
+      console.log('[WHL] ✅ Botão de anexar encontrado');
+      return btn;
     }
-    
-    console.log('[WHL] ⚠️ Botão de anexar não encontrado');
+    console.log('[WHL] ❌ Botão de anexar não encontrado');
     return null;
   }
 
@@ -2373,10 +2289,10 @@ try {
 
   /**
    * Anexa imagem e digita legenda manualmente
-   * Esta é a nova função que substitui o fluxo antigo
+   * ATUALIZADO: Usa seletores CONFIRMADOS pelo usuário
    */
   async function sendImageWithCaption(imageData, captionText) {
-    console.log('[WHL] 📸 Enviando imagem com legenda...');
+    console.log('[WHL] 📸 Iniciando envio de imagem...');
 
     try {
       // Converter base64 para blob
@@ -2384,12 +2300,8 @@ try {
       const blob = await response.blob();
       const file = new File([blob], 'image.jpg', { type: blob.type });
 
-      // 1. Clicar no botão de anexar (clipe)
-      const attachBtn = document.querySelector('[data-testid="clip"]') ||
-                        document.querySelector('span[data-icon="clip"]')?.closest('button') ||
-                        document.querySelector('[aria-label="Anexar"]') ||
-                        document.querySelector('span[data-icon="attach-menu-plus"]')?.closest('button');
-      
+      // 1. Clicar no botão de anexar
+      const attachBtn = document.querySelector('[aria-label="Anexar"]');
       if (!attachBtn) {
         console.log('[WHL] ❌ Botão de anexar não encontrado');
         return { ok: false };
@@ -2397,12 +2309,10 @@ try {
 
       attachBtn.click();
       console.log('[WHL] ✅ Botão de anexar clicado');
-      await new Promise(r => setTimeout(r, 800));
+      await new Promise(r => setTimeout(r, 1000));
 
-      // 2. Encontrar input de arquivo para imagens
-      const imageInput = document.querySelector('input[accept*="image"]') ||
-                         document.querySelector('input[type="file"][accept*="image"]');
-      
+      // 2. Encontrar input de arquivo
+      const imageInput = document.querySelector('input[accept*="image"]');
       if (!imageInput) {
         console.log('[WHL] ❌ Input de imagem não encontrado');
         return { ok: false };
@@ -2415,22 +2325,21 @@ try {
       imageInput.dispatchEvent(new Event('change', { bubbles: true }));
       
       console.log('[WHL] ✅ Imagem anexada, aguardando preview...');
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, 2500));
 
-      // 4. Digitar legenda se houver texto
+      // 4. Digitar legenda se houver
       if (captionText && captionText.trim()) {
         console.log('[WHL] ⌨️ Digitando legenda...');
         
-        // Procurar campo de legenda
-        let captionBox = null;
+        // Procurar campo de legenda no dialog
         const captionSelectors = [
           'div[aria-label*="legenda"][contenteditable="true"]',
           'div[aria-label*="Legenda"][contenteditable="true"]',
           'div[aria-label*="caption"][contenteditable="true"]',
-          'div[aria-label*="Caption"][contenteditable="true"]',
-          'div[aria-label*="Adicionar"][contenteditable="true"]'
+          '[role="dialog"] div[contenteditable="true"]'
         ];
         
+        let captionBox = null;
         for (let i = 0; i < 10; i++) {
           for (const sel of captionSelectors) {
             captionBox = document.querySelector(sel);
@@ -2443,12 +2352,9 @@ try {
         if (captionBox) {
           captionBox.focus();
           await new Promise(r => setTimeout(r, 200));
-          
-          // Limpar e digitar
           captionBox.textContent = '';
           document.execCommand('insertText', false, captionText);
           captionBox.dispatchEvent(new Event('input', { bubbles: true }));
-          
           console.log('[WHL] ✅ Legenda digitada');
           await new Promise(r => setTimeout(r, 500));
         } else {
@@ -2460,11 +2366,22 @@ try {
       console.log('[WHL] 📤 Enviando...');
       await new Promise(r => setTimeout(r, 500));
       
-      const sendBtn = findSendButton();
+      // Procurar botão no dialog
+      const dialog = document.querySelector('[role="dialog"]');
+      let sendBtn = null;
+      if (dialog) {
+        sendBtn = dialog.querySelector('[aria-label="Enviar"]') ||
+                  [...dialog.querySelectorAll('button')].find(b => !b.disabled);
+      }
+      
+      if (!sendBtn) {
+        sendBtn = document.querySelector('[aria-label="Enviar"]');
+      }
+      
       if (sendBtn) {
         sendBtn.click();
         console.log('[WHL] ✅ Botão de enviar clicado');
-        await new Promise(r => setTimeout(r, 1500));
+        await new Promise(r => setTimeout(r, 2000));
         return { ok: true };
       }
       
