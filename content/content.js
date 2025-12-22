@@ -603,28 +603,54 @@
   // IMPORTANTE: Campo de mensagem está no MAIN ou FOOTER, não na sidebar
   // CORRIGIDO: Mais seletores para melhor compatibilidade
   function getMessageInput() {
-    const selectors = [
-      'div[aria-label^="Digitar na conversa"][contenteditable="true"]',
-      'div[data-tab="10"][contenteditable="true"]',
-      'div[data-tab="10"]',
-      '#main footer div[contenteditable="true"]',
-      '#main footer p[contenteditable="true"]',
-      'footer div[contenteditable="true"]',
-      '#main footer p._aupe.copyable-text',
-      'footer._ak1i div.copyable-area p',
-      '#main footer p._aupe'
-    ];
-    
-    for (const selector of selectors) {
-      const el = document.querySelector(selector);
-      if (el) {
-        console.log('[WHL] 🔍 Campo de mensagem encontrado:', selector);
-        return el;
-      }
+    return getMessageInputField();
+  }
+
+  /**
+   * Digita texto no campo de mensagem usando DOM manipulation
+   * Funciona melhor que passar texto via URL
+   */
+  async function typeMessageInField(text) {
+    if (!text || !text.trim()) {
+      console.log('[WHL] ⚠️ Texto vazio, pulando digitação');
+      return true;
     }
     
-    console.log('[WHL] ⚠️ Campo de mensagem não encontrado');
-    return null;
+    console.log('[WHL] ⌨️ Digitando texto manualmente...');
+    
+    // Aguardar campo carregar
+    let msgInput = null;
+    for (let i = 0; i < 10; i++) {
+      msgInput = getMessageInputField();
+      if (msgInput) break;
+      await new Promise(r => setTimeout(r, 500));
+    }
+    
+    if (!msgInput) {
+      console.log('[WHL] ❌ Campo de mensagem não encontrado após 5s');
+      return false;
+    }
+    
+    // Focar no campo
+    msgInput.focus();
+    await new Promise(r => setTimeout(r, 200));
+    
+    // Limpar campo existente
+    msgInput.textContent = '';
+    msgInput.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 100));
+    
+    // Digitar usando execCommand (funciona com React)
+    document.execCommand('insertText', false, text);
+    msgInput.dispatchEvent(new Event('input', { bubbles: true }));
+    
+    await new Promise(r => setTimeout(r, 300));
+    
+    // Verificar se texto foi inserido
+    const inserted = msgInput.textContent.trim().length > 0;
+    console.log('[WHL]', inserted ? '✅' : '❌', 'Texto digitado:', text.substring(0, 30) + '...');
+    
+    return inserted;
   }
 
   /**
@@ -637,81 +663,31 @@
     // Primeiro: verificar se há modal/dialog aberto (imagem, vídeo, doc)
     const dialog = document.querySelector('[role="dialog"]');
     if (dialog) {
-      // Método 1: Procurar por [data-testid="send"]
-      const testIdBtn = dialog.querySelector('[data-testid="send"]');
-      if (testIdBtn && !testIdBtn.disabled) {
-        console.log('[WHL] 🔍 Botão encontrado: [data-testid="send"] no dialog');
-        return testIdBtn;
-      }
+      const sendBtn = dialog.querySelector('[data-testid="send"]') ||
+                      dialog.querySelector('span[data-icon="send"]')?.closest('button') ||
+                      dialog.querySelector('[aria-label="Enviar"]') ||
+                      dialog.querySelector('[aria-label="Send"]');
+      if (sendBtn && !sendBtn.disabled) return sendBtn;
       
-      // Método 2: Procurar botão com span que contenha ícone de enviar
-      const sendIcon = dialog.querySelector('span[data-icon="send"]');
-      if (sendIcon) {
-        const btn = sendIcon.closest('button');
-        if (btn && !btn.disabled) {
-          console.log('[WHL] 🔍 Botão encontrado: span[data-icon="send"] no dialog');
-          return btn;
-        }
-      }
-      
-      // Fallback: último botão não-disabled
-      const buttons = [...dialog.querySelectorAll('button')].filter(b => !b.disabled);
-      if (buttons.length > 0) {
-        console.log('[WHL] 🔍 Botão encontrado: último botão do dialog (fallback)');
-        return buttons[buttons.length - 1];
-      }
+      // Fallback: primeiro botão habilitado no dialog
+      const btn = [...dialog.querySelectorAll('button')].find(b => !b.disabled);
+      if (btn) return btn;
     }
 
     // Segundo: verificar no footer (texto normal)
     const footer = document.querySelector('footer');
     if (footer) {
-      // Método 1: Procurar por [data-testid="send"]
-      const testIdBtn = footer.querySelector('[data-testid="send"]');
-      if (testIdBtn && !testIdBtn.disabled) {
-        console.log('[WHL] 🔍 Botão encontrado: [data-testid="send"] no footer');
-        return testIdBtn;
-      }
+      const sendBtn = footer.querySelector('[data-testid="send"]') ||
+                      footer.querySelector('span[data-icon="send"]')?.closest('button') ||
+                      footer.querySelector('[aria-label="Enviar"]') ||
+                      footer.querySelector('[aria-label="Send"]');
+      if (sendBtn && !sendBtn.disabled) return sendBtn;
       
-      // Método 2: Procurar botão com span que contenha ícone de enviar
-      const sendIcon = footer.querySelector('span[data-icon="send"]');
-      if (sendIcon) {
-        const btn = sendIcon.closest('button');
-        if (btn && !btn.disabled) {
-          console.log('[WHL] 🔍 Botão encontrado: span[data-icon="send"] no footer');
-          return btn;
-        }
-      }
-      
-      // Fallback: primeiro botão não-disabled no footer
+      // Fallback: primeiro botão habilitado no footer
       const btn = [...footer.querySelectorAll('button')].find(b => !b.disabled);
-      if (btn) {
-        console.log('[WHL] 🔍 Botão encontrado: primeiro botão do footer (fallback)');
-        return btn;
-      }
+      if (btn) return btn;
     }
 
-    // Terceiro: Procurar em #main (caso footer não seja encontrado)
-    const main = document.querySelector('#main');
-    if (main) {
-      // Método 1: Procurar por [data-testid="send"]
-      const testIdBtn = main.querySelector('[data-testid="send"]');
-      if (testIdBtn && !testIdBtn.disabled) {
-        console.log('[WHL] 🔍 Botão encontrado: [data-testid="send"] no main');
-        return testIdBtn;
-      }
-      
-      // Método 2: Procurar por span[data-icon="send"]
-      const sendIcon = main.querySelector('span[data-icon="send"]');
-      if (sendIcon) {
-        const btn = sendIcon.closest('button');
-        if (btn && !btn.disabled) {
-          console.log('[WHL] 🔍 Botão encontrado: span[data-icon="send"] no main');
-          return btn;
-        }
-      }
-    }
-
-    console.log('[WHL] ⚠️ Botão de enviar não encontrado em nenhum local');
     return null;
   }
 
@@ -738,19 +714,11 @@
       return { success: false, error: 'Número inválido' };
     }
     
-    // Construir URL
-    // IMPORTANTE: Se tem imagem, NÃO colocar texto na URL!
-    // O texto será digitado depois, antes de anexar a imagem
+    // URL APENAS com o número - NUNCA colocar texto na URL
     let url = `https://web.whatsapp.com/send?phone=${cleanNumber}`;
     
-    // APENAS adicionar texto na URL se NÃO tiver imagem
-    if (mensagem && !hasImage) {
-      url += `&text=${encodeURIComponent(mensagem)}`;
-    }
-    
     console.log('[WHL] 🔗 Navegando para:', url);
-    console.log('[WHL] Tem imagem:', hasImage);
-    console.log('[WHL] Mensagem será digitada depois:', hasImage && mensagem ? 'SIM' : 'NÃO');
+    console.log('[WHL] Mensagem será digitada manualmente após chat abrir');
     
     // Salvar estado antes de navegar (para retomar após reload)
     const st = await getState();
@@ -875,12 +843,9 @@
   function getMessageInputField() {
     return document.querySelector('div[aria-label^="Digitar na conversa"][contenteditable="true"]') ||
            document.querySelector('div[data-tab="10"][contenteditable="true"]') ||
-           document.querySelector('div[data-tab="10"]') ||
            document.querySelector('#main footer div[contenteditable="true"]') ||
-           document.querySelector('#main footer p[contenteditable="true"]') ||
            document.querySelector('footer div[contenteditable="true"]') ||
-           document.querySelector('#main footer p._aupe') ||
-           document.querySelector('footer._ak1i div.copyable-area p');
+           document.querySelector('#main footer p[contenteditable="true"]');
   }
 
   /**
@@ -907,10 +872,9 @@
                         element;
     
     editableDiv.focus();
-    await new Promise(r => setTimeout(r, 150));
+    await new Promise(r => setTimeout(r, 100));
     
-    // Disparar eventos de teclado completos (keydown, keypress, keyup)
-    // IMPORTANTE: Não usar Shift para garantir que Enter envia (não nova linha)
+    // Disparar eventos de teclado completos
     const events = ['keydown', 'keypress', 'keyup'];
     for (const eventType of events) {
       const event = new KeyboardEvent(eventType, {
@@ -919,7 +883,6 @@
         keyCode: 13,
         which: 13,
         charCode: eventType === 'keypress' ? 13 : 0,
-        shiftKey: false, // Garantir que não é Shift+Enter
         bubbles: true,
         cancelable: true,
         composed: true,
@@ -929,18 +892,16 @@
       await new Promise(r => setTimeout(r, 50));
     }
     
-    await new Promise(r => setTimeout(r, 400));
+    await new Promise(r => setTimeout(r, 300));
     
-    // FALLBACK: Usar método profissional para encontrar e clicar no botão
-    // Este é o método mais confiável no WhatsApp Web moderno
+    // FALLBACK: Clicar no botão de enviar
     const sendButton = findSendButton();
     if (sendButton) {
-      console.log('[WHL] 🔘 Clicando no botão de enviar (fallback confiável)');
+      console.log('[WHL] 🔘 Clicando no botão de enviar (fallback)');
       sendButton.click();
-      await new Promise(r => setTimeout(r, 300));
     }
     
-    await new Promise(r => setTimeout(r, 200));
+    await new Promise(r => setTimeout(r, 500));
     return true;
   }
 
@@ -1435,29 +1396,12 @@
     if (st.imageData) {
       console.log('[WHL] 📸 Modo IMAGEM detectado');
       
-      // 1. PRIMEIRO digitar o texto (se houver)
-      if (st.currentMessage && st.currentMessage.trim()) {
-        console.log('[WHL] ✏️ Digitando texto antes da imagem...');
-        
-        const msgInput = document.querySelector('#main footer p._aupe') ||
-                         document.querySelector('footer._ak1i div.copyable-area p');
-        
-        if (msgInput) {
-          msgInput.focus();
-          await new Promise(r => setTimeout(r, 200));
-          
-          // Digitar o texto
-          document.execCommand('insertText', false, st.currentMessage);
-          msgInput.dispatchEvent(new Event('input', { bubbles: true }));
-          
-          console.log('[WHL] ✅ Texto digitado');
-          await new Promise(r => setTimeout(r, 500));
-        }
-      }
+      // 1. PRIMEIRO: Se tiver texto, NÃO digitar agora (será a legenda)
+      // O texto será digitado no campo de legenda após anexar a imagem
       
-      // 2. DEPOIS anexar e enviar a imagem (com ENTER)
+      // 2. Anexar e enviar a imagem (com legenda se houver)
       console.log('[WHL] 📸 Anexando imagem...');
-      const imageResult = await sendImageWithEnter(st.imageData);
+      const imageResult = await sendImageWithCaption(st.imageData, st.currentMessage);
       success = imageResult && imageResult.ok;
       
       if (success) {
@@ -1466,47 +1410,56 @@
         console.log('[WHL] ❌ Falha ao enviar imagem');
       }
     } else if (st.currentMessage) {
-      // Se é apenas texto, enviar via botão profissional
-      console.log('[WHL] 📝 Enviando texto...');
+      // MODO TEXTO: URL abriu o chat, agora digitar e enviar
+      console.log('[WHL] 📝 Modo TEXTO: digitando mensagem...');
       await new Promise(r => setTimeout(r, 2000));
       
-      // Tentar até 3 vezes
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        console.log(`[WHL] Tentativa ${attempt}/3...`);
+      // SEMPRE digitar o texto manualmente (não confiar na URL)
+      const typed = await typeMessageInField(st.currentMessage);
+      if (!typed) {
+        console.log('[WHL] ❌ Falha ao digitar texto');
+        success = false;
+      } else {
+        await new Promise(r => setTimeout(r, 500));
         
-        // Método 1: Clicar no botão de enviar diretamente
-        const sendBtn = findSendButton();
-        if (sendBtn) {
-          console.log('[WHL] ✅ Botão de enviar encontrado');
-          sendBtn.click();
-          await new Promise(r => setTimeout(r, 1000));
+        // Tentar enviar (3 tentativas)
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          console.log(`[WHL] Tentativa de envio ${attempt}/3...`);
           
-          // Verificar se foi enviado
-          const msgInput = getMessageInputField();
-          if (!msgInput || msgInput.textContent.trim().length === 0) {
-            success = true;
-            console.log('[WHL] ✅ Mensagem enviada com sucesso!');
-            break;
-          }
-        }
-        
-        // Método 2: Tentar via ENTER como fallback
-        if (!success && attempt < 3) {
-          const msgInput = getMessageInputField();
-          if (msgInput) {
-            await sendEnterKey(msgInput);
+          // Método 1: Clicar no botão de enviar
+          const sendBtn = findSendButton();
+          if (sendBtn) {
+            console.log('[WHL] ✅ Botão de enviar encontrado');
+            sendBtn.click();
             await new Promise(r => setTimeout(r, 1000));
             
-            const checkInput = getMessageInputField();
-            if (!checkInput || checkInput.textContent.trim().length === 0) {
+            // Verificar se foi enviado (campo deve estar vazio)
+            const msgInput = getMessageInputField();
+            if (!msgInput || msgInput.textContent.trim().length === 0) {
               success = true;
-              console.log('[WHL] ✅ Mensagem enviada via ENTER!');
+              console.log('[WHL] ✅ Mensagem enviada com sucesso!');
               break;
             }
           }
+          
+          // Método 2: Tentar via ENTER como fallback
+          if (!success && attempt < 3) {
+            const msgInput = getMessageInputField();
+            if (msgInput) {
+              await sendEnterKey(msgInput);
+              await new Promise(r => setTimeout(r, 1000));
+              
+              const checkInput = getMessageInputField();
+              if (!checkInput || checkInput.textContent.trim().length === 0) {
+                success = true;
+                console.log('[WHL] ✅ Mensagem enviada via ENTER!');
+                break;
+              }
+            }
+          }
+          
+          await new Promise(r => setTimeout(r, 500));
         }
-        
-        await new Promise(r => setTimeout(r, 500));
       }
       
       if (success) {
@@ -2468,6 +2421,112 @@ try {
     } catch (error) {
       console.error('[WHL] ❌ Error sending image:', error);
       return { ok: false, captionApplied: false };
+    }
+  }
+
+  /**
+   * Anexa imagem e digita legenda manualmente
+   * Esta é a nova função que substitui o fluxo antigo
+   */
+  async function sendImageWithCaption(imageData, captionText) {
+    console.log('[WHL] 📸 Enviando imagem com legenda...');
+
+    try {
+      // Converter base64 para blob
+      const response = await fetch(imageData);
+      const blob = await response.blob();
+      const file = new File([blob], 'image.jpg', { type: blob.type });
+
+      // 1. Clicar no botão de anexar (clipe)
+      const attachBtn = document.querySelector('[data-testid="clip"]') ||
+                        document.querySelector('span[data-icon="clip"]')?.closest('button') ||
+                        document.querySelector('[aria-label="Anexar"]') ||
+                        document.querySelector('span[data-icon="attach-menu-plus"]')?.closest('button');
+      
+      if (!attachBtn) {
+        console.log('[WHL] ❌ Botão de anexar não encontrado');
+        return { ok: false };
+      }
+
+      attachBtn.click();
+      console.log('[WHL] ✅ Botão de anexar clicado');
+      await new Promise(r => setTimeout(r, 800));
+
+      // 2. Encontrar input de arquivo para imagens
+      const imageInput = document.querySelector('input[accept*="image"]') ||
+                         document.querySelector('input[type="file"][accept*="image"]');
+      
+      if (!imageInput) {
+        console.log('[WHL] ❌ Input de imagem não encontrado');
+        return { ok: false };
+      }
+
+      // 3. Anexar arquivo
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(file);
+      imageInput.files = dataTransfer.files;
+      imageInput.dispatchEvent(new Event('change', { bubbles: true }));
+      
+      console.log('[WHL] ✅ Imagem anexada, aguardando preview...');
+      await new Promise(r => setTimeout(r, 2000));
+
+      // 4. Digitar legenda se houver texto
+      if (captionText && captionText.trim()) {
+        console.log('[WHL] ⌨️ Digitando legenda...');
+        
+        // Procurar campo de legenda
+        let captionBox = null;
+        const captionSelectors = [
+          'div[aria-label*="legenda"][contenteditable="true"]',
+          'div[aria-label*="Legenda"][contenteditable="true"]',
+          'div[aria-label*="caption"][contenteditable="true"]',
+          'div[aria-label*="Caption"][contenteditable="true"]',
+          'div[aria-label*="Adicionar"][contenteditable="true"]'
+        ];
+        
+        for (let i = 0; i < 10; i++) {
+          for (const sel of captionSelectors) {
+            captionBox = document.querySelector(sel);
+            if (captionBox) break;
+          }
+          if (captionBox) break;
+          await new Promise(r => setTimeout(r, 300));
+        }
+        
+        if (captionBox) {
+          captionBox.focus();
+          await new Promise(r => setTimeout(r, 200));
+          
+          // Limpar e digitar
+          captionBox.textContent = '';
+          document.execCommand('insertText', false, captionText);
+          captionBox.dispatchEvent(new Event('input', { bubbles: true }));
+          
+          console.log('[WHL] ✅ Legenda digitada');
+          await new Promise(r => setTimeout(r, 500));
+        } else {
+          console.log('[WHL] ⚠️ Campo de legenda não encontrado');
+        }
+      }
+
+      // 5. Clicar no botão de enviar
+      console.log('[WHL] 📤 Enviando...');
+      await new Promise(r => setTimeout(r, 500));
+      
+      const sendBtn = findSendButton();
+      if (sendBtn) {
+        sendBtn.click();
+        console.log('[WHL] ✅ Botão de enviar clicado');
+        await new Promise(r => setTimeout(r, 1500));
+        return { ok: true };
+      }
+      
+      console.log('[WHL] ❌ Botão de enviar não encontrado');
+      return { ok: false };
+
+    } catch (error) {
+      console.error('[WHL] ❌ Erro ao enviar imagem:', error);
+      return { ok: false };
     }
   }
 
