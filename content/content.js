@@ -186,7 +186,19 @@
       let oSend = XMLHttpRequest.prototype.send;
       XMLHttpRequest.prototype.send = function(...a) {
         this.addEventListener('load',function(){
-          if(this._wa_url?.includes('whatsapp.com')) WAExtractor.findPhones(this.responseText, HarvesterStore.ORIGINS.NET);
+          // Secure URL validation using URL parsing
+          if(this._wa_url) {
+            try {
+              const url = new URL(this._wa_url);
+              if(url.hostname === 'web.whatsapp.com' || 
+                 url.hostname.endsWith('.whatsapp.com') || 
+                 url.hostname.endsWith('.whatsapp.net')) {
+                WAExtractor.findPhones(this.responseText, HarvesterStore.ORIGINS.NET);
+              }
+            } catch(e) {
+              // Invalid URL, ignore
+            }
+          }
         });
         return oSend.apply(this,a);
       };
