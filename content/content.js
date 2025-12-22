@@ -2042,23 +2042,26 @@ try {
     });
     
     // Enter key to auto-generate queue (build table)
-    document.getElementById('whlMsg').addEventListener('keydown', async (e) => {
-      // Check if Enter key was pressed (without Shift for new line)
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault(); // Prevent default new line behavior
-        const st = await getState();
-        
-        // Only auto-build if there are numbers and a message
-        if (st.numbersText.trim() && st.message.trim()) {
-          console.log('[WHL] 📨 Enter pressionado - gerando tabela automaticamente');
-          // Trigger build queue
-          const buildBtn = document.getElementById('whlBuild');
-          if (buildBtn) {
-            buildBtn.click();
+    const msgTextarea = document.getElementById('whlMsg');
+    if (msgTextarea) {
+      msgTextarea.addEventListener('keydown', async (e) => {
+        // Check if Enter key was pressed (without Shift for new line)
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault(); // Prevent default new line behavior
+          const st = await getState();
+          
+          // Only auto-build if there are numbers and a message
+          if (st.numbersText.trim() && st.message.trim()) {
+            console.log('[WHL] 📨 Enter pressionado - gerando tabela automaticamente');
+            // Trigger build queue
+            const buildBtn = document.getElementById('whlBuild');
+            if (buildBtn) {
+              buildBtn.click();
+            }
           }
         }
-      }
-    });
+      });
+    }
     
     // Delay configuration
     document.getElementById('whlDelayMin').addEventListener('input', async (e) => {
@@ -2128,20 +2131,31 @@ try {
     });
     
     // Image button handlers
-    document.getElementById('whlSelectImageBtn').addEventListener('click', () => {
-      // Trigger the hidden file input
-      document.getElementById('whlImage').click();
-    });
+    const selectImageBtn = document.getElementById('whlSelectImageBtn');
+    if (selectImageBtn) {
+      selectImageBtn.addEventListener('click', () => {
+        // Trigger the hidden file input
+        const imageInput = document.getElementById('whlImage');
+        if (imageInput) {
+          imageInput.click();
+        }
+      });
+    }
     
-    document.getElementById('whlClearImageBtn').addEventListener('click', async () => {
-      const st = await getState();
-      st.imageData = null;
-      // Clear the file input
-      const fileInput = document.getElementById('whlImage');
-      fileInput.value = '';
-      await setState(st);
-      await render();
-    });
+    const clearImageBtn = document.getElementById('whlClearImageBtn');
+    if (clearImageBtn) {
+      clearImageBtn.addEventListener('click', async () => {
+        const st = await getState();
+        st.imageData = null;
+        // Clear the file input
+        const fileInput = document.getElementById('whlImage');
+        if (fileInput) {
+          fileInput.value = '';
+        }
+        await setState(st);
+        await render();
+      });
+    }
     
     // Drafts
     document.getElementById('whlSaveDraft').addEventListener('click', async () => {
