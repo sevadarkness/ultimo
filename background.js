@@ -29,7 +29,10 @@ const NetSniffer = {
     if (this.phones.size) {
       chrome.tabs.query({active:true,currentWindow:true},tabs=>{
         if(tabs[0]){
-          chrome.tabs.sendMessage(tabs[0].id,{type:'netPhones',phones:Array.from(this.phones)});
+          chrome.tabs.sendMessage(tabs[0].id,{type:'netPhones',phones:Array.from(this.phones)})
+            .catch(err => {
+              console.log('[NetSniffer] Não foi possível enviar phones para content script:', err.message);
+            });
         }
       });
     }
@@ -45,27 +48,33 @@ NetSniffer.init();
 chrome.runtime.onMessage.addListener((msg,_,resp)=>{
   if(msg.action==='exportData'){
     chrome.tabs.query({active:true,currentWindow:true},async tabs=>{
-      if(tabs[0]){
-        try{
-          const res = await chrome.scripting.executeScript({
-            target:{tabId:tabs[0].id},
-            function:()=>({
-              numbers: Array.from(window.HarvesterStore?._phones?.keys()||[]),
-              valid: Array.from(window.HarvesterStore?._valid||[]),
-              meta: window.HarvesterStore?._meta||{}
-            })
-          });
-          resp({success:true, data: res[0].result});
-        }catch(e){
-          resp({success:false, error:e.message});
-        }
+      if(!tabs[0]){
+        resp({success:false, error:'No active tab found'});
+        return;
+      }
+      try{
+        const res = await chrome.scripting.executeScript({
+          target:{tabId:tabs[0].id},
+          function:()=>({
+            numbers: Array.from(window.HarvesterStore?._phones?.keys()||[]),
+            valid: Array.from(window.HarvesterStore?._valid||[]),
+            meta: window.HarvesterStore?._meta||{}
+          })
+        });
+        resp({success:true, data: res[0].result});
+      }catch(e){
+        resp({success:false, error:e.message});
       }
     });
     return true;
   }
   if(msg.action==='clearData'){
     chrome.tabs.query({active:true,currentWindow:true},async tabs=>{
-      if(tabs[0]){
+      if(!tabs[0]){
+        resp({success:false, error:'No active tab found'});
+        return;
+      }
+      try{
         await chrome.scripting.executeScript({
           target:{tabId:tabs[0].id},
           function:()=>{
@@ -78,6 +87,8 @@ chrome.runtime.onMessage.addListener((msg,_,resp)=>{
           }
         });
         resp({success:true});
+      }catch(e){
+        resp({success:false, error:e.message});
       }
     });
     return true;

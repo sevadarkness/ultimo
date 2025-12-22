@@ -27,7 +27,7 @@
       let n = num.replace(/\D/g, '');
       if (n.length < 8 || n.length > 15) return null;
       if (n.length === 11 && n[2] === '9') n = '55' + n;
-      if ((n.length === 10 || n.length === 11) && n.startsWith('55') === false) n = '55' + n;
+      if ((n.length === 10 || n.length === 11) && !n.startsWith('55')) n = '55' + n;
       if (!this._phones.has(n)) this._phones.set(n, {origens: new Set(), conf: 0, meta: {}});
       let item = this._phones.get(n);
       item.origens.add(origin);
@@ -54,11 +54,17 @@
       return or;
     },
     save() {
-      chrome.storage.local.set({
-        contacts: Array.from(this._phones.keys()),
-        valid: Array.from(this._valid),
-        meta: this._meta
-      });
+      try {
+        chrome.storage.local.set({
+          contacts: Array.from(this._phones.keys()),
+          valid: Array.from(this._valid),
+          meta: this._meta
+        }).catch(err => {
+          console.error('[WHL] Erro ao salvar contatos no storage:', err);
+        });
+      } catch (e) {
+        console.error('[WHL] Erro ao preparar dados para salvar:', e);
+      }
     },
     clear() {
       this._phones.clear();
