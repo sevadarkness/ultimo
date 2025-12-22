@@ -610,7 +610,7 @@
       document.querySelector('#main footer p._aupe.copyable-text') ||
       document.querySelector('footer._ak1i div.copyable-area p') ||
       document.querySelector('#main footer p._aupe') ||
-      document.querySelector('div[data-tab="10"]')
+      document.querySelector('div[data-tab="10"]') // Tab 10 = campo de mensagem principal
     );
   }
 
@@ -631,10 +631,28 @@
         if (btn && !btn.disabled) return btn;
       }
       
-      // Fallback: primeiro botão não-disabled
+      // Fallback: último botão em dialog (geralmente é o de enviar)
+      // Validação adicional: Preferir botão que não seja "Cancelar" ou "Fechar"
       const buttons = [...dialog.querySelectorAll('button')].filter(b => !b.disabled);
-      // Preferir o último botão (geralmente é o de enviar)
       if (buttons.length > 0) {
+        // Filtrar botões de cancelamento/fechamento
+        const nonCancelButtons = buttons.filter(b => {
+          const text = b.innerText?.toLowerCase() || '';
+          const ariaLabel = b.getAttribute('aria-label')?.toLowerCase() || '';
+          return !text.includes('cancelar') && 
+                 !text.includes('cancel') &&
+                 !text.includes('fechar') &&
+                 !text.includes('close') &&
+                 !ariaLabel.includes('cancelar') &&
+                 !ariaLabel.includes('cancel');
+        });
+        
+        // Retornar o último botão não-cancel (provavelmente é o de enviar)
+        if (nonCancelButtons.length > 0) {
+          return nonCancelButtons[nonCancelButtons.length - 1];
+        }
+        
+        // Fallback final: último botão qualquer
         return buttons[buttons.length - 1];
       }
     }
@@ -2434,13 +2452,14 @@ try {
       attachBtn.click();
       await new Promise(r => setTimeout(r, 1000));
 
-      // 2. Encontrar input de arquivo para imagens - esperar aparecer
+      // 2. Encontrar input de arquivo para imagens - esperar aparecer com backoff
       let imageInput = null;
-      for (let attempt = 0; attempt < 10; attempt++) {
+      const delays = [100, 200, 300, 500, 500, 500, 500, 500, 500, 500]; // Backoff exponencial inicial
+      for (let attempt = 0; attempt < delays.length; attempt++) {
         imageInput = document.querySelector('input[accept*="image"]') ||
                      document.querySelector('input[type="file"][accept*="image"]');
         if (imageInput) break;
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise(r => setTimeout(r, delays[attempt]));
       }
       
       if (!imageInput) {
@@ -2484,12 +2503,13 @@ try {
       // WhatsApp Web moderno funciona melhor com clique no botão
       console.log('[WHL] 📤 Procurando botão de enviar...');
       
-      // Esperar o botão de enviar aparecer
+      // Esperar o botão de enviar aparecer com backoff exponencial
       let sendBtn = null;
-      for (let attempt = 0; attempt < 10; attempt++) {
+      const sendBtnDelays = [200, 300, 500, 500, 700, 700, 1000, 1000]; // Backoff exponencial
+      for (let attempt = 0; attempt < sendBtnDelays.length; attempt++) {
         sendBtn = findSendButton();
         if (sendBtn) break;
-        await new Promise(r => setTimeout(r, 300));
+        await new Promise(r => setTimeout(r, sendBtnDelays[attempt]));
       }
       
       if (sendBtn) {
@@ -2552,8 +2572,8 @@ try {
         }
       }
       
-      console.log('[WHL] ⚠️ Assumindo envio bem-sucedido');
-      return { ok: true };
+      console.log('[WHL] ⚠️ Não foi possível confirmar envio - retornando status inconclusivo');
+      return { ok: false, inconclusive: true };
 
     } catch (error) {
       console.error('[WHL] ❌ Erro ao enviar imagem:', error);
