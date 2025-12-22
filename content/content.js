@@ -799,6 +799,7 @@
 
   /**
    * Envia mensagem via tecla ENTER (para mensagens de texto via URL)
+   * Nota: Nome mantido como clickSendButton() por compatibilidade, mas agora usa ENTER
    */
   async function clickSendButton() {
     console.log('[WHL] 📤 Enviando mensagem via tecla ENTER...');
@@ -831,7 +832,7 @@
     return { success: false, error: 'Campo de mensagem não encontrado' };
   }
 
-  // DEPRECATED: sendTextMessage removido - agora usa clickSendButton() após navegação via URL
+  // DEPRECATED: sendTextMessage removido - agora envia via tecla ENTER após navegação via URL
 
   /**
    * Fecha popup de número inválido
