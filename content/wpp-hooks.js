@@ -1383,7 +1383,8 @@ window.whl_hooks_main = () => {
     }
     
     /**
-     * PR #71: Extrair membros de grupos - Código Testado e Validado
+     * PR #71 + PR #75: Extrair membros de grupos - Código Testado e Validado
+     * FINAL — headless + cache-aware + 5 métodos + LID fix
      * Usa waitForCollections() com múltiplos fallbacks e loadParticipants()
      * @param {string} groupId - ID do grupo (_serialized)
      * @returns {Promise<Object>} Resultado com membros extraídos
@@ -1401,7 +1402,7 @@ window.whl_hooks_main = () => {
             const meta = chat.groupMetadata;
             if (!meta) return { success: false, error: 'Metadata indisponível.', members: [], count: 0 };
 
-            // IMPORTANTE: Carregar participantes se a função existir
+            // IMPORTANTE: Carregar participantes se a função existir (loadParticipants OPCIONAL)
             if (typeof meta.loadParticipants === 'function') {
                 await meta.loadParticipants();
             }
@@ -1423,8 +1424,10 @@ window.whl_hooks_main = () => {
 
             console.log('[WHL] Total participantes encontrados:', participants.length);
 
-            // CORREÇÃO CRÍTICA BUG 2: Extrair número de telefone CORRETAMENTE com 5 métodos
+            // EXTRAÇÃO COM 5 MÉTODOS + CORREÇÃO LID
             const members = [];
+            let lidCount = 0;
+            let resolvedCount = 0;
             
             for (const p of participants) {
                 const id = p.id;
@@ -1434,23 +1437,30 @@ window.whl_hooks_main = () => {
 
                 // MÉTODO 1: Se _serialized contém número válido
                 if (id._serialized) {
-                    const serialized = id._serialized;
-                    const extracted = serialized.replace('@c.us', '').replace('@s.whatsapp.net', '').replace('@lid', '');
+                    const extracted = id._serialized
+                        .replace('@c.us', '')
+                        .replace('@s.whatsapp.net', '')
+                        .replace('@lid', '');
                     if (/^\d{10,15}$/.test(extracted)) {
                         numero = extracted;
                     }
                 }
 
                 // MÉTODO 2: Se user é número válido
-                if (!numero && id.user && /^\d{10,15}$/.test(String(id.user))) {
-                    numero = String(id.user);
+                if (!numero && id.user) {
+                    const userStr = String(id.user);
+                    if (/^\d{10,15}$/.test(userStr)) {
+                        numero = userStr;
+                    }
                 }
 
-                // MÉTODO 3: Buscar no ContactCollection
+                // MÉTODO 3: Buscar no ContactCollection (RESOLVE LID!)
                 if (!numero) {
+                    lidCount++;
                     const contactPhone = await getPhoneFromContact(id._serialized || id);
                     if (contactPhone) {
                         numero = contactPhone;
+                        resolvedCount++;
                     }
                 }
 
@@ -1462,7 +1472,7 @@ window.whl_hooks_main = () => {
                     }
                 }
 
-                // MÉTODO 5: Para LID, tentar buscar número real via phoneNumber do participante
+                // MÉTODO 5: phoneNumber do participante
                 if (!numero && p.phoneNumber) {
                     const cleanPhone = String(p.phoneNumber).replace(/\D/g, '');
                     if (/^\d{10,15}$/.test(cleanPhone)) {
@@ -1470,11 +1480,7 @@ window.whl_hooks_main = () => {
                     }
                 }
 
-                // Log para debug
-                if (!numero) {
-                    console.log('[WHL] ⚠️ Não conseguiu extrair número para:', JSON.stringify(id));
-                }
-
+                // Adicionar se encontrou número válido
                 if (numero) {
                     members.push(numero);
                 }
@@ -1483,6 +1489,7 @@ window.whl_hooks_main = () => {
             const uniqueMembers = [...new Set(members)];
 
             console.log('[WHL Hooks] Membros com telefone real:', uniqueMembers.length, 'de', participants.length);
+            console.log('[WHL Hooks] LIDs encontrados:', lidCount, '| Resolvidos:', resolvedCount);
 
             return {
                 success: true,
