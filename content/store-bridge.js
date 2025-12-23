@@ -78,59 +78,8 @@
     
     const { type } = event.data;
     
-    // EXTRAIR CONTATOS
-    if (type === 'WHL_EXTRACT_CONTACTS') {
-      const result = { normal: [], archived: [], blocked: [] };
-      
-      try {
-        // Contatos normais via Store
-        if (window.WHL_Store?.Chat?.models) {
-          window.WHL_Store.Chat.models.forEach(chat => {
-            if (chat.id?._serialized?.endsWith('@c.us')) {
-              const phone = chat.id._serialized.replace('@c.us', '');
-              if (chat.archive) {
-                result.archived.push(phone);
-              } else {
-                result.normal.push(phone);
-              }
-            }
-          });
-        }
-        
-        // Bloqueados via Store
-        if (window.WHL_Store?.Blocklist?.models) {
-          window.WHL_Store.Blocklist.models.forEach(blocked => {
-            if (blocked.id?._serialized?.endsWith('@c.us')) {
-              result.blocked.push(blocked.id._serialized.replace('@c.us', ''));
-            }
-          });
-        }
-        
-        // Fallback DOM se Store vazio
-        if (result.normal.length === 0) {
-          const chatElements = document.querySelectorAll('[data-id]');
-          chatElements.forEach(el => {
-            const dataId = el.getAttribute('data-id');
-            if (dataId && dataId.includes('@c.us')) {
-              const phone = dataId.split('@')[0].replace(/\D/g, '');
-              if (phone.length >= 8) {
-                result.normal.push(phone);
-              }
-            }
-          });
-        }
-        
-        window.postMessage({ 
-          type: 'WHL_EXTRACT_RESULT', 
-          normal: [...new Set(result.normal)],
-          archived: [...new Set(result.archived)],
-          blocked: [...new Set(result.blocked)]
-        }, '*');
-        
-      } catch(e) {
-        window.postMessage({ type: 'WHL_EXTRACT_ERROR', error: e.message }, '*');
-      }
-    }
+    // NOTE: Extraction is handled by extractor.contacts.js
+    // store-bridge only handles Groups and Recover
     
     // CARREGAR GRUPOS
     if (type === 'WHL_LOAD_GROUPS') {
