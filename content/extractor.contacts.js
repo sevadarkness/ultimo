@@ -5,7 +5,7 @@
  * Mudanças do TURBO:
  * - SEM validação de DDD (aceita qualquer número 8-15 dígitos)
  * - SEM score mínimo (coleta TODOS os números encontrados)
- * - MAIS scroll (100+ iterações)
+ * - MAIS scroll (150 iterações)
  * - MAIS fontes (IndexedDB, sessionStorage, todos localStorage, DOM completo)
  * - Retorna TODOS os números (usuário filtra depois se quiser)
  * 
