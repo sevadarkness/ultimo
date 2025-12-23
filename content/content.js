@@ -54,6 +54,43 @@
     return ''; // fallback
   }
 
+  // ===== SAFE CHROME WRAPPER =====
+  // Handles "Extension context invalidated" errors gracefully
+  function safeChrome(fn) {
+    try {
+      if (!chrome?.runtime?.id) {
+        console.warn('[WHL] ⚠️ Extensão invalidada - recarregue a página (F5)');
+        showExtensionInvalidatedWarning();
+        return null;
+      }
+      return fn();
+    } catch (e) {
+      if (e.message && e.message.includes('Extension context invalidated')) {
+        console.warn('[WHL] ⚠️ Recarregue a página do WhatsApp Web (F5)');
+        showExtensionInvalidatedWarning();
+      }
+      return null;
+    }
+  }
+  
+  // Show warning in UI when extension is invalidated
+  function showExtensionInvalidatedWarning() {
+    try {
+      const panel = document.getElementById('whlPanel');
+      if (panel) {
+        // Check if warning already exists
+        const existingWarning = panel.querySelector('.whl-extension-warning');
+        if (existingWarning) return;
+        
+        const warning = document.createElement('div');
+        warning.className = 'whl-extension-warning';
+        warning.style.cssText = 'background:#ff4444;color:#fff;padding:10px;text-align:center;font-weight:bold;border-radius:8px;margin-bottom:10px';
+        warning.textContent = '⚠️ Extensão atualizada! Recarregue a página (F5)';
+        panel.prepend(warning);
+      }
+    } catch {}
+  }
+
   // ======= Validador e repositório dos telefones extraídos =======
   const HarvesterStore = {
     _phones: new Map(), // Map<numero, {origens:Set, conf:number, meta:Object}>
@@ -350,8 +387,7 @@
   let campaignInterval = null;
 
   async function getState() {
-    const res = await chrome.storage.local.get([KEY]);
-    return res[KEY] || {
+    const defaultState = {
       numbersText: '',
       message: '',
       queue: [],
@@ -377,9 +413,16 @@
       stats: { sent: 0, failed: 0, pending: 0 },
       useWorker: true  // NEW: Enable worker mode by default
     };
+    
+    const result = await safeChrome(() => chrome.storage.local.get([KEY]));
+    if (!result) return defaultState;
+    return result[KEY] || defaultState;
   }
+  
   async function setState(next) {
-    await chrome.storage.local.set({ [KEY]: next });
+    const result = safeChrome(() => chrome.storage.local.set({ [KEY]: next }));
+    if (!result) return next;
+    await result;
     return next;
   }
 
@@ -3359,22 +3402,18 @@ try {
   let isPaused = false;
 
   if (btnExtract && boxExtract) {
-    btnExtract.addEventListener('click', () => {
+    btnExtract.addEventListener('click', async () => {
       btnExtract.disabled = true;
       btnExtract.textContent = '⏳ Extraindo...';
-      isExtracting = true;
-      isPaused = false;
-      
       
       const st = document.getElementById('whlExtractStatus'); 
-      if (st) st.textContent = 'Iniciando extração...';
-      const progressBar = document.getElementById('whlExtractProgress');
-      const progressFill = document.getElementById('whlExtractProgressFill');
-      const progressText = document.getElementById('whlExtractProgressText');
-      if (progressBar) progressBar.style.display = 'block';
-      if (progressFill) progressFill.style.width = '0%';
-      if (progressText) progressText.textContent = '0% - 0 contatos encontrados';
-      window.postMessage({ type: 'WHL_EXTRACT_CONTACTS' }, '*');
+      if (st) st.textContent = 'Iniciando extração instantânea...';
+      
+      // Usar extração instantânea via API (SEM ROLAGEM)
+      window.postMessage({ 
+        type: 'WHL_EXTRACT_ALL_INSTANT',
+        requestId: Date.now().toString()
+      }, '*');
     });
   }
   
@@ -3487,6 +3526,57 @@ try {
       if (btnPause) {
         btnPause.textContent = '⏸️ Pausar';
       }
+    }
+    
+    // Handler para extração instantânea
+    if (e.data.type === 'WHL_EXTRACT_ALL_INSTANT_RESULT') {
+      const { contacts, archived, blocked, groups } = e.data;
+      
+      // Atualizar campos na UI
+      if (boxExtract) boxExtract.value = (contacts || []).join('\n');
+      const normalCount = document.getElementById('whlNormalCount');
+      if (normalCount) normalCount.textContent = (contacts || []).length;
+      
+      const archivedBox = document.getElementById('whlArchivedNumbers');
+      if (archivedBox) archivedBox.value = (archived || []).join('\n');
+      const archivedCount = document.getElementById('whlArchivedCount');
+      if (archivedCount) archivedCount.textContent = (archived || []).length;
+      
+      const blockedBox = document.getElementById('whlBlockedNumbers');
+      if (blockedBox) blockedBox.value = (blocked || []).join('\n');
+      const blockedCount = document.getElementById('whlBlockedCount');
+      if (blockedCount) blockedCount.textContent = (blocked || []).length;
+      
+      // Restaurar botão
+      if (btnExtract) {
+        btnExtract.disabled = false;
+        btnExtract.textContent = '📥 Extrair contatos';
+      }
+      
+      const statusEl = document.getElementById('whlExtractStatus');
+      const totalCount = (contacts?.length || 0) + (archived?.length || 0) + (blocked?.length || 0);
+      if (statusEl) {
+        statusEl.textContent = `✅ Extração completa! Total: ${totalCount} números (${contacts?.length || 0} normais, ${archived?.length || 0} arquivados, ${blocked?.length || 0} bloqueados)`;
+      }
+      
+      alert(`✅ Extração completa!\nContatos: ${contacts?.length || 0}\nArquivados: ${archived?.length || 0}\nBloqueados: ${blocked?.length || 0}`);
+    }
+    
+    // Handler para extração de arquivados e bloqueados
+    if (e.data.type === 'WHL_EXTRACT_ARCHIVED_BLOCKED_DOM_RESULT') {
+      const { archived, blocked } = e.data;
+      
+      const archivedBox = document.getElementById('whlArchivedNumbers');
+      if (archivedBox) archivedBox.value = (archived || []).join('\n');
+      const archivedCount = document.getElementById('whlArchivedCount');
+      if (archivedCount) archivedCount.textContent = (archived || []).length;
+      
+      const blockedBox = document.getElementById('whlBlockedNumbers');
+      if (blockedBox) blockedBox.value = (blocked || []).join('\n');
+      const blockedCount = document.getElementById('whlBlockedCount');
+      if (blockedCount) blockedCount.textContent = (blocked || []).length;
+      
+      console.log(`[WHL] Arquivados: ${archived?.length || 0}, Bloqueados: ${blocked?.length || 0}`);
     }
 
     if (e.data.type === 'WHL_EXTRACT_ERROR') {
@@ -3993,13 +4083,22 @@ window.addEventListener('message', (e) => {
         recoverHistory.innerHTML = '<div class="muted">Nenhuma mensagem recuperada ainda...</div>';
       } else {
         e.data.history.slice().reverse().forEach(msg => {
+          const phone = msg.from?.replace('@c.us', '') || 'Desconhecido';
+          const message = msg.body || '[Mídia]';
+          const date = new Date(msg.timestamp).toLocaleString('pt-BR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          });
+          
           const msgEl = document.createElement('div');
-          msgEl.style.cssText = 'padding:8px;margin-bottom:8px;background:rgba(255,100,100,0.1);border-left:3px solid #f55;border-radius:6px;';
+          msgEl.style.cssText = 'padding:10px;margin-bottom:8px;background:rgba(255,255,255,0.05);border-radius:8px;border-left:3px solid #f00';
           msgEl.innerHTML = `
-            <div style="font-size:11px;opacity:0.7;margin-bottom:4px">
-              ${new Date(msg.timestamp).toLocaleString('pt-BR')} - De: ${msg.from}
-            </div>
-            <div style="font-size:12px">${msg.body}</div>
+            <div style="font-weight:bold;color:#ff6b6b">📱 Número: ${phone}</div>
+            <div style="margin-top:4px">📝 Mensagem apagada: "${message}"</div>
+            <div style="margin-top:4px;font-size:11px;opacity:0.7">🕐 ${date}</div>
           `;
           recoverHistory.appendChild(msgEl);
         });

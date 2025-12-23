@@ -187,6 +187,48 @@ window.whl_hooks_main = () => {
     };
 
     /**
+     * Extrai contatos arquivados e bloqueados via DOM
+     * Combina API e DOM para máxima cobertura
+     */
+    async function extrairArquivadosBloqueadosDOM() {
+        console.log('[WHL] Iniciando extração de arquivados/bloqueados via DOM...');
+        
+        const result = { archived: [], blocked: [] };
+        
+        // Método 1: Tentar via API primeiro (Arquivados)
+        try {
+            const CC = require('WAWebChatCollection');
+            const chats = CC?.ChatCollection?.getModelsArray?.() || [];
+            
+            // Arquivados
+            result.archived = chats
+                .filter(c => c.archive === true && c.id?._serialized?.endsWith('@c.us'))
+                .map(c => c.id._serialized.replace('@c.us', ''))
+                .filter(n => /^\d{8,15}$/.test(n));
+            
+            console.log('[WHL] Arquivados via API:', result.archived.length);
+        } catch (e) {
+            console.warn('[WHL] Erro ao extrair arquivados via API:', e);
+        }
+        
+        // Bloqueados via BlocklistCollection
+        try {
+            const BC = require('WAWebBlocklistCollection');
+            const blocklist = BC?.BlocklistCollection?.getModelsArray?.() || [];
+            
+            result.blocked = blocklist
+                .map(c => c.id?._serialized?.replace('@c.us', '') || c.id?.user || '')
+                .filter(n => /^\d{8,15}$/.test(n));
+            
+            console.log('[WHL] Bloqueados via API:', result.blocked.length);
+        } catch (e) {
+            console.warn('[WHL] Erro ao extrair bloqueados via API:', e);
+        }
+        
+        return result;
+    }
+
+    /**
      * Envia mensagem de TEXTO para qualquer número via API interna do WhatsApp
      * NÃO CAUSA RELOAD!
      */
@@ -218,6 +260,20 @@ window.whl_hooks_main = () => {
             });
 
             var result = await SMRA.sendMsgRecord(msg);
+            
+            // NOVO: Forçar atualização do chat para renderizar a mensagem
+            try {
+                if (chat.msgs && chat.msgs.sync) {
+                    await chat.msgs.sync();
+                }
+                // Tentar também recarregar o chat
+                if (chat.reload) {
+                    await chat.reload();
+                }
+            } catch (e) {
+                console.warn('[WHL] Não foi possível sincronizar chat:', e);
+            }
+            
             console.log('[WHL] ✅ TEXTO enviado:', result);
             return { success: true, result: result };
         } catch (error) {
@@ -1302,6 +1358,28 @@ window.whl_hooks_main = () => {
                 } catch (error) {
                     window.postMessage({ 
                         type: 'WHL_EXTRACT_GROUP_CONTACTS_DOM_ERROR', 
+                        requestId, 
+                        error: error.message 
+                    }, '*');
+                }
+            })();
+        }
+        
+        // EXTRAIR ARQUIVADOS E BLOQUEADOS
+        if (event.data.type === 'WHL_EXTRACT_ARCHIVED_BLOCKED_DOM') {
+            const { requestId } = event.data;
+            (async () => {
+                try {
+                    const result = await extrairArquivadosBloqueadosDOM();
+                    window.postMessage({ 
+                        type: 'WHL_EXTRACT_ARCHIVED_BLOCKED_DOM_RESULT', 
+                        requestId,
+                        ...result,
+                        success: true
+                    }, '*');
+                } catch (error) {
+                    window.postMessage({ 
+                        type: 'WHL_EXTRACT_ARCHIVED_BLOCKED_DOM_ERROR', 
                         requestId, 
                         error: error.message 
                     }, '*');
