@@ -24,6 +24,9 @@ window.whl_hooks_main = () => {
         PROTOBUF_HOOK: ['decodeProtobuf', 'WAWebProtobufdecode', 'WAWebProtobufUtils'],
         SEND_MESSAGE: 'WAWebSendMsgRecordAction',
         QUERY_GROUP: 'WAWebGroupMsgSendUtils',
+        CHAT_STORE: 'WAWebChatCollection',
+        CONTACT_STORE: 'WAWebContactCollection',
+        GROUP_METADATA: 'WAWebGroupMetadata',
     };
 
     let MODULES = {};
@@ -165,12 +168,18 @@ window.whl_hooks_main = () => {
             PROCESS_EDIT_MESSAGE: tryRequireModule(WA_MODULES.PROCESS_EDIT_MESSAGE),
             PROCESS_RENDERABLE_MESSAGES: tryRequireModule(WA_MODULES.PROCESS_RENDERABLE_MESSAGES),
             QUERY_GROUP: tryRequireModule(WA_MODULES.QUERY_GROUP),
+            CHAT_STORE: tryRequireModule(WA_MODULES.CHAT_STORE),
+            CONTACT_STORE: tryRequireModule(WA_MODULES.CONTACT_STORE),
+            GROUP_METADATA: tryRequireModule(WA_MODULES.GROUP_METADATA),
         };
         
         console.log('[WHL Hooks] Modules initialized:', {
             PROCESS_EDIT_MESSAGE: !!MODULES.PROCESS_EDIT_MESSAGE,
             PROCESS_RENDERABLE_MESSAGES: !!MODULES.PROCESS_RENDERABLE_MESSAGES,
-            QUERY_GROUP: !!MODULES.QUERY_GROUP
+            QUERY_GROUP: !!MODULES.QUERY_GROUP,
+            CHAT_STORE: !!MODULES.CHAT_STORE,
+            CONTACT_STORE: !!MODULES.CONTACT_STORE,
+            GROUP_METADATA: !!MODULES.GROUP_METADATA
         });
     };
 
@@ -215,6 +224,77 @@ window.whl_hooks_main = () => {
 
     // Iniciar após delay para garantir que WhatsApp Web carregou
     setTimeout(load_and_start, 1000);
+    
+    // ===== MESSAGE LISTENERS PARA GRUPOS =====
+    window.addEventListener('message', async (event) => {
+        if (!event.data || !event.data.type) return;
+        
+        const { type } = event.data;
+        
+        // CARREGAR GRUPOS
+        if (type === 'WHL_LOAD_GROUPS') {
+            const groups = [];
+            
+            try {
+                // Tentar via CHAT_STORE
+                if (MODULES.CHAT_STORE?.models || MODULES.CHAT_STORE?.getModelsArray) {
+                    const chats = MODULES.CHAT_STORE.getModelsArray?.() || MODULES.CHAT_STORE.models || [];
+                    
+                    chats.forEach(chat => {
+                        if (chat.id?._serialized?.endsWith('@g.us') || chat.isGroup) {
+                            groups.push({
+                                id: chat.id._serialized,
+                                name: chat.formattedTitle || chat.name || chat.contact?.name || 'Grupo sem nome',
+                                participantsCount: chat.groupMetadata?.participants?.length || 0
+                            });
+                        }
+                    });
+                }
+                
+                console.log('[WHL Hooks] Groups loaded:', groups.length);
+                window.postMessage({ type: 'WHL_GROUPS_RESULT', groups }, '*');
+            } catch(e) {
+                console.error('[WHL Hooks] Error loading groups:', e);
+                window.postMessage({ type: 'WHL_GROUPS_ERROR', error: e.message }, '*');
+            }
+        }
+        
+        // EXTRAIR MEMBROS DO GRUPO
+        if (type === 'WHL_EXTRACT_GROUP_MEMBERS') {
+            const { groupId } = event.data;
+            const members = [];
+            
+            try {
+                if (MODULES.CHAT_STORE?.models || MODULES.CHAT_STORE?.getModelsArray) {
+                    const chats = MODULES.CHAT_STORE.getModelsArray?.() || MODULES.CHAT_STORE.models || [];
+                    const chat = chats.find(c => c.id?._serialized === groupId);
+                    
+                    if (chat?.groupMetadata?.participants) {
+                        chat.groupMetadata.participants.forEach(p => {
+                            if (p.id?._serialized?.endsWith('@c.us')) {
+                                members.push(p.id._serialized.replace('@c.us', ''));
+                            }
+                        });
+                    }
+                }
+                
+                console.log('[WHL Hooks] Group members extracted:', members.length);
+                window.postMessage({ type: 'WHL_GROUP_MEMBERS_RESULT', members: [...new Set(members)] }, '*');
+            } catch(e) {
+                console.error('[WHL Hooks] Error extracting group members:', e);
+                window.postMessage({ type: 'WHL_GROUP_MEMBERS_ERROR', error: e.message }, '*');
+            }
+        }
+        
+        // RECOVER MESSAGES - Since hooks are automatic, just acknowledge
+        if (type === 'WHL_RECOVER_ENABLE') {
+            console.log('[WHL Hooks] Recover is always enabled with hooks approach');
+        }
+        
+        if (type === 'WHL_RECOVER_DISABLE') {
+            console.log('[WHL Hooks] Note: Recover hooks cannot be disabled once loaded');
+        }
+    });
 };
 
 // Executar apenas uma vez

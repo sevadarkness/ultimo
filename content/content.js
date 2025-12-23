@@ -3132,38 +3132,41 @@ window.addEventListener('message', (e) => {
 });
 
 // ===== WHL: Bind Recover Ultra++ Tab =====
+// Note: With the new WPP Boladão hooks approach, recovery is always active
+// The hooks intercept messages at the protocol level automatically
 try {
   const btnRecoverEnable = document.getElementById('whlRecoverEnable');
   const btnRecoverDisable = document.getElementById('whlRecoverDisable');
   const btnExportRecovered = document.getElementById('whlExportRecovered');
   const btnClearRecovered = document.getElementById('whlClearRecovered');
+  
+  // Update status to show it's always active
+  const recoverStatus = document.getElementById('whlRecoverStatus');
+  if (recoverStatus) {
+    recoverStatus.textContent = '🟢 Sempre Ativo';
+  }
 
   if (btnRecoverEnable) {
     btnRecoverEnable.addEventListener('click', () => {
-      window.postMessage({ type: 'WHL_RECOVER_ENABLE' }, '*');
-      alert('✅ Recover Ultra++ ativado!');
+      alert('✅ Recover Ultra++ está sempre ativo com a nova implementação WPP Boladão!\n\nMensagens apagadas e editadas são interceptadas automaticamente.');
     });
   }
 
   if (btnRecoverDisable) {
     btnRecoverDisable.addEventListener('click', () => {
-      window.postMessage({ type: 'WHL_RECOVER_DISABLE' }, '*');
-      alert('❌ Recover Ultra++ desativado!');
+      alert('ℹ️ Recover Ultra++ usa hooks no nível do protocolo e não pode ser desativado.\n\nPara desativar, desabilite ou remova a extensão.');
     });
   }
 
   if (btnExportRecovered) {
     btnExportRecovered.addEventListener('click', () => {
-      window.postMessage({ type: 'WHL_RECOVER_EXPORT' }, '*');
+      alert('⚠️ Função de exportação será implementada em breve.\n\nPor enquanto, as mensagens são exibidas diretamente no chat.');
     });
   }
 
   if (btnClearRecovered) {
     btnClearRecovered.addEventListener('click', () => {
-      if (confirm('Tem certeza que deseja limpar todo o histórico de mensagens recuperadas?')) {
-        window.postMessage({ type: 'WHL_RECOVER_CLEAR' }, '*');
-        alert('🗑️ Histórico limpo!');
-      }
+      alert('ℹ️ Com a nova implementação, as mensagens recuperadas são exibidas inline.\n\nRecarregue a página para limpar.');
     });
   }
 } catch(e) {
