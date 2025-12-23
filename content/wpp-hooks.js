@@ -175,6 +175,69 @@ window.whl_hooks_main = () => {
         };
     }
 
+    // ===== ENVIO DE MENSAGEM VIA API INTERNA (TESTADO E FUNCIONANDO) =====
+    /**
+     * Envia mensagem para qualquer número via API interna do WhatsApp
+     * TESTADO E FUNCIONANDO - NÃO CAUSA RELOAD!
+     * @param {string} phone - Número de telefone (sem @c.us)
+     * @param {string} mensagem - Mensagem a ser enviada
+     * @returns {Promise<Object>} - {success: boolean, result?: Object, error?: string}
+     */
+    async function enviarMensagemAPI(phone, mensagem) {
+        console.log(`[WHL] 📨 Enviando para ${phone} via API...`);
+        
+        try {
+            const WF = require('WAWebWidFactory');
+            const ChatModel = require('WAWebChatModel');
+            const MsgModel = require('WAWebMsgModel');
+            const MsgKey = require('WAWebMsgKey');
+            const CC = require('WAWebChatCollection');
+            const SMRA = require('WAWebSendMsgRecordAction');
+            
+            // 1. Criar WID (IMPORTANTE: sem espaços em @c.us!)
+            const wid = WF.createWid(phone + '@c.us');
+            
+            // 2. Criar/obter chat
+            let chat = CC.ChatCollection.get(wid);
+            if (!chat) {
+                chat = new ChatModel.Chat({ id: wid });
+                CC.ChatCollection.add(chat);
+                console.log('[WHL] Chat criado para:', phone);
+            }
+            
+            // 3. Criar ID da mensagem
+            const msgId = await MsgKey.newId();
+            
+            // 4. Criar objeto Msg completo
+            const msg = new MsgModel.Msg({
+                id: {
+                    fromMe: true,
+                    remote: wid,
+                    id: msgId,
+                    _serialized: `true_${wid._serialized}_${msgId}`
+                },
+                body: mensagem,
+                type: 'chat',
+                t: Math.floor(Date.now() / 1000),
+                from: wid,
+                to: wid,
+                self: 'out',
+                isNewMsg: true,
+                local: true
+            });
+            
+            // 5. Enviar via sendMsgRecord
+            const result = await SMRA.sendMsgRecord(msg);
+            
+            console.log('[WHL] ✅ Mensagem enviada:', result);
+            return { success: true, result };
+            
+        } catch (error) {
+            console.error('[WHL] ❌ Erro ao enviar:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
     class Hook {
         constructor() { 
             this.is_registered = false; 
@@ -789,29 +852,6 @@ window.whl_hooks_main = () => {
     }
     
     /**
-     * Extração de arquivados
-     */
-    function extrairArquivados() {
-        try {
-            const CC = require('WAWebChatCollection');
-            const chats = CC?.ChatCollection?.getModelsArray?.() || MODULES.CHAT_COLLECTION?.models || [];
-            
-            if (chats.length > 0) {
-                const arquivados = chats
-                    .filter(c => c.archive && (c.id._serialized?.endsWith('@c.us') || c.id?.user))
-                    .map(c => c.id.user || c.id._serialized?.replace('@c.us', ''));
-                console.log('[WHL] ✅ Arquivados encontrados:', arquivados.length);
-                return { success: true, archived: arquivados };
-            }
-            
-            return { success: false, error: 'ChatCollection não disponível' };
-        } catch (error) {
-            console.error('[WHL] Erro ao extrair arquivados:', error);
-            return { success: false, error: error.message };
-        }
-    }
-    
-    /**
      * Extração de bloqueados
      */
     function extrairBloqueados() {
@@ -932,6 +972,49 @@ window.whl_hooks_main = () => {
             }, '*');
         }
         
+        if (type === 'WHL_EXTRACT_GROUP_MEMBERS') {
+            const { groupId } = event.data;
+            try {
+                const modules = getModules();
+                if (!modules || !modules.ChatCollection) {
+                    window.postMessage({ 
+                        type: 'WHL_GROUP_MEMBERS_ERROR', 
+                        error: 'ChatCollection não disponível' 
+                    }, '*');
+                    return;
+                }
+                
+                const chats = modules.ChatCollection.getModelsArray?.() || [];
+                const chat = chats.find(c => c?.id?._serialized === groupId);
+                
+                if (!chat) {
+                    window.postMessage({ 
+                        type: 'WHL_GROUP_MEMBERS_ERROR', 
+                        error: 'Grupo não encontrado' 
+                    }, '*');
+                    return;
+                }
+                
+                const members = (chat?.groupMetadata?.participants || [])
+                    .map(p => p?.id?._serialized)
+                    .filter(Boolean)
+                    .filter(id => id.endsWith('@c.us'))
+                    .map(id => id.replace('@c.us', ''));
+                
+                console.log(`[WHL Hooks] ${members.length} membros do grupo extraídos`);
+                window.postMessage({ 
+                    type: 'WHL_GROUP_MEMBERS_RESULT', 
+                    members: [...new Set(members)] 
+                }, '*');
+            } catch (e) {
+                console.error('[WHL Hooks] Erro ao extrair membros:', e);
+                window.postMessage({ 
+                    type: 'WHL_GROUP_MEMBERS_ERROR', 
+                    error: e.message 
+                }, '*');
+            }
+        }
+        
         if (type === 'WHL_EXTRACT_ALL') {
             const result = extrairTudo();
             window.postMessage({ type: 'WHL_EXTRACT_ALL_RESULT', ...result }, '*');
@@ -990,6 +1073,19 @@ window.whl_hooks_main = () => {
             }
         }
         
+        // ENVIAR MENSAGEM VIA API INTERNA (MÉTODO TESTADO)
+        if (type === 'WHL_SEND_MESSAGE_API') {
+            const { phone, message, requestId } = event.data;
+            
+            const result = await enviarMensagemAPI(phone, message);
+            
+            window.postMessage({
+                type: 'WHL_SEND_MESSAGE_API_RESULT',
+                requestId,
+                ...result
+            }, '*');
+        }
+        
         // EXTRAIR TODOS OS CONTATOS DIRETAMENTE
         if (type === 'WHL_EXTRACT_ALL_DIRECT') {
             try {
@@ -1039,177 +1135,7 @@ window.whl_hooks_main = () => {
         }
     });
     
-    // ===== MESSAGE LISTENERS PARA GRUPOS =====
-    window.addEventListener('message', async (event) => {
-        if (!event.data || !event.data.type) return;
-        
-        const { type } = event.data;
-        
-        // Helper function to check if a chat is a group
-        const isGroupChat = (chat) => {
-            return chat.id?._serialized?.endsWith('@g.us') || chat.isGroup;
-        };
-        
-        // CARREGAR GRUPOS
-        if (type === 'WHL_LOAD_GROUPS') {
-            try {
-                const result = carregarGrupos();
-                window.postMessage({ type: 'WHL_LOAD_GROUPS_RESULT', ...result }, '*');
-            } catch(e) {
-                console.error('[WHL Hooks] Error loading groups:', e);
-                window.postMessage({ type: 'WHL_LOAD_GROUPS_ERROR', error: e.message }, '*');
-            }
-        }
-        
-        // EXTRAIR MEMBROS DO GRUPO
-        if (type === 'WHL_EXTRACT_GROUP_MEMBERS') {
-            const { groupId } = event.data;
-            const members = [];
-            
-            try {
-                if (MODULES.CHAT_COLLECTION?.models || MODULES.CHAT_COLLECTION?.getModelsArray) {
-                    const chats = MODULES.CHAT_COLLECTION.getModelsArray?.() || MODULES.CHAT_COLLECTION.models || [];
-                    const chat = chats.find(c => c.id?._serialized === groupId);
-                    
-                    if (chat?.groupMetadata?.participants) {
-                        chat.groupMetadata.participants.forEach(p => {
-                            if (p.id?._serialized?.endsWith('@c.us')) {
-                                members.push(p.id._serialized.replace('@c.us', ''));
-                            }
-                        });
-                    }
-                }
-                
-                console.log('[WHL Hooks] Group members extracted:', members.length);
-                window.postMessage({ type: 'WHL_GROUP_MEMBERS_RESULT', members: [...new Set(members)] }, '*');
-            } catch(e) {
-                console.error('[WHL Hooks] Error extracting group members:', e);
-                window.postMessage({ type: 'WHL_GROUP_MEMBERS_ERROR', error: e.message }, '*');
-            }
-        }
-        
-        // RECOVER MESSAGES - Since hooks are automatic, just acknowledge
-        if (type === 'WHL_RECOVER_ENABLE') {
-            console.log('[WHL Hooks] Recover is always enabled with hooks approach');
-        }
-        
-        if (type === 'WHL_RECOVER_DISABLE') {
-            console.log('[WHL Hooks] Note: Recover hooks cannot be disabled once loaded');
-        }
-        
-        // GET RECOVER HISTORY
-        if (type === 'WHL_GET_RECOVER_HISTORY') {
-            // Carregar do localStorage se array vazio
-            if (historicoRecover.length === 0) {
-                try {
-                    const saved = localStorage.getItem('whl_recover_history');
-                    if (saved) {
-                        const parsed = JSON.parse(saved);
-                        historicoRecover.push(...parsed);
-                    }
-                } catch(e) {
-                    console.warn('[WHL] Erro ao carregar histórico:', e);
-                }
-            }
-            
-            window.postMessage({
-                type: 'WHL_RECOVER_HISTORY_RESULT',
-                history: historicoRecover,
-                total: historicoRecover.length
-            }, '*');
-        }
-        
-        // CLEAR RECOVER HISTORY
-        if (type === 'WHL_CLEAR_RECOVER_HISTORY') {
-            historicoRecover.length = 0;
-            localStorage.removeItem('whl_recover_history');
-            window.postMessage({ type: 'WHL_RECOVER_HISTORY_CLEARED' }, '*');
-        }
-    });
     
-    // ===== ARQUIVADOS E BLOQUEADOS =====
-    window.addEventListener('message', (event) => {
-        if (event.data?.type !== 'WHL_LOAD_ARCHIVED_BLOCKED') return;
-        
-        try {
-            const CC = require('WAWebChatCollection');
-            const ContactC = require('WAWebContactCollection');
-            const chats = CC?.ChatCollection?.getModelsArray?.() || [];
-            const contacts = ContactC?.ContactCollection?.getModelsArray?.() || [];
-
-            const archived = chats
-                .filter(c => c?.archive === true || c?.isArchived === true)
-                .map(c => (c?.id?._serialized || '').replace('@c.us', ''))
-                .filter(n => /^\d{8,15}$/.test(n));
-
-            const blocked = contacts
-                .filter(ct => ct?.isBlocked === true || ct?.blocked === true)
-                .map(ct => (ct?.id?._serialized || '').replace('@c.us', ''))
-                .filter(n => /^\d{8,15}$/.test(n));
-
-            console.log(`[WHL Hooks] Arquivados: ${archived.length}, Bloqueados: ${blocked.length}`);
-            
-            window.postMessage({
-                type: 'WHL_ARCHIVED_BLOCKED_RESULT',
-                archived: [...new Set(archived)],
-                blocked: [...new Set(blocked)]
-            }, '*');
-        } catch (e) {
-            console.error('[WHL Hooks] Erro ao carregar arquivados/bloqueados:', e);
-            window.postMessage({ type: 'WHL_ARCHIVED_BLOCKED_ERROR', error: e.message }, '*');
-        }
-    });
-
-    // ===== GRUPOS =====
-    window.addEventListener('message', (event) => {
-        if (!event.data || !event.data.type) return;
-        const { type } = event.data;
-
-        // Carregar grupos
-        if (type === 'WHL_LOAD_GROUPS') {
-            try {
-                const CC = require('WAWebChatCollection');
-                const chats = CC?.ChatCollection?.getModelsArray?.() || [];
-                const groups = chats.filter(c =>
-                    c?.id?._serialized?.endsWith('@g.us') || c?.isGroup
-                ).map(c => ({
-                    id: c.id._serialized,
-                    name: c.formattedTitle || c.name || c.contact?.name || 'Grupo sem nome',
-                    participantsCount: c.groupMetadata?.participants?.length || 0
-                }));
-                
-                console.log(`[WHL Hooks] ${groups.length} grupos encontrados`);
-                window.postMessage({ type: 'WHL_GROUPS_RESULT', groups }, '*');
-            } catch (e) {
-                console.error('[WHL Hooks] Erro ao carregar grupos:', e);
-                window.postMessage({ type: 'WHL_GROUPS_ERROR', error: e.message }, '*');
-            }
-        }
-
-        // Extrair membros de um grupo
-        if (type === 'WHL_EXTRACT_GROUP_MEMBERS') {
-            const { groupId } = event.data;
-            try {
-                const CC = require('WAWebChatCollection');
-                const chats = CC?.ChatCollection?.getModelsArray?.() || [];
-                const chat = chats.find(c => c?.id?._serialized === groupId);
-                const members = (chat?.groupMetadata?.participants || [])
-                    .map(p => p?.id?._serialized)
-                    .filter(Boolean)
-                    .filter(id => id.endsWith('@c.us'))
-                    .map(id => id.replace('@c.us', ''));
-                
-                window.postMessage({
-                    type: 'WHL_GROUP_MEMBERS_RESULT',
-                    groupId,
-                    members: [...new Set(members)]
-                }, '*');
-            } catch (e) {
-                window.postMessage({ type: 'WHL_GROUP_MEMBERS_ERROR', error: e.message }, '*');
-            }
-        }
-    });
-
     // ===== EXTRAÇÃO INSTANTÂNEA =====
     window.addEventListener('message', (event) => {
         if (event.data?.type !== 'WHL_EXTRACT_INSTANT') return;
