@@ -152,55 +152,35 @@
   // ===== WAIT FOR WHATSAPP TO LOAD =====
   function waitForWA() {
     return new Promise(resolve => {
-      if (window.Store) return resolve();
+      // Wait for WHL_Store from bridge (not window.Store directly due to CSP)
+      if (window.WHL_Store) return resolve();
       
-      const observer = new MutationObserver(() => {
-        if (window.Store) {
-          observer.disconnect();
-          resolve();
-        }
-      });
+      // Listen for bridge ready event
+      const handleBridgeReady = () => {
+        window.removeEventListener('WHL_STORE_READY', handleBridgeReady);
+        resolve();
+      };
+      window.addEventListener('WHL_STORE_READY', handleBridgeReady);
       
-      observer.observe(document.body, {
-        childList: true,
-        subtree: true
-      });
-      
-      // Timeout fallback
+      // Fallback timeout
       setTimeout(resolve, 10000);
     });
   }
 
   // ===== INIT STORE =====
   function initStore() {
-    if (window.Store) return true;
-    
-    try {
-      // Try to expose Store via webpack
-      if (window.webpackChunkWhatsApp_web) {
-        window.webpackChunkWhatsApp_web.push([
-          [Symbol()],
-          {},
-          r => {
-            window.Store = r;
-          }
-        ]);
-      }
-      
-      return !!window.Store;
-    } catch (e) {
-      console.warn('[RECOVER ULTRA++] Não foi possível expor Store:', e);
-      return false;
-    }
+    // Store is initialized by store-bridge.js
+    // Just check if WHL_Store is available
+    return !!window.WHL_Store;
   }
 
   // ===== HOOK STORE.MSG =====
   function hookStoreMsg() {
-    if (!window.Store?.Msg) return false;
+    if (!window.WHL_Store?.Msg) return false;
     if (storeHooked) return true;
 
     try {
-      window.Store.Msg.on('add', msg => {
+      window.WHL_Store.Msg.on('add', msg => {
         if (!isEnabled) return;
         
         try {

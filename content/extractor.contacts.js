@@ -88,45 +88,25 @@
   // ===== HELPER FUNCTIONS FOR WHATSAPP STORE =====
   function waitForWA() {
     return new Promise(resolve => {
-      if (window.Store) return resolve();
+      // Wait for WHL_Store from bridge (not window.Store directly due to CSP)
+      if (window.WHL_Store) return resolve();
       
-      const observer = new MutationObserver(() => {
-        if (window.Store) {
-          observer.disconnect();
-          resolve();
-        }
-      });
+      // Listen for bridge ready event
+      const handleBridgeReady = () => {
+        window.removeEventListener('WHL_STORE_READY', handleBridgeReady);
+        resolve();
+      };
+      window.addEventListener('WHL_STORE_READY', handleBridgeReady);
       
-      observer.observe(document.body, {
-        childList: true,
-        subtree: true
-      });
-      
-      // Timeout fallback
+      // Fallback timeout
       setTimeout(resolve, 10000);
     });
   }
 
   function initStore() {
-    if (window.Store) return true;
-    
-    try {
-      // Try to expose Store via webpack
-      if (window.webpackChunkwhatsapp_web_client) {
-        window.webpackChunkwhatsapp_web_client.push([
-          [Symbol()],
-          {},
-          r => {
-            window.Store = r;
-          }
-        ]);
-      }
-      
-      return !!window.Store;
-    } catch (e) {
-      console.warn('[WHL] Não foi possível expor Store:', e);
-      return false;
-    }
+    // Store is initialized by store-bridge.js
+    // Just check if WHL_Store is available
+    return !!window.WHL_Store;
   }
 
   // ===== VALIDAÇÃO ULTRA-RIGOROSA =====
@@ -454,9 +434,9 @@
     let count = 0;
     
     try {
-      // Método 1: Usar window.Store para pegar chats arquivados
-      if (window.Store?.Chat?.models) {
-        const chats = window.Store.Chat.models;
+      // Método 1: Usar window.WHL_Store para pegar chats arquivados (via bridge)
+      if (window.WHL_Store?.Chat?.models) {
+        const chats = window.WHL_Store.Chat.models;
         chats.forEach(chat => {
           try {
             // Verificar se é arquivado
@@ -531,9 +511,9 @@
     let count = 0;
     
     try {
-      // Método 1: Usar window.Store.Blocklist
-      if (window.Store?.Blocklist?.models) {
-        const blocked = window.Store.Blocklist.models;
+      // Método 1: Usar window.WHL_Store.Blocklist (via bridge)
+      if (window.WHL_Store?.Blocklist?.models) {
+        const blocked = window.WHL_Store.Blocklist.models;
         blocked.forEach(contact => {
           try {
             const id = contact.id?._serialized || contact.id?.user;
