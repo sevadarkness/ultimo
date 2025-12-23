@@ -1240,6 +1240,153 @@ window.whl_hooks_main = () => {
             window.postMessage({ type: 'WHL_EXTRACT_INSTANT_ERROR', error: e.message }, '*');
         }
     });
+    
+    // ===== ENVIO DE MENSAGEM SEM RELOAD =====
+    /**
+     * Aguarda elemento aparecer no DOM
+     */
+    function waitForElement(selector, timeout = 10000) {
+        return new Promise((resolve) => {
+            const element = document.querySelector(selector);
+            if (element) {
+                resolve(element);
+                return;
+            }
+            
+            const observer = new MutationObserver(() => {
+                const el = document.querySelector(selector);
+                if (el) {
+                    observer.disconnect();
+                    resolve(el);
+                }
+            });
+            
+            observer.observe(document.body, { childList: true, subtree: true });
+            
+            setTimeout(() => {
+                observer.disconnect();
+                resolve(document.querySelector(selector));
+            }, timeout);
+        });
+    }
+    
+    /**
+     * Enviar mensagem SEM RELOAD da página
+     * Usa API interna do WhatsApp para abrir chat + Input/Enter para enviar
+     */
+    async function enviarMensagemSemReload(phone, text) {
+        console.log(`[WHL] 📨 Enviando para ${phone} (sem reload)...`);
+        
+        try {
+            // 1. Obter módulos necessários
+            const CC = require('WAWebChatCollection');
+            const WidFactory = require('WAWebWidFactory');
+            
+            if (!CC?.ChatCollection || !WidFactory?.createWid) {
+                console.error('[WHL] Módulos não disponíveis');
+                return { success: false, error: 'MODULES_NOT_AVAILABLE' };
+            }
+            
+            // 2. Criar WID e encontrar/criar chat
+            const wid = WidFactory.createWid(phone + '@c.us');
+            let chat = CC.ChatCollection.get(wid);
+            
+            if (!chat) {
+                // Tentar encontrar pelo _serialized
+                const models = CC.ChatCollection.getModelsArray() || [];
+                chat = models.find(c => c.id?._serialized === phone + '@c.us' || c.id?.user === phone);
+            }
+            
+            if (!chat) {
+                // Criar novo chat se não existir
+                console.log('[WHL] Chat não encontrado, criando...');
+                try {
+                    // Método alternativo: usar URL mas interceptar antes do reload
+                    // Navegar para o chat usando a API interna
+                    const ChatState = require('WAWebChatState');
+                    if (ChatState?.sendChatOpen) {
+                        await ChatState.sendChatOpen(wid);
+                    }
+                } catch (e) {
+                    console.log('[WHL] Fallback: navegando via API');
+                }
+            }
+            
+            // 3. Ativar o chat na UI (sem reload)
+            if (chat) {
+                try {
+                    // Método 1: setActive
+                    if (CC.ChatCollection.setActive) {
+                        await CC.ChatCollection.setActive(chat);
+                    }
+                    // Método 2: open
+                    else if (chat.open) {
+                        await chat.open();
+                    }
+                    // Método 3: Cmd
+                    else {
+                        const Cmd = require('WAWebCmd');
+                        if (Cmd?.openChatAt) {
+                            Cmd.openChatAt(chat);
+                        }
+                    }
+                } catch (e) {
+                    console.log('[WHL] Erro ao ativar chat:', e.message);
+                }
+            }
+            
+            // 4. Aguardar input aparecer (máx 10 segundos)
+            console.log('[WHL] Aguardando input...');
+            const input = await waitForElement('[data-testid="conversation-compose-box-input"]', 10000);
+            
+            if (!input) {
+                console.error('[WHL] Input não encontrado após 10s');
+                return { success: false, error: 'INPUT_NOT_FOUND' };
+            }
+            
+            // 5. Inserir texto via execCommand (TESTADO E FUNCIONA!)
+            input.focus();
+            input.innerHTML = ''; // Limpar
+            document.execCommand('insertText', false, text);
+            input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+            
+            // 6. Aguardar texto ser processado
+            await new Promise(r => setTimeout(r, 300));
+            
+            // 7. Simular Enter para enviar
+            const enterEvent = new KeyboardEvent('keydown', {
+                key: 'Enter',
+                code: 'Enter',
+                keyCode: 13,
+                which: 13,
+                bubbles: true
+            });
+            input.dispatchEvent(enterEvent);
+            
+            console.log('[WHL] ✅ Mensagem enviada!');
+            return { success: true };
+            
+        } catch (error) {
+            console.error('[WHL] ❌ Erro ao enviar:', error);
+            return { success: false, error: error.message };
+        }
+    }
+    
+    // ===== LISTENER PARA ENVIO SEM RELOAD =====
+    window.addEventListener('message', async (event) => {
+        if (!event.data || event.data.type !== 'WHL_SEND_NO_RELOAD') return;
+        
+        const { phone, message, requestId } = event.data;
+        console.log(`[WHL] Recebido pedido de envio: ${phone}`);
+        
+        const result = await enviarMensagemSemReload(phone, message);
+        
+        window.postMessage({
+            type: 'WHL_SEND_NO_RELOAD_RESULT',
+            requestId,
+            ...result
+        }, '*');
+    });
 };
 
 // Executar apenas uma vez

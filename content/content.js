@@ -2258,87 +2258,41 @@
   // ===== INPUT + ENTER METHOD (TESTED AND WORKING) =====
   
   /**
-   * Enviar mensagem usando Input + Enter
-   * Este é o método TESTADO e CONFIRMADO FUNCIONANDO pelo usuário
+   * FUNÇÃO PRINCIPAL DE ENVIO - SEM RELOAD
+   * Envia mensagem usando wpp-hooks.js (API interna) + Input/Enter
+   * Arquitetura: content.js → postMessage → wpp-hooks.js → API WhatsApp → Input + Enter
+   * NÃO usa window.location.href (que recarrega a página)
    */
   async function sendMessageViaInput(phone, text) {
-    console.log(`[WHL] 📨 Enviando via Input + Enter para: ${phone}`);
+    console.log(`[WHL] 📨 Enviando via API (sem reload) para: ${phone}`);
     
-    // Verificar se já está no chat correto
-    const currentUrl = window.location.href;
-    const needsNavigation = !currentUrl.includes(phone);
-    
-    if (needsNavigation) {
-      // Abrir chat via URL
-      console.log('[WHL] 🔗 Abrindo chat via URL...');
-      window.location.href = `https://web.whatsapp.com/send?phone=${phone}`;
-      
-      // Aguardar página carregar e input aparecer
-      const chatOpened = await new Promise(resolve => {
-        let attempts = 0;
-        const check = () => {
-          attempts++;
-          const input = document.querySelector('[data-testid="conversation-compose-box-input"]') ||
-                        document.querySelector('footer [contenteditable="true"]');
-          
-          if (input) {
-            console.log('[WHL] ✅ Chat aberto, input encontrado');
-            resolve(true);
-          } else if (attempts < 60) {
-            setTimeout(check, 500);
-          } else {
-            console.error('[WHL] ⏱️ Timeout aguardando input');
-            resolve(false);
-          }
+    return new Promise((resolve) => {
+        const requestId = Date.now() + Math.random();
+        
+        // Listener para resposta do wpp-hooks
+        const handler = (event) => {
+            if (event.data?.type === 'WHL_SEND_NO_RELOAD_RESULT' && 
+                event.data?.requestId === requestId) {
+                window.removeEventListener('message', handler);
+                resolve(event.data);
+            }
         };
-        setTimeout(check, 2000); // Aguardar página começar a carregar
-      });
-      
-      if (!chatOpened) {
-        return { success: false, error: 'CHAT_OPEN_TIMEOUT' };
-      }
-    }
-    
-    // Encontrar input
-    const input = document.querySelector('[data-testid="conversation-compose-box-input"]') ||
-                  document.querySelector('footer [contenteditable="true"]');
-    
-    if (!input) {
-      console.error('[WHL] ❌ Input não encontrado!');
-      return { success: false, error: 'INPUT_NOT_FOUND' };
-    }
-    
-    try {
-      // Limpar e focar
-      input.innerHTML = '';
-      input.focus();
-      
-      // Inserir texto (usando execCommand que é o método testado)
-      document.execCommand('insertText', false, text);
-      input.dispatchEvent(new InputEvent('input', { bubbles: true }));
-      
-      // Aguardar texto ser processado
-      await new Promise(r => setTimeout(r, 300));
-      
-      // Simular Enter para enviar
-      const enterEvent = new KeyboardEvent('keydown', {
-        key: 'Enter',
-        code: 'Enter',
-        keyCode: 13,
-        which: 13,
-        bubbles: true
-      });
-      input.dispatchEvent(enterEvent);
-      
-      // Aguardar envio processar
-      await new Promise(r => setTimeout(r, 1000));
-      
-      console.log('[WHL] ✅ Mensagem enviada via Input + Enter');
-      return { success: true };
-    } catch (e) {
-      console.error('[WHL] ❌ Erro ao enviar:', e.message);
-      return { success: false, error: e.message };
-    }
+        window.addEventListener('message', handler);
+        
+        // Enviar pedido para wpp-hooks.js (contexto da página)
+        window.postMessage({
+            type: 'WHL_SEND_NO_RELOAD',
+            phone: phone.replace(/\D/g, ''), // Apenas números
+            message: text,
+            requestId
+        }, '*');
+        
+        // Timeout de 30 segundos
+        setTimeout(() => {
+            window.removeEventListener('message', handler);
+            resolve({ success: false, error: 'TIMEOUT' });
+        }, 30000);
+    });
   }
   
   // ===== DIRECT API CAMPAIGN PROCESSING (NO RELOAD) =====
