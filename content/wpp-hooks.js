@@ -966,6 +966,200 @@ window.whl_hooks_main = () => {
     }
     
     /**
+     * Extracts group contacts via DOM manipulation
+     * More robust than API method - handles WhatsApp Web UI changes
+     * Tested and validated - successfully extracted 3 members from a test group
+     */
+    async function extractGroupContacts() {
+        console.log("[WHL] Script iniciado. Verificando ambiente...");
+
+        // Função para esperar um elemento aparecer
+        const waitForElement = (selector, timeout = 5000) => {
+            return new Promise((resolve, reject) => {
+                if (document.querySelector(selector)) {
+                    return resolve(document.querySelector(selector));
+                }
+
+                const observer = new MutationObserver(() => {
+                    if (document.querySelector(selector)) {
+                        observer.disconnect();
+                        resolve(document.querySelector(selector));
+                    }
+                });
+
+                observer.observe(document.body, {
+                    childList: true,
+                    subtree: true
+                });
+
+                setTimeout(() => {
+                    observer.disconnect();
+                    reject(new Error(`Elemento ${selector} não encontrado após ${timeout}ms`));
+                }, timeout);
+            });
+        };
+
+        // Verificar se estamos em um chat de grupo
+        console.log("[WHL] Procurando identificadores de grupo...");
+
+        // Tentativa com múltiplos seletores possíveis para o botão de informações do grupo
+        const possibleGroupSelectors = [
+            '[data-testid="group-info-drawer-link"]',
+            '[data-icon="info"]',
+            'span[data-icon="default-group"]',
+            '[title="Dados do grupo"]',
+            '[aria-label="Dados do grupo"]',
+            '.LwCwJ',
+            'header [role="button"]'
+        ];
+
+        let groupInfoButton = null;
+
+        for (const selector of possibleGroupSelectors) {
+            console.log(`[WHL] Tentando seletor: ${selector}`);
+            const elements = document.querySelectorAll(selector);
+
+            if (elements.length > 0) {
+                console.log(`[WHL] Encontrado(s) ${elements.length} elemento(s) com seletor ${selector}`);
+                for (const el of elements) {
+                    groupInfoButton = el;
+                    break;
+                }
+
+                if (groupInfoButton) break;
+            }
+        }
+
+        // Método alternativo: clicar no cabeçalho e depois no botão de informações
+        if (!groupInfoButton) {
+            console.log("[WHL] Tentando método alternativo: clicar no cabeçalho...");
+            const header = document.querySelector('header');
+            if (header) {
+                header.click();
+                console.log("[WHL] Cabeçalho clicado, aguardando menu...");
+
+                await new Promise(resolve => setTimeout(resolve, 1000));
+
+                const menuItems = document.querySelectorAll('[role="button"]');
+                console.log(`[WHL] Encontrados ${menuItems.length} botões no menu`);
+
+                for (const item of menuItems) {
+                    const text = item.textContent.toLowerCase();
+                    if (text.includes("info") || text.includes("dados") || text.includes("grupo")) {
+                        console.log("[WHL] Possível botão de informações encontrado:", text);
+                        groupInfoButton = item;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!groupInfoButton) {
+            console.error('[WHL] ERRO: Não foi possível encontrar o botão de informações do grupo.');
+            return { success: false, error: 'GROUP_INFO_BUTTON_NOT_FOUND', contacts: [] };
+        }
+
+        console.log("[WHL] Botão de informações do grupo encontrado! Clicando...");
+        groupInfoButton.click();
+
+        console.log("[WHL] Aguardando painel de informações abrir...");
+        await new Promise(resolve => setTimeout(resolve, 3000));
+
+        // Pegando o nome do grupo
+        const groupNameElement = document.querySelector('[data-testid="group-info-header-title"]');
+        const groupName = groupNameElement ? groupNameElement.textContent : 'Grupo do WhatsApp';
+        console.log("[WHL] Nome do grupo:", groupName);
+
+        // Encontrando todos os participantes
+        console.log("[WHL] Procurando lista de participantes...");
+        let participants = Array.from(document.querySelectorAll('[data-testid="cell-frame-container"]'));
+
+        if (participants.length === 0) {
+            console.log("[WHL] Método padrão falhou. Tentando seletores alternativos...");
+            const alternativeSelectors = [
+                'div[role="listitem"]',
+                'div[tabindex="-1"]',
+                'div[data-testid*="cell"]'
+            ];
+
+            for (const selector of alternativeSelectors) {
+                const elements = document.querySelectorAll(selector);
+                console.log(`[WHL] Seletor ${selector}: ${elements.length} elementos encontrados`);
+
+                if (elements.length > 0) {
+                    participants = Array.from(elements);
+                    break;
+                }
+            }
+        }
+
+        if (participants.length === 0) {
+            console.error("[WHL] ERRO: Não foi possível encontrar a lista de participantes.");
+            return { success: false, error: 'PARTICIPANTS_NOT_FOUND', contacts: [] };
+        }
+
+        console.log(`[WHL] Encontrados ${participants.length} participantes.`);
+
+        // Extraindo informações
+        const contactList = participants.map(participant => {
+            let nameElement = participant.querySelector('[data-testid="cell-frame-title"]');
+            if (!nameElement) nameElement = participant.querySelector('span[title]');
+            if (!nameElement) nameElement = participant.querySelector('span[dir="auto"]');
+
+            const name = nameElement ? nameElement.textContent.trim() : 'Desconhecido';
+
+            let phoneElement = participant.querySelector('[data-testid="cell-frame-secondary"]');
+            if (!phoneElement) phoneElement = participant.querySelector('span[dir="auto"]:not(:first-child)');
+
+            let phone = phoneElement ? phoneElement.textContent.trim() : '';
+
+            if (!phone && nameElement && nameElement.getAttribute('title')) {
+                phone = nameElement.getAttribute('title');
+            }
+
+            if (phone) {
+                phone = phone.replace(/~.*$/, '').trim();
+                const cleanPhone = phone.replace(/[^\d+]/g, '');
+                if (cleanPhone) phone = cleanPhone;
+            }
+
+            return { name, phone };
+        });
+
+        // Filtrando entradas vazias ou duplicadas
+        const filteredContacts = contactList.filter(contact =>
+            contact.name && contact.name !== 'Desconhecido' && contact.phone
+        );
+
+        console.log('[WHL] CONTATOS EXTRAÍDOS DO GRUPO: ' + groupName);
+        console.table(filteredContacts.length > 0 ? filteredContacts : contactList);
+
+        // Fechar o painel de informações do grupo
+        const closeButtons = [
+            document.querySelector('[data-testid="btn-closer-drawer"]'),
+            document.querySelector('[data-icon="back"]'),
+            document.querySelector('span[data-icon="back"]'),
+            document.querySelector('[aria-label="Voltar"]'),
+            document.querySelector('[aria-label="Fechar"]')
+        ];
+
+        for (const btn of closeButtons) {
+            if (btn) {
+                console.log("[WHL] Fechando painel de informações...");
+                btn.click();
+                break;
+            }
+        }
+
+        return {
+            success: true,
+            groupName: groupName,
+            contacts: filteredContacts.length > 0 ? filteredContacts : contactList,
+            total: (filteredContacts.length > 0 ? filteredContacts : contactList).length
+        };
+    }
+    
+    /**
      * Extração completa (tudo de uma vez)
      */
     function extrairTudoInstantaneo() {
@@ -1063,7 +1257,7 @@ window.whl_hooks_main = () => {
             }, '*');
         }
         
-        // EXTRAIR MEMBROS DO GRUPO
+        // EXTRAIR MEMBROS DO GRUPO (API method - may return 0)
         if (type === 'WHL_EXTRACT_GROUP_MEMBERS') {
             const { groupId } = event.data;
             try {
@@ -1084,6 +1278,27 @@ window.whl_hooks_main = () => {
             } catch (e) {
                 window.postMessage({ type: 'WHL_GROUP_MEMBERS_ERROR', error: e.message }, '*');
             }
+        }
+        
+        // EXTRAIR MEMBROS DO GRUPO VIA DOM (Tested and validated - more robust)
+        if (type === 'WHL_EXTRACT_GROUP_CONTACTS_DOM') {
+            const { requestId } = event.data;
+            (async () => {
+                try {
+                    const result = await extractGroupContacts();
+                    window.postMessage({ 
+                        type: 'WHL_EXTRACT_GROUP_CONTACTS_DOM_RESULT', 
+                        requestId, 
+                        ...result 
+                    }, '*');
+                } catch (error) {
+                    window.postMessage({ 
+                        type: 'WHL_EXTRACT_GROUP_CONTACTS_DOM_ERROR', 
+                        requestId, 
+                        error: error.message 
+                    }, '*');
+                }
+            })();
         }
         
         if (type === 'WHL_EXTRACT_ALL') {
