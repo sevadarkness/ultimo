@@ -3540,23 +3540,60 @@ try {
       console.log('[WHL] ✅ Botão de anexar clicado');
       await new Promise(r => setTimeout(r, 1000));
 
-      // 2. Encontrar input de arquivo
-      const imageInput = document.querySelector('input[accept*="image"]');
+      // 2. Clicar no botão "Fotos e vídeos" (não sticker!)
+      const photoVideoBtn = document.querySelector('[data-testid="attach-image"]') ||
+                            document.querySelector('[data-testid="mi-attach-media"]') ||
+                            [...document.querySelectorAll('[role="button"]')].find(btn => {
+                              const text = btn.textContent.toLowerCase();
+                              return (text.includes('fotos') || text.includes('photos') || 
+                                      text.includes('vídeos') || text.includes('videos')) &&
+                                     !text.includes('sticker') && !text.includes('figurinha');
+                            });
+      
+      if (photoVideoBtn) {
+        photoVideoBtn.click();
+        console.log('[WHL] ✅ Botão "Fotos e vídeos" clicado');
+        await new Promise(r => setTimeout(r, 800));
+      }
+
+      // 3. Encontrar input de arquivo (evitar input de sticker)
+      const imageInputs = [...document.querySelectorAll('input[accept*="image"]')];
+      const imageInput = imageInputs.find(input => {
+        const accept = input.getAttribute('accept') || '';
+        // Evitar input de sticker (geralmente aceita apenas webp)
+        return !accept.includes('webp') || accept.includes('jpeg') || accept.includes('jpg') || accept.includes('png');
+      }) || imageInputs[0];
+      
       if (!imageInput) {
         console.log('[WHL] ❌ Input de imagem não encontrado');
         return { ok: false };
       }
 
-      // 3. Anexar arquivo
+      // 4. Anexar arquivo
       const dataTransfer = new DataTransfer();
       dataTransfer.items.add(file);
       imageInput.files = dataTransfer.files;
       imageInput.dispatchEvent(new Event('change', { bubbles: true }));
       
       console.log('[WHL] ✅ Imagem anexada, aguardando preview...');
-      await new Promise(r => setTimeout(r, 2500));
+      await new Promise(r => setTimeout(r, 2000));
+      
+      // 5. Verificar se preview abriu (com retries)
+      let previewOpened = false;
+      for (let retry = 0; retry < 5; retry++) {
+        const dialog = document.querySelector('[role="dialog"]');
+        if (dialog) {
+          previewOpened = true;
+          break;
+        }
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      
+      if (!previewOpened) {
+        console.log('[WHL] ⚠️ Preview não abriu, tentando continuar...');
+      }
 
-      // 4. Digitar legenda se houver
+      // 6. Digitar legenda se houver
       if (captionText && captionText.trim()) {
         console.log('[WHL] ⌨️ Digitando legenda...');
         
@@ -3591,20 +3628,36 @@ try {
         }
       }
 
-      // 5. Clicar no botão de enviar
+      // 7. Clicar no botão de enviar (com múltiplos fallbacks)
       console.log('[WHL] 📤 Enviando...');
       await new Promise(r => setTimeout(r, 500));
       
       // Procurar botão no dialog
       const dialog = document.querySelector('[role="dialog"]');
       let sendBtn = null;
+      
+      const sendSelectors = [
+        '[aria-label="Enviar"]',
+        '[data-testid="send-button"]',
+        '[data-icon="send"]'
+      ];
+      
       if (dialog) {
-        sendBtn = dialog.querySelector('[aria-label="Enviar"]') ||
-                  [...dialog.querySelectorAll('button')].find(b => !b.disabled);
+        for (const sel of sendSelectors) {
+          sendBtn = dialog.querySelector(sel);
+          if (sendBtn) break;
+        }
+        
+        if (!sendBtn) {
+          sendBtn = [...dialog.querySelectorAll('button')].find(b => !b.disabled);
+        }
       }
       
       if (!sendBtn) {
-        sendBtn = document.querySelector('[aria-label="Enviar"]');
+        for (const sel of sendSelectors) {
+          sendBtn = document.querySelector(sel);
+          if (sendBtn) break;
+        }
       }
       
       if (sendBtn) {

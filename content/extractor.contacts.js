@@ -85,6 +85,50 @@
     91, 92, 93, 94, 95, 96, 97, 98, 99
   ]);
 
+  // ===== HELPER FUNCTIONS FOR WHATSAPP STORE =====
+  function waitForWA() {
+    return new Promise(resolve => {
+      if (window.Store) return resolve();
+      
+      const observer = new MutationObserver(() => {
+        if (window.Store) {
+          observer.disconnect();
+          resolve();
+        }
+      });
+      
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true
+      });
+      
+      // Timeout fallback
+      setTimeout(resolve, 10000);
+    });
+  }
+
+  function initStore() {
+    if (window.Store) return true;
+    
+    try {
+      // Try to expose Store via webpack
+      if (window.webpackChunkwhatsapp_web_client) {
+        window.webpackChunkwhatsapp_web_client.push([
+          [Symbol()],
+          {},
+          r => {
+            window.Store = r;
+          }
+        ]);
+      }
+      
+      return !!window.Store;
+    } catch (e) {
+      console.warn('[WHL] Não foi possível expor Store:', e);
+      return false;
+    }
+  }
+
   // ===== VALIDAÇÃO ULTRA-RIGOROSA =====
   function validatePhone(num) {
     if (!num) return { valid: false, score: 0, reason: 'vazio' };
@@ -410,7 +454,33 @@
     let count = 0;
     
     try {
-      // Método 1: Procurar pela seção de arquivados no DOM
+      // Método 1: Usar window.Store para pegar chats arquivados
+      if (window.Store?.Chat?.models) {
+        const chats = window.Store.Chat.models;
+        chats.forEach(chat => {
+          try {
+            // Verificar se é arquivado
+            const isArchived = chat.archived || chat.archiveAtMentionViewedInDrawer || 
+                              chat.archive || chat.isArchive;
+            
+            if (isArchived && chat.id?._serialized) {
+              const id = chat.id._serialized;
+              if (id.endsWith('@c.us')) {
+                const match = id.match(/(\d{10,15})@c\.us/);
+                if (match) {
+                  if (PhoneStore.add(match[1], 'cus', id, 'archived')) {
+                    count++;
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            // Ignorar erros individuais
+          }
+        });
+      }
+      
+      // Método 2: Procurar pela seção de arquivados no DOM
       const archivedSection = document.querySelector('[data-testid="archived"]') ||
                               document.querySelector('[aria-label*="rquivad"]') ||
                               document.querySelector('[aria-label*="Archived"]');
@@ -431,7 +501,7 @@
         });
       }
       
-      // Método 2: Procurar no localStorage por chaves relacionadas a "archived"
+      // Método 3: Procurar no localStorage por chaves relacionadas a "archived"
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key && (key.includes('archived') || key.includes('archive'))) {
@@ -461,7 +531,27 @@
     let count = 0;
     
     try {
-      // Método 1: Procurar no localStorage por chaves relacionadas a "block"
+      // Método 1: Usar window.Store.Blocklist
+      if (window.Store?.Blocklist?.models) {
+        const blocked = window.Store.Blocklist.models;
+        blocked.forEach(contact => {
+          try {
+            const id = contact.id?._serialized || contact.id?.user;
+            if (id) {
+              const match = String(id).match(/(\d{10,15})/);
+              if (match) {
+                if (PhoneStore.add(match[1], 'cus', String(id), 'blocked')) {
+                  count++;
+                }
+              }
+            }
+          } catch (e) {
+            // Ignorar erros individuais
+          }
+        });
+      }
+      
+      // Método 2: Procurar no localStorage por chaves relacionadas a "block"
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key && (key.includes('block') || key.includes('Block'))) {
@@ -478,7 +568,7 @@
         }
       }
       
-      // Método 2: Procurar no sessionStorage
+      // Método 3: Procurar no sessionStorage
       for (let i = 0; i < sessionStorage.length; i++) {
         const key = sessionStorage.key(i);
         if (key && (key.includes('block') || key.includes('Block'))) {
@@ -494,6 +584,20 @@
           }
         }
       }
+      
+      // Método 4: Procurar elementos de contatos bloqueados no DOM
+      const blockedElements = document.querySelectorAll('[data-testid="blocked-contact"], [aria-label*="bloqueado"], [aria-label*="blocked"]');
+      blockedElements.forEach(el => {
+        const dataId = el.getAttribute('data-id');
+        if (dataId) {
+          const match = dataId.match(/(\d{10,15})@c\.us/);
+          if (match) {
+            if (PhoneStore.add(match[1], 'dataid', dataId, 'blocked')) {
+              count++;
+            }
+          }
+        }
+      });
       
       console.log(`[WHL] 🚫 Contatos bloqueados encontrados: ${count}`);
     } catch (e) {
@@ -706,6 +810,10 @@
     PhoneStore.clear();
     
     window.postMessage({ type: 'WHL_EXTRACT_PROGRESS', progress: 5, count: 0 }, '*');
+    
+    // Inicializar Store antes de extrair
+    await waitForWA();
+    initStore();
     
     installNetworkHooks();
     
