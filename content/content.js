@@ -20,10 +20,11 @@
   // true = API direta (10x mais rápido, sem reload)
   // false = URL mode (fallback, com reload de página)
   const WHL_CONFIG = {
-    USE_DIRECT_API: false,  // Desabilitado - usar Input + Enter ao invés
+    USE_API_METHOD: true,  // NEW: Use tested API method (NO RELOAD!)
+    USE_DIRECT_API: false,  // Desabilitado - usar API method ao invés
     API_RETRY_ON_FAIL: true,  // Se API falhar, tentar URL mode
-    USE_WORKER_FOR_SENDING: false,  // DISABLED: Hidden Worker Tab não funciona - usar Input + Enter
-    USE_INPUT_ENTER_METHOD: true,  // NEW: Use tested Input + Enter method for sending
+    USE_WORKER_FOR_SENDING: false,  // DISABLED: Hidden Worker Tab não funciona
+    USE_INPUT_ENTER_METHOD: false,  // OLD: Input + Enter method (causes reload)
   };
 
   // Injetar wpp-hooks.js no contexto da página
@@ -1486,15 +1487,18 @@
 
   // NOTA: getSearchResults removido - não é mais necessário para modo URL
 
-  // ===== NEW URL-BASED FUNCTIONS (REPLACING DOM SEARCH) =====
+  // ===== NEW URL-BASED FUNCTIONS (DEPRECATED - USE API METHOD INSTEAD) =====
 
   /**
-   * Envia mensagem via URL (modo exclusivo)
+   * @deprecated Envia mensagem via URL (modo exclusivo) - CAUSA RELOAD!
+   * Use sendMessageViaAPI() ao invés para evitar reload da página.
    * Para texto: https://web.whatsapp.com/send?phone=NUM&text=MSG
    * Para imagem: https://web.whatsapp.com/send?phone=NUM (SEM texto na URL!)
    * ATUALIZADO: Quando tem imagem, NÃO coloca texto na URL
+   * AVISO: window.location.href causa RELOAD e mata o script!
    */
   async function sendViaURL(numero, mensagem, hasImage = false) {
+    console.warn('[WHL] ⚠️ sendViaURL is deprecated - causes page reload! Use sendMessageViaAPI() instead.');
     const cleanNumber = String(numero).replace(/\D/g, '');
     
     if (!cleanNumber) {
@@ -1515,7 +1519,8 @@
     st.currentMessage = mensagem;
     await setState(st);
     
-    // Navegar para a URL (isso vai causar reload da página)
+    // DEPRECATED: Navegar para a URL (isso vai causar reload da página)
+    console.warn('[WHL] ⚠️ Using window.location.href - this will cause page reload!');
     window.location.href = url;
     
     // NOTA: O código abaixo não será executado devido ao reload
@@ -2282,10 +2287,57 @@
   // ===== INPUT + ENTER METHOD (TESTED AND WORKING) =====
   
   /**
-   * Enviar mensagem usando Input + Enter
-   * Este é o método TESTADO e CONFIRMADO FUNCIONANDO pelo usuário
+   * Enviar mensagem usando API interna (SEM RELOAD)
+   * Este método usa a API testada e funcionando do wpp-hooks.js
+   */
+  async function sendMessageViaAPI(phone, text) {
+    console.log(`[WHL] 📨 Enviando via API para: ${phone}`);
+    
+    return new Promise((resolve) => {
+      const requestId = `req_${Date.now()}_${Math.random()}`;
+      
+      // Listener para receber resposta
+      const handleResponse = (event) => {
+        if (event.data?.type === 'WHL_SEND_MESSAGE_API_RESULT' && 
+            event.data?.requestId === requestId) {
+          window.removeEventListener('message', handleResponse);
+          
+          if (event.data.success) {
+            console.log('[WHL] ✅ Mensagem enviada com sucesso via API!');
+            resolve({ success: true });
+          } else {
+            console.error('[WHL] ❌ Erro ao enviar via API:', event.data.error);
+            resolve({ success: false, error: event.data.error });
+          }
+        }
+      };
+      
+      window.addEventListener('message', handleResponse);
+      
+      // Timeout de 30 segundos
+      setTimeout(() => {
+        window.removeEventListener('message', handleResponse);
+        resolve({ success: false, error: 'TIMEOUT' });
+      }, 30000);
+      
+      // Enviar mensagem via postMessage para wpp-hooks.js
+      window.postMessage({
+        type: 'WHL_SEND_MESSAGE_API',
+        phone: phone,
+        message: text,
+        requestId: requestId
+      }, '*');
+    });
+  }
+
+  /**
+   * @deprecated Enviar mensagem usando Input + Enter - CAUSA RELOAD se não estiver no chat!
+   * Use sendMessageViaAPI() ao invés para evitar reload da página.
+   * Este era o método TESTADO mas ainda causa reload quando navega.
+   * AVISO: window.location.href causa RELOAD e mata o script!
    */
   async function sendMessageViaInput(phone, text) {
+    console.warn('[WHL] ⚠️ sendMessageViaInput is deprecated - may cause page reload! Use sendMessageViaAPI() instead.');
     console.log(`[WHL] 📨 Enviando via Input + Enter para: ${phone}`);
     
     // Verificar se já está no chat correto
@@ -2293,8 +2345,9 @@
     const needsNavigation = !currentUrl.includes(phone);
     
     if (needsNavigation) {
-      // Abrir chat via URL
+      // DEPRECATED: Abrir chat via URL - CAUSA RELOAD!
       console.log('[WHL] 🔗 Abrindo chat via URL...');
+      console.warn('[WHL] ⚠️ Using window.location.href - this will cause page reload!');
       window.location.href = `https://web.whatsapp.com/send?phone=${phone}`;
       
       // Aguardar página carregar e input aparecer
@@ -2466,6 +2519,114 @@
   
   // ===== INPUT + ENTER CAMPAIGN PROCESSING =====
   
+  /**
+   * Processa campanha usando API interna (SEM RELOAD - TESTADO E FUNCIONANDO)
+   * Este método usa a API confirmada funcionando do wpp-hooks.js
+   */
+  async function processCampaignStepViaAPI() {
+    const st = await getState();
+    
+    if (!st.isRunning || st.isPaused) {
+      console.log('[WHL] Campanha parada ou pausada');
+      return;
+    }
+    
+    if (st.index >= st.queue.length) {
+      console.log('[WHL] 🎉 Campanha finalizada!');
+      st.isRunning = false;
+      await setState(st);
+      await render();
+      return;
+    }
+    
+    const cur = st.queue[st.index];
+    
+    // Pular números inválidos
+    if (cur && cur.valid === false) {
+      console.log('[WHL] ⚠️ Número inválido, pulando:', cur.phone);
+      cur.status = 'failed';
+      cur.errorReason = 'Número inválido';
+      st.index++;
+      st.stats.failed++;
+      st.stats.pending--;
+      await setState(st);
+      await render();
+      scheduleCampaignStepViaAPI();
+      return;
+    }
+    
+    // Pular se não existe
+    if (!cur) {
+      st.index++;
+      await setState(st);
+      scheduleCampaignStepViaAPI();
+      return;
+    }
+    
+    // Pular números já processados
+    if (cur.status === 'sent') {
+      st.index++;
+      await setState(st);
+      scheduleCampaignStepViaAPI();
+      return;
+    }
+    
+    // Se já falhou e não é para retry, pular
+    if (cur.status === 'failed' && !cur.retryPending) {
+      st.index++;
+      await setState(st);
+      scheduleCampaignStepViaAPI();
+      return;
+    }
+    
+    console.log(`[WHL] 📨 Enviando via API: ${st.index + 1}/${st.queue.length} - ${cur.phone}`);
+    cur.status = 'opened';
+    await setState(st);
+    await render();
+    
+    // Enviar via API interna (SEM RELOAD)
+    const result = await sendMessageViaAPI(cur.phone, st.message);
+    
+    if (result.success) {
+      // Sucesso!
+      console.log('[WHL] ✅ Mensagem enviada com sucesso para', cur.phone);
+      cur.status = 'sent';
+      st.stats.sent++;
+      st.stats.pending--;
+    } else {
+      // Falha
+      console.log('[WHL] ❌ Falha ao enviar para', cur.phone, ':', result.error);
+      cur.status = 'failed';
+      cur.errorReason = result.error;
+      st.stats.failed++;
+      st.stats.pending--;
+    }
+    
+    st.index++;
+    await setState(st);
+    await render();
+    
+    // Continuar campanha após delay
+    if (st.isRunning && !st.isPaused && st.index < st.queue.length) {
+      const delay = getRandomDelay(st.delayMin, st.delayMax);
+      console.log(`[WHL] ⏳ Aguardando ${(delay/1000).toFixed(1)}s antes do próximo envio...`);
+      setTimeout(() => processCampaignStepViaAPI(), delay);
+    } else if (st.index >= st.queue.length) {
+      // Campanha finalizada
+      st.isRunning = false;
+      await setState(st);
+      await render();
+      console.log('[WHL] 🎉 Campanha finalizada!');
+    }
+  }
+  
+  function scheduleCampaignStepViaAPI() {
+    if (campaignInterval) clearTimeout(campaignInterval);
+    campaignInterval = setTimeout(() => {
+      processCampaignStepViaAPI();
+    }, 100);
+  }
+
   /**
    * Processa campanha usando método Input + Enter (TESTADO E FUNCIONANDO)
    * Este é o método confirmado pelo usuário que funciona corretamente
@@ -2790,18 +2951,21 @@
     console.log('[WHL] 🚀 Campanha iniciada');
     
     // DISABLED: Hidden Worker Tab não funciona
-    // Usar Input + Enter method que foi TESTADO e CONFIRMADO FUNCIONANDO
+    // Usar API method que foi TESTADO e CONFIRMADO FUNCIONANDO (SEM RELOAD!)
     if (st.useWorker) {
-      console.log('[WHL] ⚠️ Worker mode disabled - usando Input + Enter ao invés');
-      // Don't use worker - fall through to Input + Enter method
+      console.log('[WHL] ⚠️ Worker mode disabled - usando API method ao invés');
+      // Don't use worker - fall through to API method
     }
     
-    // Usar método Input + Enter (TESTADO E FUNCIONANDO)
-    if (WHL_CONFIG.USE_INPUT_ENTER_METHOD) {
+    // Usar método API interno (TESTADO E FUNCIONANDO - SEM RELOAD!)
+    if (WHL_CONFIG.USE_API_METHOD) {
+      console.log('[WHL] 📡 Usando API interna (WPP Boladão) - SEM RELOAD!');
+      processCampaignStepViaAPI();
+    } else if (WHL_CONFIG.USE_INPUT_ENTER_METHOD) {
       console.log('[WHL] 🔧 Using Input + Enter method for sending');
       processCampaignStepViaInput();
     } else if (WHL_CONFIG.USE_DIRECT_API) {
-      console.log('[WHL] 📡 Usando API direta (WPP Boladão) - SEM RELOAD!');
+      console.log('[WHL] 📡 Usando API direta - SEM RELOAD!');
       processCampaignStepDirect();
     } else {
       console.log('[WHL] 🔗 Usando modo URL (com reload)');
