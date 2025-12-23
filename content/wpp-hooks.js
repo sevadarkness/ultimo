@@ -1032,8 +1032,8 @@ window.whl_hooks_main = () => {
     
     // ===== LISTENERS PARA NOVAS EXTRAÇÕES =====
     window.addEventListener('message', (event) => {
-        // Validate origin for security
-        if (event.origin !== window.location.origin) return;
+        // Validate origin and source for security (prevent cross-frame attacks)
+        if (event.origin !== window.location.origin || event.source !== window) return;
         if (!event.data || !event.data.type) return;
         
         const { type } = event.data;
@@ -1132,8 +1132,8 @@ window.whl_hooks_main = () => {
     
     // ===== LISTENERS FOR SEND FUNCTIONS =====
     window.addEventListener('message', async (event) => {
-        // Validate origin for security
-        if (event.origin !== window.location.origin) return;
+        // Validate origin and source for security (prevent cross-frame attacks)
+        if (event.origin !== window.location.origin || event.source !== window) return;
         if (!event.data) return;
         
         // Enviar apenas TEXTO
@@ -1160,8 +1160,8 @@ window.whl_hooks_main = () => {
     
     // ===== MESSAGE LISTENERS PARA API DIRETA =====
     window.addEventListener('message', async (event) => {
-        // Validate origin for security
-        if (event.origin !== window.location.origin) return;
+        // Validate origin and source for security (prevent cross-frame attacks)
+        if (event.origin !== window.location.origin || event.source !== window) return;
         if (!event.data || !event.data.type) return;
         
         const { type } = event.data;
@@ -1263,8 +1263,8 @@ window.whl_hooks_main = () => {
 
     // ===== EXTRAÇÃO INSTANTÂNEA =====
     window.addEventListener('message', (event) => {
-        // Validate origin for security
-        if (event.origin !== window.location.origin) return;
+        // Validate origin and source for security (prevent cross-frame attacks)
+        if (event.origin !== window.location.origin || event.source !== window) return;
         if (event.data?.type !== 'WHL_EXTRACT_INSTANT') return;
         
         try {
