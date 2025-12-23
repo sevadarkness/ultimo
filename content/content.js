@@ -3307,23 +3307,95 @@ try {
       if (!previewFound) {
         console.log('[WHL] ⚠️ Preview não detectado após 5 segundos, continuando...');
       }
+      
+      // PASSO 6.5: Digitar legenda no campo correto (se houver texto que ainda não foi enviado)
+      // Verificar se há campo de legenda no preview
+      if (messageText && messageText.trim()) {
+        console.log('[WHL] 📝 Verificando campo de legenda no preview...');
+        
+        const captionSelectors = [
+          'div[aria-label*="legenda"][contenteditable="true"]',
+          'div[aria-label*="Legenda"][contenteditable="true"]',
+          'div[aria-label*="caption"][contenteditable="true"]',
+          'div[aria-label*="Caption"][contenteditable="true"]',
+          'div[aria-label*="Adicionar"][contenteditable="true"]',
+          'div[contenteditable="true"][data-tab="10"]',
+          '[role="dialog"] div[contenteditable="true"]'
+        ];
+        
+        let captionBox = null;
+        for (const sel of captionSelectors) {
+          const el = document.querySelector(sel);
+          // Evitar campo de mensagem principal (data-tab="3")
+          if (el && el.getAttribute('data-tab') !== '3') {
+            captionBox = el;
+            console.log('[WHL] ✅ Campo de legenda encontrado:', sel);
+            break;
+          }
+        }
+        
+        if (captionBox) {
+          console.log('[WHL] ⌨️ Digitando legenda no preview...');
+          captionBox.focus();
+          await new Promise(r => setTimeout(r, 200));
+          
+          // Limpar campo
+          captionBox.textContent = '';
+          captionBox.dispatchEvent(new Event('input', { bubbles: true }));
+          await new Promise(r => setTimeout(r, 100));
+          
+          // Digitar texto usando execCommand + eventos
+          document.execCommand('insertText', false, messageText);
+          captionBox.dispatchEvent(new Event('input', { bubbles: true }));
+          captionBox.dispatchEvent(new Event('change', { bubbles: true }));
+          
+          console.log('[WHL] ✅ Legenda digitada no preview');
+          await new Promise(r => setTimeout(r, 500));
+        } else {
+          console.log('[WHL] ℹ️ Campo de legenda não encontrado (texto será enviado separadamente)');
+        }
+      }
 
       // PASSO 7: Enviar a imagem
       console.log('[WHL] 📤 PASSO 5: Enviando IMAGEM...');
       
-      // Procurar botão de enviar no dialog/preview
+      // Procurar botão de enviar no dialog/preview com múltiplos fallbacks
       let sendBtn = null;
       const dialog = document.querySelector('[role="dialog"]');
       
       if (dialog) {
+        // Método 1: Por data-testid
         sendBtn = dialog.querySelector('[data-testid="send"]') ||
-                  dialog.querySelector('[aria-label="Enviar"]') ||
-                  dialog.querySelector('button:not([disabled])');
+                  dialog.querySelector('[data-testid="compose-btn-send"]');
+        
+        // Método 2: Por aria-label
+        if (!sendBtn) {
+          sendBtn = dialog.querySelector('[aria-label="Enviar"]') ||
+                    dialog.querySelector('[aria-label="Send"]') ||
+                    dialog.querySelector('button[aria-label*="Enviar"]') ||
+                    dialog.querySelector('button[aria-label*="Send"]');
+        }
+        
+        // Método 3: Por ícone
+        if (!sendBtn) {
+          const sendIcon = dialog.querySelector('span[data-icon="send"]') ||
+                          dialog.querySelector('span[data-icon="send-light"]');
+          if (sendIcon) {
+            sendBtn = sendIcon.closest('button');
+          }
+        }
+        
+        // Método 4: Último fallback - qualquer botão habilitado no dialog
+        if (!sendBtn) {
+          sendBtn = dialog.querySelector('button:not([disabled])');
+        }
       }
       
+      // Se não encontrou no dialog, tentar fora
       if (!sendBtn) {
         sendBtn = document.querySelector('[data-testid="send"]') ||
-                  document.querySelector('[aria-label="Enviar"]');
+                  document.querySelector('[aria-label="Enviar"]') ||
+                  document.querySelector('span[data-icon="send"]')?.closest('button');
       }
       
       if (sendBtn) {
