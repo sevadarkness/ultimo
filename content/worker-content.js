@@ -27,6 +27,11 @@
     function initWorker() {
         console.log('[WHL Worker] Initializing hidden worker tab...');
         
+        // Set up interval to check for multi-device popup every 1 second
+        const popupCheckInterval = setInterval(() => {
+            handleMultiDevicePopup();
+        }, 1000);
+        
         // Wait for WhatsApp to load
         waitForWhatsAppReady().then(() => {
             console.log('[WHL Worker] WhatsApp ready, waiting for commands...');
@@ -52,7 +57,38 @@
                 sendResponse({ pong: true, ready: isWhatsAppReady() });
                 return true;
             }
+            
+            if (message.action === 'STOP_WORKER') {
+                clearInterval(popupCheckInterval);
+                sendResponse({ success: true });
+                return true;
+            }
         });
+    }
+    
+    /**
+     * Detect and handle multi-device popup "Use here"
+     * WhatsApp shows this when detecting multiple tabs open
+     */
+    function handleMultiDevicePopup() {
+        // Detect popup "WhatsApp is open in another window"
+        const useHereButton = document.querySelector('[data-testid="popup-controls-ok"]') ||
+            document.querySelector('[data-testid="btn-use-here"]') ||
+            Array.from(document.querySelectorAll('div[role="button"]'))
+                .find(btn => {
+                    const text = btn.textContent || '';
+                    return text.includes('Usar aqui') || 
+                           text.includes('Use here') ||
+                           text.includes('usar aqui') ||
+                           text.includes('use here');
+                });
+        
+        if (useHereButton) {
+            console.log('[WHL Worker] Popup detectado, clicando em "Usar aqui"...');
+            useHereButton.click();
+            return true;
+        }
+        return false;
     }
     
     function waitForWhatsAppReady(maxWait = 30000) {
@@ -60,6 +96,9 @@
             const startTime = Date.now();
             
             const check = () => {
+                // Check and handle multi-device popup
+                handleMultiDevicePopup();
+                
                 // Check if WhatsApp loaded
                 const chatList = document.querySelector('[data-testid="chat-list"]') ||
                                  document.querySelector('#pane-side') ||
@@ -104,6 +143,9 @@
         console.log(`[WHL Worker] Sending to ${phone}...`);
         
         try {
+            // Check and handle multi-device popup before sending
+            handleMultiDevicePopup();
+            
             // Navigate to send URL
             const encodedText = encodeURIComponent(text);
             const sendUrl = `https://web.whatsapp.com/send?phone=${phone}&text=${encodedText}`;
