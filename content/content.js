@@ -17,13 +17,13 @@
 
   // ===== CONFIGURAÇÃO GLOBAL =====
   // Flag para habilitar envio via API direta (WPP Boladão) ou URL tradicional
-  // true = API direta (10x mais rápido, sem reload)
+  // true = API direta com métodos validados (SEM reload, resultados confirmados)
   // false = URL mode (fallback, com reload de página)
   const WHL_CONFIG = {
-    USE_DIRECT_API: false,  // Desabilitado - usar Input + Enter ao invés
+    USE_DIRECT_API: true,  // HABILITADO: Usa métodos testados e validados (enviarMensagemAPI e enviarImagemDOM)
     API_RETRY_ON_FAIL: true,  // Se API falhar, tentar URL mode
-    USE_WORKER_FOR_SENDING: false,  // DISABLED: Hidden Worker Tab não funciona - usar Input + Enter
-    USE_INPUT_ENTER_METHOD: true,  // NEW: Use tested Input + Enter method for sending
+    USE_WORKER_FOR_SENDING: false,  // DISABLED: Hidden Worker Tab não funciona - usar API direta
+    USE_INPUT_ENTER_METHOD: false,  // DESABILITADO: Causa reload - usar API direta ao invés
   };
 
   // Injetar wpp-hooks.js no contexto da página
@@ -2417,33 +2417,51 @@
       return;
     }
     
-    console.log(`[WHL] 📨 Enviando via API direta: ${st.index + 1}/${st.queue.length} - ${cur.phone}`);
+    console.log(`[WHL] 📨 Enviando via API validada: ${st.index + 1}/${st.queue.length} - ${cur.phone}`);
     cur.status = 'opened';
     await setState(st);
     await render();
     
-    // Enviar via API direta usando postMessage
+    // ATUALIZADO: Usar métodos testados e validados (WHL_SEND_MESSAGE_API e WHL_SEND_IMAGE_DOM)
+    const requestId = Date.now().toString();
+    
     if (st.imageData) {
-      // Enviar imagem com legenda
-      console.log('[WHL] 📸 Enviando imagem via API...');
+      // Para enviar imagem via DOM, precisa ter o chat aberto
+      // Verificar se já está no chat correto
+      const currentUrl = window.location.href;
+      const isInCorrectChat = currentUrl.includes(cur.phone);
+      
+      if (!isInCorrectChat) {
+        // Abrir chat sem reload usando history API
+        const newUrl = `https://web.whatsapp.com/send?phone=${cur.phone}`;
+        console.log('[WHL] 🔗 Navegando para chat:', newUrl);
+        window.history.pushState({}, '', newUrl);
+        
+        // Aguardar chat carregar
+        await new Promise(r => setTimeout(r, 3000));
+      }
+      
+      // Enviar imagem via DOM (método validado)
+      console.log('[WHL] 📸 Enviando imagem via DOM...');
       window.postMessage({
-        type: 'WHL_SEND_IMAGE_DIRECT',
-        phone: cur.phone,
-        imageData: st.imageData,
-        caption: st.message || ''
+        type: 'WHL_SEND_IMAGE_DOM',
+        base64Image: st.imageData,
+        caption: st.message || '',
+        requestId: requestId
       }, '*');
     } else {
-      // Enviar mensagem de texto
-      console.log('[WHL] 💬 Enviando texto via API...');
+      // Enviar texto via API interna (método validado - resultado: {messageSendResult: 'OK'})
+      // NÃO precisa abrir chat - a função cria/abre automaticamente
+      console.log('[WHL] 💬 Enviando texto via API interna...');
       window.postMessage({
-        type: 'WHL_SEND_MESSAGE_DIRECT',
+        type: 'WHL_SEND_MESSAGE_API',
         phone: cur.phone,
         message: st.message,
-        useTyping: st.typingEffect !== false
+        requestId: requestId
       }, '*');
     }
     
-    // Nota: O resultado será recebido via listener abaixo
+    // Nota: O resultado será recebido via listener WHL_SEND_MESSAGE_API_RESULT ou WHL_SEND_IMAGE_DOM_RESULT
     // e continuará a campanha automaticamente
   }
   
@@ -2570,7 +2588,141 @@
     
     const { type } = e.data;
     
-    // Resultado de envio de mensagem ou imagem
+    // RESULTADO de envio via API validada (WHL_SEND_MESSAGE_API)
+    if (type === 'WHL_SEND_MESSAGE_API_RESULT') {
+      const st = await getState();
+      
+      // Verificar se ainda está em uma campanha ativa
+      if (!st.isRunning) return;
+      
+      const cur = st.queue[st.index];
+      
+      if (cur) {
+        if (e.data.success) {
+          // Sucesso! (resultado: {messageSendResult: 'OK'})
+          console.log('[WHL] ✅ Texto enviado com sucesso via API para', cur.phone);
+          cur.status = 'sent';
+          cur.retries = cur.retries || 0;
+          st.stats.sent++;
+          st.stats.pending--;
+          st.index++;
+        } else {
+          // Falha - verificar retry
+          console.log('[WHL] ❌ Falha ao enviar texto via API para', cur.phone, ':', e.data.error);
+          cur.retries = (cur.retries || 0) + 1;
+          
+          if (cur.retries >= (st.retryMax || 0)) {
+            // Máximo de retries atingido
+            cur.status = 'failed';
+            cur.errorReason = e.data.error || 'Falha no envio via API';
+            cur.retryPending = false;
+            st.stats.failed++;
+            st.stats.pending--;
+            st.index++;
+            
+            // Se não continuar em erros, parar campanha
+            if (!st.continueOnError) {
+              console.log('[WHL] ⚠️ Parando campanha devido a erro');
+              st.isRunning = false;
+              await setState(st);
+              await render();
+              return;
+            }
+          } else {
+            // Ainda pode tentar novamente
+            cur.retryPending = true;
+            console.log(`[WHL] 🔄 Tentando novamente (${cur.retries}/${st.retryMax})...`);
+          }
+        }
+        
+        await setState(st);
+        await render();
+        
+        // Continuar campanha se ainda está rodando
+        if (st.isRunning && !st.isPaused) {
+          if (st.index < st.queue.length) {
+            const delay = getRandomDelay(st.delayMin, st.delayMax);
+            console.log(`[WHL] ⏳ Aguardando ${(delay/1000).toFixed(1)}s antes do próximo envio...`);
+            setTimeout(() => processCampaignStepDirect(), delay);
+          } else {
+            // Campanha finalizada
+            console.log('[WHL] 🎉 Campanha finalizada!');
+            st.isRunning = false;
+            await setState(st);
+            await render();
+          }
+        }
+      }
+    }
+    
+    // RESULTADO de envio via DOM (WHL_SEND_IMAGE_DOM)
+    if (type === 'WHL_SEND_IMAGE_DOM_RESULT') {
+      const st = await getState();
+      
+      // Verificar se ainda está em uma campanha ativa
+      if (!st.isRunning) return;
+      
+      const cur = st.queue[st.index];
+      
+      if (cur) {
+        if (e.data.success) {
+          // Sucesso! (resultado: {success: true})
+          console.log('[WHL] ✅ Imagem enviada com sucesso via DOM para', cur.phone);
+          cur.status = 'sent';
+          cur.retries = cur.retries || 0;
+          st.stats.sent++;
+          st.stats.pending--;
+          st.index++;
+        } else {
+          // Falha - verificar retry
+          console.log('[WHL] ❌ Falha ao enviar imagem via DOM para', cur.phone, ':', e.data.error);
+          cur.retries = (cur.retries || 0) + 1;
+          
+          if (cur.retries >= (st.retryMax || 0)) {
+            // Máximo de retries atingido
+            cur.status = 'failed';
+            cur.errorReason = e.data.error || 'Falha no envio de imagem';
+            cur.retryPending = false;
+            st.stats.failed++;
+            st.stats.pending--;
+            st.index++;
+            
+            // Se não continuar em erros, parar campanha
+            if (!st.continueOnError) {
+              console.log('[WHL] ⚠️ Parando campanha devido a erro');
+              st.isRunning = false;
+              await setState(st);
+              await render();
+              return;
+            }
+          } else {
+            // Ainda pode tentar novamente
+            cur.retryPending = true;
+            console.log(`[WHL] 🔄 Tentando novamente (${cur.retries}/${st.retryMax})...`);
+          }
+        }
+        
+        await setState(st);
+        await render();
+        
+        // Continuar campanha se ainda está rodando
+        if (st.isRunning && !st.isPaused) {
+          if (st.index < st.queue.length) {
+            const delay = getRandomDelay(st.delayMin, st.delayMax);
+            console.log(`[WHL] ⏳ Aguardando ${(delay/1000).toFixed(1)}s antes do próximo envio...`);
+            setTimeout(() => processCampaignStepDirect(), delay);
+          } else {
+            // Campanha finalizada
+            console.log('[WHL] 🎉 Campanha finalizada!');
+            st.isRunning = false;
+            await setState(st);
+            await render();
+          }
+        }
+      }
+    }
+    
+    // Resultado de envio de mensagem ou imagem (API antiga)
     if (type === 'WHL_SEND_MESSAGE_RESULT' || type === 'WHL_SEND_IMAGE_RESULT') {
       const st = await getState();
       
@@ -2779,20 +2931,13 @@
 
     console.log('[WHL] 🚀 Campanha iniciada');
     
-    // DISABLED: Hidden Worker Tab não funciona
-    // Usar Input + Enter method que foi TESTADO e CONFIRMADO FUNCIONANDO
-    if (st.useWorker) {
-      console.log('[WHL] ⚠️ Worker mode disabled - usando Input + Enter ao invés');
-      // Don't use worker - fall through to Input + Enter method
-    }
-    
-    // Usar método Input + Enter (TESTADO E FUNCIONANDO)
-    if (WHL_CONFIG.USE_INPUT_ENTER_METHOD) {
+    // ATUALIZADO: Usar métodos API validados (SEM reload)
+    if (WHL_CONFIG.USE_DIRECT_API) {
+      console.log('[WHL] 📡 Usando API validada (enviarMensagemAPI e enviarImagemDOM) - SEM RELOAD!');
+      processCampaignStepDirect();
+    } else if (WHL_CONFIG.USE_INPUT_ENTER_METHOD) {
       console.log('[WHL] 🔧 Using Input + Enter method for sending');
       processCampaignStepViaInput();
-    } else if (WHL_CONFIG.USE_DIRECT_API) {
-      console.log('[WHL] 📡 Usando API direta (WPP Boladão) - SEM RELOAD!');
-      processCampaignStepDirect();
     } else {
       console.log('[WHL] 🔗 Usando modo URL (com reload)');
       processCampaignStepViaDom();
@@ -3527,15 +3672,19 @@ try {
     btnExtractGroupMembers.addEventListener('click', () => {
       const selectedGroupId = groupsList.value;
       if (!selectedGroupId) {
-        alert('Selecione um grupo primeiro');
+        alert('⚠️ Importante: Abra a conversa do grupo antes de extrair os membros!');
         return;
       }
 
       btnExtractGroupMembers.disabled = true;
       btnExtractGroupMembers.textContent = '⏳ Extraindo...';
 
-      // Enviar comando para o store-bridge
-      window.postMessage({ type: 'WHL_EXTRACT_GROUP_MEMBERS', groupId: selectedGroupId }, '*');
+      // ATUALIZADO: Usar método DOM testado e validado
+      const requestId = Date.now().toString();
+      window.postMessage({ 
+        type: 'WHL_EXTRACT_GROUP_CONTACTS_DOM', 
+        requestId: requestId 
+      }, '*');
     });
   }
 
@@ -3631,7 +3780,7 @@ window.addEventListener('message', (e) => {
     alert('Erro ao carregar grupos: ' + e.data.error);
   }
   
-  // Resposta de extrair membros
+  // Resposta de extrair membros (método API antigo)
   if (e.data.type === 'WHL_GROUP_MEMBERS_RESULT') {
     const { members } = e.data;
     const groupMembersBox = document.getElementById('whlGroupMembersNumbers');
@@ -3650,6 +3799,48 @@ window.addEventListener('message', (e) => {
     }
     
     alert(`✅ ${members.length} membros extraídos!`);
+  }
+  
+  // RESULTADO de extração de membros via DOM (MÉTODO NOVO E VALIDADO)
+  if (e.data.type === 'WHL_EXTRACT_GROUP_CONTACTS_DOM_RESULT') {
+    const { success, groupName, contacts, total, error } = e.data;
+    
+    const groupMembersBox = document.getElementById('whlGroupMembersNumbers');
+    const groupMembersCount = document.getElementById('whlGroupMembersCount');
+    const btnExtractGroupMembers = document.getElementById('whlExtractGroupMembers');
+    
+    if (btnExtractGroupMembers) {
+      btnExtractGroupMembers.disabled = false;
+      btnExtractGroupMembers.textContent = '📥 Extrair Membros';
+    }
+    
+    if (success && contacts) {
+      // Extrair apenas os números dos contatos
+      const phoneNumbers = contacts.map(c => c.phone).filter(p => p && p.trim());
+      
+      if (groupMembersBox) {
+        groupMembersBox.value = phoneNumbers.join('\n');
+      }
+      if (groupMembersCount) {
+        groupMembersCount.textContent = phoneNumbers.length;
+      }
+      
+      alert(`✅ ${phoneNumbers.length} membros extraídos do grupo "${groupName}"!`);
+      console.log('[WHL] Membros extraídos:', contacts);
+    } else {
+      alert('❌ Erro ao extrair membros: ' + (error || 'Erro desconhecido'));
+      console.error('[WHL] Erro na extração:', error);
+    }
+  }
+  
+  // ERRO ao extrair membros via DOM
+  if (e.data.type === 'WHL_EXTRACT_GROUP_CONTACTS_DOM_ERROR') {
+    const btnExtractGroupMembers = document.getElementById('whlExtractGroupMembers');
+    if (btnExtractGroupMembers) {
+      btnExtractGroupMembers.disabled = false;
+      btnExtractGroupMembers.textContent = '📥 Extrair Membros';
+    }
+    alert('❌ Erro ao extrair membros: ' + e.data.error);
   }
   
   // Erro ao extrair membros

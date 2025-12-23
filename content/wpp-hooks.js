@@ -1130,6 +1130,137 @@ window.whl_hooks_main = () => {
         }
     });
     
+    // ===== EXTRAÇÃO DE MEMBROS DE GRUPO VIA DOM (TESTADO E VALIDADO) =====
+    /**
+     * Extrai membros de um grupo via DOM
+     * Método testado e validado pelo usuário - extrai 3 membros no teste
+     */
+    async function extractGroupContacts() {
+        console.log("[WHL] Iniciando extração de membros via DOM...");
+
+        // Múltiplos seletores para máxima compatibilidade
+        const possibleGroupSelectors = [
+            '[data-testid="group-info-drawer-link"]',
+            '[data-icon="info"]',
+            'span[data-icon="default-group"]',
+            '[title="Dados do grupo"]',
+            '[aria-label="Dados do grupo"]',
+            '.LwCwJ',
+            'header [role="button"]'
+        ];
+
+        let groupInfoButton = null;
+
+        for (const selector of possibleGroupSelectors) {
+            const elements = document.querySelectorAll(selector);
+            if (elements.length > 0) {
+                groupInfoButton = elements[0];
+                break;
+            }
+        }
+
+        // Método alternativo: clicar no cabeçalho
+        if (!groupInfoButton) {
+            const header = document.querySelector('header');
+            if (header) {
+                header.click();
+                await new Promise(resolve => setTimeout(resolve, 1000));
+
+                const menuItems = document.querySelectorAll('[role="button"]');
+                for (const item of menuItems) {
+                    const text = item.textContent.toLowerCase();
+                    if (text.includes("info") || text.includes("dados") || text.includes("grupo")) {
+                        groupInfoButton = item;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!groupInfoButton) {
+            return { success: false, error: 'GROUP_INFO_BUTTON_NOT_FOUND', contacts: [] };
+        }
+
+        groupInfoButton.click();
+        await new Promise(resolve => setTimeout(resolve, 3000));
+
+        // Nome do grupo
+        const groupNameElement = document.querySelector('[data-testid="group-info-header-title"]');
+        const groupName = groupNameElement ? groupNameElement.textContent : 'Grupo do WhatsApp';
+
+        // Encontrar participantes
+        let participants = Array.from(document.querySelectorAll('[data-testid="cell-frame-container"]'));
+
+        if (participants.length === 0) {
+            const alternativeSelectors = ['div[role="listitem"]', 'div[tabindex="-1"]', 'div[data-testid*="cell"]'];
+            for (const selector of alternativeSelectors) {
+                const elements = document.querySelectorAll(selector);
+                if (elements.length > 0) {
+                    participants = Array.from(elements);
+                    break;
+                }
+            }
+        }
+
+        if (participants.length === 0) {
+            return { success: false, error: 'PARTICIPANTS_NOT_FOUND', contacts: [] };
+        }
+
+        // Extrair informações
+        const contactList = participants.map(participant => {
+            let nameElement = participant.querySelector('[data-testid="cell-frame-title"]')
+                || participant.querySelector('span[title]')
+                || participant.querySelector('span[dir="auto"]');
+
+            const name = nameElement ? nameElement.textContent.trim() : 'Desconhecido';
+
+            let phoneElement = participant.querySelector('[data-testid="cell-frame-secondary"]')
+                || participant.querySelector('span[dir="auto"]:not(:first-child)');
+
+            let phone = phoneElement ? phoneElement.textContent.trim() : '';
+
+            if (!phone && nameElement && nameElement.getAttribute('title')) {
+                phone = nameElement.getAttribute('title');
+            }
+
+            if (phone) {
+                phone = phone.replace(/~.*$/, '').trim();
+                const cleanPhone = phone.replace(/[^\d+]/g, '');
+                if (cleanPhone) phone = cleanPhone;
+            }
+
+            return { name, phone };
+        });
+
+        // Filtrar entradas válidas
+        const filteredContacts = contactList.filter(contact =>
+            contact.name && contact.name !== 'Desconhecido' && contact.phone
+        );
+
+        // Fechar painel
+        const closeButtons = [
+            document.querySelector('[data-testid="btn-closer-drawer"]'),
+            document.querySelector('[data-icon="back"]'),
+            document.querySelector('span[data-icon="back"]'),
+            document.querySelector('[aria-label="Voltar"]'),
+            document.querySelector('[aria-label="Fechar"]')
+        ];
+
+        for (const btn of closeButtons) {
+            if (btn) {
+                btn.click();
+                break;
+            }
+        }
+
+        return {
+            success: true,
+            groupName: groupName,
+            contacts: filteredContacts.length > 0 ? filteredContacts : contactList,
+            total: (filteredContacts.length > 0 ? filteredContacts : contactList).length
+        };
+    }
+
     // ===== LISTENERS FOR SEND FUNCTIONS =====
     window.addEventListener('message', async (event) => {
         // Validate origin and source for security (prevent cross-frame attacks)
@@ -1155,6 +1286,27 @@ window.whl_hooks_main = () => {
             const { phone, texto, base64Image, caption, requestId } = event.data;
             const result = await enviarMensagemCompleta(phone, texto, base64Image, caption);
             window.postMessage({ type: 'WHL_SEND_COMPLETE_RESULT', requestId, ...result }, '*');
+        }
+        
+        // EXTRAIR MEMBROS DE GRUPO VIA DOM
+        if (event.data.type === 'WHL_EXTRACT_GROUP_CONTACTS_DOM') {
+            const { requestId } = event.data;
+            (async () => {
+                try {
+                    const result = await extractGroupContacts();
+                    window.postMessage({ 
+                        type: 'WHL_EXTRACT_GROUP_CONTACTS_DOM_RESULT', 
+                        requestId, 
+                        ...result 
+                    }, '*');
+                } catch (error) {
+                    window.postMessage({ 
+                        type: 'WHL_EXTRACT_GROUP_CONTACTS_DOM_ERROR', 
+                        requestId, 
+                        error: error.message 
+                    }, '*');
+                }
+            })();
         }
     });
     
