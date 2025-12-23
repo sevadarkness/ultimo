@@ -896,19 +896,6 @@
             <button style="width:150px" id="whlCopyExtracted">📋 Copiar Todos</button>
           </div>
           
-          <!-- Botões de controle - SEMPRE VISÍVEIS durante extração -->
-          <div class="row" style="margin-top:8px" id="whlExtractControls">
-            <button class="warning" style="flex:1" id="whlPauseExtraction">⏸️ Pausar</button>
-            <button class="danger" style="flex:1" id="whlCancelExtraction">⛔ Cancelar</button>
-          </div>
-          
-          <div id="whlExtractProgress" style="display:none;margin-top:10px">
-            <div class="progress-bar">
-              <div class="progress-fill" id="whlExtractProgressFill" style="width:0%"></div>
-            </div>
-            <div class="tiny" style="margin-top:6px;text-align:center" id="whlExtractProgressText">0%</div>
-          </div>
-          
           <!-- Seção: Contatos Normais -->
           <div class="extract-section" style="margin-top:12px">
             <label style="display:block;font-weight:700;margin-bottom:6px">
@@ -3516,87 +3503,30 @@
 try {
   const btnExtract = document.getElementById('whlExtractContacts');
   const boxExtract = document.getElementById('whlExtractedNumbers');
-  const extractControls = document.getElementById('whlExtractControls');
-  const btnPause = document.getElementById('whlPauseExtraction');
-  const btnCancel = document.getElementById('whlCancelExtraction');
-  
-  let isExtracting = false;
-  let isPaused = false;
 
   if (btnExtract && boxExtract) {
     btnExtract.addEventListener('click', async () => {
       btnExtract.disabled = true;
       btnExtract.textContent = '⏳ Extraindo...';
       
-      const st = document.getElementById('whlExtractStatus'); 
-      if (st) st.textContent = 'Iniciando extração instantânea...';
+      const statusEl = document.getElementById('whlExtractStatus');
+      if (statusEl) statusEl.textContent = 'Extraindo via API interna...';
       
-      // Usar extração instantânea via API (SEM ROLAGEM)
+      // Usar extração instantânea (SEM ROLAGEM)
       window.postMessage({ 
         type: 'WHL_EXTRACT_ALL_INSTANT',
         requestId: Date.now().toString()
       }, '*');
     });
   }
-  
-  // Botão de pausar
-  if (btnPause) {
-    btnPause.addEventListener('click', () => {
-      if (isPaused) {
-        // Retomar
-        window.postMessage({ type: 'WHL_RESUME_EXTRACTION' }, '*');
-        btnPause.textContent = '⏸️ Pausar';
-        isPaused = false;
-        const st = document.getElementById('whlExtractStatus');
-        if (st) st.textContent = 'Extração retomada...';
-      } else {
-        // Pausar
-        window.postMessage({ type: 'WHL_PAUSE_EXTRACTION' }, '*');
-        btnPause.textContent = '▶️ Continuar';
-        isPaused = true;
-        const st = document.getElementById('whlExtractStatus');
-        if (st) st.textContent = 'Extração pausada. Clique em "Continuar" para retomar.';
-      }
-    });
-  }
-  
-  // Botão de cancelar
-  if (btnCancel) {
-    btnCancel.addEventListener('click', () => {
-      window.postMessage({ type: 'WHL_CANCEL_EXTRACTION' }, '*');
-      const st = document.getElementById('whlExtractStatus');
-      if (st) st.textContent = 'Cancelando extração...';
-    });
-  }
 
   window.addEventListener('message', (e) => {
     if (!e || !e.data) return;
 
-    if (e.data.type === 'WHL_EXTRACT_PROGRESS') {
-      const progress = e.data.progress || 0;
-      const count = e.data.count || 0;
-      
-      // Cache DOM elements for better performance
-      const progressBar = document.getElementById('whlExtractProgress');
-      const progressFill = document.getElementById('whlExtractProgressFill');
-      const progressText = document.getElementById('whlExtractProgressText');
-      const statusEl = document.getElementById('whlExtractStatus');
-      
-      if (progressBar) progressBar.style.display = 'block';
-      if (progressFill) progressFill.style.width = `${progress}%`;
-      if (progressText) progressText.textContent = `${progress}% - ${count} contatos encontrados`;
-      
-      if (statusEl) {
-        if (isPaused) {
-          statusEl.textContent = `Pausado - ${count} contatos até agora`;
-        } else {
-          statusEl.textContent = `Extraindo... ${progress}% - ${count} contatos`;
-        }
-      }
-    }
-
+    // Keep the old WHL_EXTRACT_RESULT handler for backward compatibility
+    // but it will no longer be used with instant extraction
     if (e.data.type === 'WHL_EXTRACT_RESULT') {
-      // Receber resultados categorizados
+      // Receber resultados categorizados (usado pelo extractor.contacts.js com scroll)
       const normal = e.data.normal || e.data.numbers || [];
       const archived = e.data.archived || [];
       const blocked = e.data.blocked || [];
@@ -3620,11 +3550,6 @@ try {
       const blockedCount = document.getElementById('whlBlockedCount');
       if (blockedCount) blockedCount.textContent = blocked.length;
       
-      isExtracting = false;
-      isPaused = false;
-      
-      // Keep controls visible - no longer hiding them
-      
       const statusEl = document.getElementById('whlExtractStatus');
       const totalCount = normal.length + archived.length + blocked.length;
       if (e.data.cancelled) {
@@ -3633,41 +3558,35 @@ try {
         if (statusEl) statusEl.textContent = `✅ Finalizado! Total: ${totalCount} números (${normal.length} normais, ${archived.length} arquivados, ${blocked.length} bloqueados)`;
       }
       
-      const progressBar = document.getElementById('whlExtractProgress');
-      if (progressBar) {
-        setTimeout(() => {
-          progressBar.style.display = 'none';
-        }, PROGRESS_BAR_HIDE_DELAY);
-      }
-      
       if (btnExtract) {
         btnExtract.disabled = false;
         btnExtract.textContent = '📥 Extrair contatos';
-      }
-      
-      if (btnPause) {
-        btnPause.textContent = '⏸️ Pausar';
       }
     }
     
     // Handler para extração instantânea
     if (e.data.type === 'WHL_EXTRACT_ALL_INSTANT_RESULT') {
-      const { contacts, archived, blocked, groups } = e.data;
+      const { normal, archived, blocked, stats } = e.data;
       
-      // Atualizar campos na UI
-      if (boxExtract) boxExtract.value = (contacts || []).join('\n');
-      const normalCount = document.getElementById('whlNormalCount');
-      if (normalCount) normalCount.textContent = (contacts || []).length;
+      // Preencher caixas de texto
+      const normalBox = document.getElementById('whlExtractedNumbers');
+      if (normalBox) normalBox.value = (normal || []).join('\n');
       
       const archivedBox = document.getElementById('whlArchivedNumbers');
       if (archivedBox) archivedBox.value = (archived || []).join('\n');
-      const archivedCount = document.getElementById('whlArchivedCount');
-      if (archivedCount) archivedCount.textContent = (archived || []).length;
       
       const blockedBox = document.getElementById('whlBlockedNumbers');
       if (blockedBox) blockedBox.value = (blocked || []).join('\n');
+      
+      // Atualizar contadores
+      const normalCount = document.getElementById('whlNormalCount');
+      if (normalCount) normalCount.textContent = stats?.normal || 0;
+      
+      const archivedCount = document.getElementById('whlArchivedCount');
+      if (archivedCount) archivedCount.textContent = stats?.archived || 0;
+      
       const blockedCount = document.getElementById('whlBlockedCount');
-      if (blockedCount) blockedCount.textContent = (blocked || []).length;
+      if (blockedCount) blockedCount.textContent = stats?.blocked || 0;
       
       // Restaurar botão
       if (btnExtract) {
@@ -3675,13 +3594,29 @@ try {
         btnExtract.textContent = '📥 Extrair contatos';
       }
       
+      // Status final
       const statusEl = document.getElementById('whlExtractStatus');
-      const totalCount = (contacts?.length || 0) + (archived?.length || 0) + (blocked?.length || 0);
       if (statusEl) {
-        statusEl.textContent = `✅ Extração completa! Total: ${totalCount} números (${contacts?.length || 0} normais, ${archived?.length || 0} arquivados, ${blocked?.length || 0} bloqueados)`;
+        statusEl.textContent = `✅ Extração finalizada! Total: ${stats?.total || 0} números`;
       }
       
-      alert(`✅ Extração completa!\nContatos: ${contacts?.length || 0}\nArquivados: ${archived?.length || 0}\nBloqueados: ${blocked?.length || 0}`);
+      // Alert de confirmação
+      alert(`✅ Extração instantânea concluída!\n\n📱 Contatos: ${stats?.normal || 0}\n📁 Arquivados: ${stats?.archived || 0}\n🚫 Bloqueados: ${stats?.blocked || 0}\n\n📊 Total: ${stats?.total || 0}`);
+    }
+    
+    // Handler para erro na extração
+    if (e.data.type === 'WHL_EXTRACT_ALL_INSTANT_ERROR') {
+      if (btnExtract) {
+        btnExtract.disabled = false;
+        btnExtract.textContent = '📥 Extrair contatos';
+      }
+      
+      const statusEl = document.getElementById('whlExtractStatus');
+      if (statusEl) {
+        statusEl.textContent = '❌ Erro na extração: ' + e.data.error;
+      }
+      
+      alert('❌ Erro na extração: ' + e.data.error);
     }
     
     // Handler para extração de arquivados e bloqueados
