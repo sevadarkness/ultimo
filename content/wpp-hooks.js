@@ -1046,6 +1046,29 @@ window.whl_hooks_main = () => {
             }, '*');
         }
         
+        // EXTRAIR MEMBROS DO GRUPO
+        if (type === 'WHL_EXTRACT_GROUP_MEMBERS') {
+            const { groupId } = event.data;
+            try {
+                const CC = require('WAWebChatCollection');
+                const chats = CC?.ChatCollection?.getModelsArray?.() || [];
+                const chat = chats.find(c => c?.id?._serialized === groupId);
+                const members = (chat?.groupMetadata?.participants || [])
+                    .map(p => p?.id?._serialized)
+                    .filter(Boolean)
+                    .filter(id => id.endsWith('@c.us'))
+                    .map(id => id.replace('@c.us', ''));
+                
+                window.postMessage({
+                    type: 'WHL_GROUP_MEMBERS_RESULT',
+                    groupId,
+                    members: [...new Set(members)]
+                }, '*');
+            } catch (e) {
+                window.postMessage({ type: 'WHL_GROUP_MEMBERS_ERROR', error: e.message }, '*');
+            }
+        }
+        
         if (type === 'WHL_EXTRACT_ALL') {
             const result = extrairTudo();
             window.postMessage({ type: 'WHL_EXTRACT_ALL_RESULT', ...result }, '*');
