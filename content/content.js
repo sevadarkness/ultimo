@@ -4084,27 +4084,58 @@ window.addEventListener('message', (e) => {
   }
   
   // CORREÇÃO BUG 3: Handler para resultado de extração de membros (API e DOM)
+  // PR #76 ULTRA: Handler com estatísticas detalhadas
   if (e.data.type === 'WHL_GROUP_MEMBERS_RESULT' || e.data.type === 'WHL_EXTRACT_GROUP_MEMBERS_RESULT') {
-    console.log('[WHL] Resultado de extração de membros:', e.data);
+    console.log('[WHL] 📨 Resultado ULTRA recebido:', e.data);
     
     const btnExtractMembers = document.getElementById('whlExtractGroupMembers');
     const membersBox = document.getElementById('whlGroupMembersNumbers');
     const membersCount = document.getElementById('whlGroupMembersCount');
     
-    // Restaurar botão
     if (btnExtractMembers) {
       btnExtractMembers.disabled = false;
-      btnExtractMembers.textContent = '👥 Extrair Membros';
+      btnExtractMembers.textContent = '💥 Extrair Membros';
     }
     
     if (e.data.success || e.data.members) {
-      const members = e.data.members || [];
-      if (membersBox) membersBox.value = members.join('\n');
-      if (membersCount) membersCount.textContent = members.length;
+      let members = e.data.members || [];
       
-      alert(`✅ ${members.length} membros extraídos do grupo "${e.data.groupName || 'Grupo'}"!`);
+      // VALIDAÇÃO FINAL: Filtrar LIDs
+      const validMembers = members.filter(num => {
+        if (String(num).includes(':') || String(num).includes('@lid')) {
+          console.warn('[WHL] ❌ LID rejeitado:', num);
+          return false;
+        }
+        const clean = String(num).replace(/\D/g, '');
+        return /^\d{10,15}$/.test(clean);
+      });
+      
+      console.log('[WHL] ✅ Números válidos:', validMembers.length);
+      
+      if (membersBox) membersBox.value = validMembers.join('\n');
+      if (membersCount) membersCount.textContent = validMembers.length;
+      
+      // Exibir estatísticas
+      if (e.data.stats) {
+        const { apiDirect, lidResolved, domFallback, duplicates, failed } = e.data.stats;
+        const total = apiDirect + lidResolved + domFallback;
+        
+        alert(
+          `✅ ${validMembers.length} NÚMEROS REAIS extraídos!\n\n` +
+          `📊 ESTATÍSTICAS:\n` +
+          `🔹 Via API: ${apiDirect}\n` +
+          `🔹 LIDs resolvidos: ${lidResolved}\n` +
+          `🔹 Via DOM: ${domFallback}\n` +
+          `♻️ Duplicatas: ${duplicates}\n` +
+          `❌ Falhas: ${failed}\n` +
+          `━━━━━━━━━━━━━━━━━━\n` +
+          `✅ Taxa: ${Math.round((validMembers.length / (total + failed)) * 100)}%`
+        );
+      } else {
+        alert(`✅ ${validMembers.length} membros extraídos!`);
+      }
     } else {
-      alert('❌ Erro ao extrair membros: ' + (e.data.error || 'Erro desconhecido'));
+      alert('❌ Erro: ' + (e.data.error || 'Desconhecido'));
     }
   }
   
