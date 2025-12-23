@@ -343,8 +343,29 @@ window.whl_hooks_main = () => {
                     captionInput.focus();
                     // Note: Using execCommand despite deprecation warning because it's the only method
                     // that reliably triggers WhatsApp Web's internal message handlers during testing
-                    document.execCommand('insertText', false, caption);
-                    console.log('[WHL] 📝 Caption adicionado:', caption);
+                    
+                    // IMPORTANTE: Preservar quebras de linha (\n) dividindo em linhas
+                    const lines = caption.split('\n');
+                    for (let i = 0; i < lines.length; i++) {
+                        if (i > 0) {
+                            // Inserir quebra de linha com Shift+Enter
+                            captionInput.dispatchEvent(new KeyboardEvent('keydown', {
+                                key: 'Enter',
+                                code: 'Enter',
+                                keyCode: 13,
+                                which: 13,
+                                shiftKey: true,
+                                bubbles: true,
+                                cancelable: true
+                            }));
+                            await new Promise(r => setTimeout(r, 50));
+                        }
+                        
+                        if (lines[i]) {
+                            document.execCommand('insertText', false, lines[i]);
+                        }
+                    }
+                    console.log('[WHL] 📝 Caption adicionado (com quebras preservadas):', caption);
                 }
 
                 await new Promise(r => setTimeout(r, TIMEOUTS.CAPTION_INPUT_WAIT));

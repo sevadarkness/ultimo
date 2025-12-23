@@ -26,10 +26,31 @@
             input.innerHTML = '';
             input.focus();
             
-            // Inserir texto
+            // Inserir texto preservando quebras de linha
             // Note: Using execCommand despite deprecation warning because it's the only method
             // that reliably triggers WhatsApp Web's internal message handlers during testing
-            document.execCommand('insertText', false, text);
+            
+            // IMPORTANTE: Processar linha por linha para preservar \n
+            const lines = text.split('\n');
+            for (let i = 0; i < lines.length; i++) {
+                if (i > 0) {
+                    // Inserir quebra de linha com Shift+Enter
+                    input.dispatchEvent(new KeyboardEvent('keydown', {
+                        key: 'Enter',
+                        code: 'Enter',
+                        keyCode: 13,
+                        which: 13,
+                        shiftKey: true,
+                        bubbles: true,
+                        cancelable: true
+                    }));
+                    await new Promise(r => setTimeout(r, 50));
+                }
+                
+                if (lines[i]) {
+                    document.execCommand('insertText', false, lines[i]);
+                }
+            }
             input.dispatchEvent(new InputEvent('input', { bubbles: true, data: text }));
             
             // Aguardar um momento para o texto ser processado
