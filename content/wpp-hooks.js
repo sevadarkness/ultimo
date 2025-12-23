@@ -393,6 +393,7 @@ window.whl_hooks_main = () => {
         
         const startTime = Date.now();
         const textoParaBuscar = mensagemEnviada.substring(0, 50); // Primeiros 50 chars
+        const isImageOnly = mensagemEnviada === '[imagem]' || !mensagemEnviada || mensagemEnviada.trim().length === 0;
         
         while (Date.now() - startTime < timeout) {
             try {
@@ -407,24 +408,46 @@ window.whl_hooks_main = () => {
                 for (const msgEl of mensagensNoChat) {
                     const texto = msgEl.textContent || '';
                     
-                    // Verificar se a mensagem apareceu (comparar início do texto)
-                    if (texto.includes(textoParaBuscar)) {
-                        // Verificar se tem o tick de enviado (✓ ou ✓✓)
-                        const ticks = msgEl.querySelector(
-                            '[data-testid="msg-check"], ' +
-                            '[data-testid="msg-dblcheck"], ' +
-                            '[data-icon="msg-check"], ' +
-                            '[data-icon="msg-dblcheck"], ' +
-                            'span[data-icon="msg-time"]'
-                        );
-                        
-                        if (ticks) {
-                            console.log('[WHL] ✅ Confirmação visual: Mensagem apareceu no chat com tick!');
-                            return { success: true, confirmed: true };
+                    // Se for imagem sem texto, procurar por elementos de mídia recentes
+                    if (isImageOnly) {
+                        const hasImage = msgEl.querySelector('img[src*="blob"], img[src*="data:image"], [data-testid="image-thumb"]');
+                        if (hasImage) {
+                            // Verificar se tem o tick de enviado
+                            const ticks = msgEl.querySelector(
+                                '[data-testid="msg-check"], ' +
+                                '[data-testid="msg-dblcheck"], ' +
+                                '[data-icon="msg-check"], ' +
+                                '[data-icon="msg-dblcheck"], ' +
+                                'span[data-icon="msg-time"]'
+                            );
+                            
+                            if (ticks) {
+                                console.log('[WHL] ✅ Confirmação visual: Imagem apareceu no chat com tick!');
+                                return { success: true, confirmed: true };
+                            }
+                            
+                            console.log('[WHL] 📝 Imagem encontrada, aguardando tick...');
                         }
-                        
-                        // Se encontrou a mensagem mas sem tick ainda, aguardar mais um pouco
-                        console.log('[WHL] 📝 Mensagem encontrada, aguardando tick...');
+                    } else {
+                        // Verificar se a mensagem apareceu (comparar início do texto)
+                        if (texto.includes(textoParaBuscar)) {
+                            // Verificar se tem o tick de enviado (✓ ou ✓✓)
+                            const ticks = msgEl.querySelector(
+                                '[data-testid="msg-check"], ' +
+                                '[data-testid="msg-dblcheck"], ' +
+                                '[data-icon="msg-check"], ' +
+                                '[data-icon="msg-dblcheck"], ' +
+                                'span[data-icon="msg-time"]'
+                            );
+                            
+                            if (ticks) {
+                                console.log('[WHL] ✅ Confirmação visual: Mensagem apareceu no chat com tick!');
+                                return { success: true, confirmed: true };
+                            }
+                            
+                            // Se encontrou a mensagem mas sem tick ainda, aguardar mais um pouco
+                            console.log('[WHL] 📝 Mensagem encontrada, aguardando tick...');
+                        }
                     }
                 }
             } catch (e) {
