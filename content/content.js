@@ -515,6 +515,40 @@
         font-weight: bold;
       }
       
+      /* PR #78: Highlighted input fields for Numbers and Message */
+      #whlPanel .whl-input-highlight {
+        background: linear-gradient(135deg, rgba(0,168,132,0.08), rgba(111,0,255,0.08));
+        border: 2px solid rgba(0,168,132,0.3);
+        border-radius: 12px;
+        padding: 16px;
+        margin: 10px 0;
+        box-shadow: 0 4px 12px rgba(0,168,132,0.1);
+        transition: all 0.3s ease;
+      }
+      
+      #whlPanel .whl-input-highlight:hover {
+        border-color: rgba(0,168,132,0.5);
+        box-shadow: 0 6px 20px rgba(0,168,132,0.2);
+      }
+      
+      #whlPanel .whl-input-highlight .title {
+        color: #00a884 !important;
+        font-weight: bold;
+        font-size: 14px;
+        margin-bottom: 8px;
+      }
+      
+      #whlPanel .whl-input-highlight textarea {
+        background: rgba(0,0,0,0.3) !important;
+        border: 2px solid rgba(0,168,132,0.4) !important;
+        margin-top: 0;
+      }
+      
+      #whlPanel .whl-input-highlight textarea:focus {
+        border-color: #00a884 !important;
+        box-shadow: 0 0 0 3px rgba(0,168,132,0.1);
+      }
+      
       #whlPanel button{margin-top:8px;padding:10px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.12);
         background:rgba(255,255,255,.06);color:#fff;font-weight:900;cursor:pointer;box-sizing:border-box}
       #whlPanel button.primary{background:linear-gradient(180deg, rgba(111,0,255,.95), rgba(78,0,190,.95));
@@ -596,6 +630,26 @@
         #whlPanel .settings-grid{grid-template-columns:1fr}
       }
 
+      /* PR #78: Tooltips and help text */
+      #whlPanel .whl-tooltip {
+        display: inline-block;
+        position: relative;
+        cursor: help;
+        color: #00a884;
+        font-size: 16px;
+        margin-left: 6px;
+        vertical-align: middle;
+      }
+      
+      #whlPanel .whl-help-text {
+        font-size: 11px;
+        color: #00a884;
+        background: rgba(0,168,132,0.1);
+        padding: 6px 10px;
+        border-radius: 6px;
+        margin-top: 6px;
+        border-left: 3px solid #00a884;
+      }
 
       /* ===== TABS SYSTEM ===== */
       #whlPanel .whl-tabs {
@@ -854,10 +908,13 @@
       <div class="whl-tab-content active" id="whl-tab-principal">
         
         <div class="card">
-          <div class="title" style="font-size:13px">Números (um por linha)</div>
-          <div class="muted">Cole sua lista aqui. Ex: 5511999998888</div>
-          <textarea id="whlNumbers" placeholder="5511999998888
-5511988887777"></textarea>
+          <!-- PR #78: Highlighted numbers field -->
+          <div class="whl-input-highlight">
+            <div class="title" style="font-size:14px;color:#00a884;font-weight:bold;margin-bottom:8px">📱 Números (um por linha)</div>
+            <div class="muted" style="margin-bottom:8px">Cole sua lista aqui. Ex: 5511999998888</div>
+            <textarea id="whlNumbers" placeholder="5511999998888
+5511988887777" style="min-height:120px;background:rgba(0,0,0,0.3);border:2px solid #00a884"></textarea>
+          </div>
 
           <div style="margin-top:10px">
             <div class="muted">📊 Importar CSV (phone,message opcional)</div>
@@ -869,10 +926,16 @@
             <div class="tiny" id="whlCsvHint" style="margin-top:6px"></div>
           </div>
 
-          <div class="title" style="font-size:13px;margin-top:10px">Mensagem padrão</div>
-          <div style="position:relative">
-            <textarea id="whlMsg" placeholder="Digite sua mensagem…"></textarea>
-            <button id="whlEmojiBtn" style="position:absolute;right:10px;top:10px;padding:6px 10px;border-radius:8px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);cursor:pointer;font-size:18px;line-height:1" title="Inserir emoji">😊</button>
+          <!-- PR #78: Highlighted message field -->
+          <div class="whl-input-highlight" style="margin-top:16px">
+            <div class="title" style="font-size:14px;color:#00a884;font-weight:bold;margin-bottom:8px">💬 Mensagem padrão</div>
+            <div class="muted" style="margin-bottom:8px">
+              Use variáveis: {{nome}}, {{first_name}}, {{phone}}
+            </div>
+            <div style="position:relative">
+              <textarea id="whlMsg" placeholder="Digite sua mensagem…" style="min-height:120px;background:rgba(0,0,0,0.3);border:2px solid #00a884;padding-right:50px"></textarea>
+              <button id="whlEmojiBtn" style="position:absolute;right:10px;top:10px;padding:6px 10px;border-radius:8px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);cursor:pointer;font-size:18px;line-height:1" title="Inserir emoji">😊</button>
+            </div>
           </div>
           
           <!-- PR #78: Emoji Picker -->
