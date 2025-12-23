@@ -32,32 +32,21 @@ window.whl_hooks_main = () => {
         return null;
     }
 
-    // ===== Safe Store bindings =====
-    const Store = {};
-    Store.ChatCollection = findModule(m => m?.getModelsArray && m?._models);
-    Store.ContactCollection = findModule(m => m?.get && m?.find && m?.getModelsArray && m?._models);
-    Store.GroupMetadata = findModule(m => m?.GroupMetadata || m?.default?.GroupMetadata);
-    Store.WidFactory = findModule(m => m?.createWid || m?.default?.createWid);
-
-    if (!Store.ChatCollection) console.warn('[WHL Hooks] ChatCollection not found');
-    if (!Store.ContactCollection) console.warn('[WHL Hooks] ContactCollection not found');
-
-    // Expor globalmente para debug
-    window.WHLStore = Store;
-
-    // ===== ACESSO AOS MÓDULOS VIA REQUIRE =====
+    // ===== ACESSO AOS MÓDULOS VIA REQUIRE (LAZY LOADING) =====
+    // Chamado DENTRO de cada função para garantir que módulos já existem
     function getModules() {
         try {
+            const ChatCollection = require('WAWebChatCollection');
+            const ContactCollection = require('WAWebContactCollection');
+            const BlocklistCollection = require('WAWebBlocklistCollection');
+            
             return {
-                ChatCollection: require('WAWebChatCollection').ChatCollection,
-                ContactCollection: require('WAWebContactCollection').ContactCollection,
-                BlocklistCollection: require('WAWebBlocklistCollection').BlocklistCollection,
-                WidFactory: require('WAWebWidFactory'),
-                MsgKey: require('WAWebMsgKey'),
-                ComposeBoxActions: require('WAWebComposeBoxActions').ComposeBoxActions
+                ChatCollection: ChatCollection?.ChatCollection || null,
+                ContactCollection: ContactCollection?.ContactCollection || null,
+                BlocklistCollection: BlocklistCollection?.BlocklistCollection || null
             };
         } catch (e) {
-            console.error('[WHL] Erro ao carregar módulos:', e);
+            console.warn('[WHL Hooks] Módulos não disponíveis ainda:', e.message);
             return null;
         }
     }
@@ -90,76 +79,77 @@ window.whl_hooks_main = () => {
 
     // ===== EXTRAÇÃO DE GRUPOS =====
     function extrairGrupos() {
+        const modules = getModules();
+        if (!modules || !modules.ChatCollection) {
+            console.warn('[WHL Hooks] ChatCollection não disponível');
+            return { success: false, groups: [], error: 'Módulos não carregados' };
+        }
+        
         try {
-            const modules = getModules();
-            if (!modules || !modules.ChatCollection) {
-                return { success: false, error: 'Módulos não disponíveis', groups: [] };
-            }
-            
             const models = modules.ChatCollection.getModelsArray() || [];
-            
             const grupos = models
-                .filter(m => m.id.server === 'g.us')
+                .filter(m => m.id && m.id.server === 'g.us')
                 .map(g => ({
                     id: g.id._serialized,
                     name: g.name || g.formattedTitle || 'Grupo sem nome',
                     participants: g.groupMetadata?.participants?.length || 0
                 }));
             
+            console.log('[WHL Hooks] Grupos extraídos:', grupos.length);
             return { success: true, groups: grupos, count: grupos.length };
         } catch (e) {
-            return { success: false, error: e.message, groups: [] };
+            console.error('[WHL Hooks] Erro ao extrair grupos:', e);
+            return { success: false, groups: [], error: e.message };
         }
     }
 
     // ===== EXTRAÇÃO DE ARQUIVADOS =====
     function extrairArquivados() {
+        const modules = getModules();
+        if (!modules || !modules.ChatCollection) {
+            return { success: false, archived: [], error: 'Módulos não carregados' };
+        }
+        
         try {
-            const modules = getModules();
-            if (!modules || !modules.ChatCollection) {
-                return { success: false, error: 'Módulos não disponíveis' };
-            }
-            
             const models = modules.ChatCollection.getModelsArray() || [];
             
             const arquivados = models
-                .filter(m => m.archive === true && m.id.server === 'c.us')
-                .map(m => {
-                    if (m.id.user) return m.id.user;
-                    const serialized = m.id._serialized || '';
-                    return serialized.includes('@c.us') ? serialized.replace('@c.us', '') : serialized;
-                })
+                .filter(m => m.archive === true && m.id && m.id.server === 'c.us')
+                .map(m => m.id.user || (typeof m.id._serialized === 'string' ? m.id._serialized.replace('@c.us', '') : ''))
                 .filter(n => /^\d{8,15}$/.test(n));
             
+            console.log('[WHL Hooks] Arquivados extraídos:', arquivados.length);
             return { success: true, archived: [...new Set(arquivados)], count: arquivados.length };
         } catch (e) {
-            return { success: false, error: e.message };
+            console.error('[WHL Hooks] Erro ao extrair arquivados:', e);
+            return { success: false, archived: [], error: e.message };
         }
     }
 
     // ===== EXTRAÇÃO DE BLOQUEADOS =====
     function extrairBloqueados() {
+        const modules = getModules();
+        if (!modules || !modules.BlocklistCollection) {
+            return { success: false, blocked: [], error: 'BlocklistCollection não disponível' };
+        }
+        
         try {
-            const modules = getModules();
-            if (!modules || !modules.BlocklistCollection) {
-                return { success: false, error: 'BlocklistCollection não disponível' };
-            }
-            
             const blocklist = modules.BlocklistCollection.getModelsArray 
                 ? modules.BlocklistCollection.getModelsArray() 
                 : (modules.BlocklistCollection._models || []);
             
             const bloqueados = blocklist
                 .map(b => {
-                    if (b.id?.user) return b.id.user;
-                    const serialized = b.id?._serialized || '';
-                    return serialized.includes('@c.us') ? serialized.replace('@c.us', '') : null;
+                    if (!b || !b.id) return '';
+                    return b.id.user || (typeof b.id._serialized === 'string' ? b.id._serialized.replace('@c.us', '') : '');
                 })
                 .filter(n => n && /^\d{8,15}$/.test(n));
             
+            console.log('[WHL Hooks] Bloqueados extraídos:', bloqueados.length);
             return { success: true, blocked: [...new Set(bloqueados)], count: bloqueados.length };
         } catch (e) {
-            return { success: false, error: e.message };
+            console.error('[WHL Hooks] Erro ao extrair bloqueados:', e);
+            return { success: false, blocked: [], error: e.message };
         }
     }
 
@@ -502,44 +492,29 @@ window.whl_hooks_main = () => {
     }
     
     /**
-     * Carregar grupos via múltiplos métodos
+     * Carregar grupos via require() interno
      */
     function carregarGrupos() {
         try {
-            let Store = window.Store || {};
-            let grupos = [];
+            // Usar require() diretamente aqui, não Store global
+            const CC = require('WAWebChatCollection');
+            const ChatCollection = CC?.ChatCollection;
             
-            // Método 1: Store.Chat
-            if (Store.Chat?.models || MODULES.CHAT_COLLECTION?.models) {
-                const chats = Store.Chat?.models || MODULES.CHAT_COLLECTION?.models || [];
-                grupos = chats
-                    .filter(c => c.isGroup || c.id?._serialized?.endsWith('@g.us'))
-                    .map(g => ({
-                        id: g.id._serialized,
-                        name: g.name || g.formattedTitle || g.contact?.name || 'Grupo sem nome',
-                        participants: g.groupMetadata?.participants?.length || 0
-                    }));
+            if (!ChatCollection || !ChatCollection.getModelsArray) {
+                console.warn('[WHL] ChatCollection não disponível para grupos');
+                return { success: false, groups: [] };
             }
             
-            // Método 2: via require se Store falhou
-            if (grupos.length === 0) {
-                try {
-                    const ChatCollection = require('WAWebChatCollection');
-                    if (ChatCollection?.Chat?.models) {
-                        grupos = ChatCollection.Chat.models
-                            .filter(c => c.isGroup || c.id?._serialized?.endsWith('@g.us'))
-                            .map(g => ({
-                                id: g.id._serialized,
-                                name: g.name || g.formattedTitle || 'Grupo sem nome',
-                                participants: g.groupMetadata?.participants?.length || 0
-                            }));
-                    }
-                } catch(e) {
-                    console.log('[WHL] Método require grupos falhou:', e.message);
-                }
-            }
+            const models = ChatCollection.getModelsArray() || [];
+            const grupos = models
+                .filter(c => c.id && c.id.server === 'g.us')
+                .map(g => ({
+                    id: g.id._serialized,
+                    name: g.name || g.formattedTitle || g.contact?.name || 'Grupo sem nome',
+                    participants: g.groupMetadata?.participants?.length || 0
+                }));
             
-            console.log(`[WHL] ${grupos.length} grupos encontrados`);
+            console.log(`[WHL] ${grupos.length} grupos encontrados via require()`);
             return { success: true, groups: grupos };
         } catch (error) {
             console.error('[WHL] Erro ao carregar grupos:', error);
@@ -993,10 +968,15 @@ window.whl_hooks_main = () => {
         if (type === 'WHL_LOAD_ARCHIVED_BLOCKED') {
             const arquivados = extrairArquivados();
             const bloqueados = extrairBloqueados();
+            
             window.postMessage({ 
                 type: 'WHL_ARCHIVED_BLOCKED_RESULT', 
                 archived: arquivados.archived || [],
-                blocked: bloqueados.blocked || []
+                blocked: bloqueados.blocked || [],
+                stats: {
+                    archived: arquivados.count || 0,
+                    blocked: bloqueados.count || 0
+                }
             }, '*');
         }
         
