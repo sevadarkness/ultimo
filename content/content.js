@@ -2011,6 +2011,23 @@
   async function checkAndResumeCampaignAfterURLNavigation() {
     const st = await getState();
     
+    // NOVO: Verificar se foi pausado ou parado ANTES de continuar
+    if (!st.isRunning) {
+      console.log('[WHL] ⏹️ Campanha foi parada, não continuando');
+      st.urlNavigationInProgress = false;
+      await setState(st);
+      await render();
+      return;
+    }
+    
+    if (st.isPaused) {
+      console.log('[WHL] ⏸️ Campanha está pausada, aguardando retomada');
+      st.urlNavigationInProgress = false;
+      await setState(st);
+      await render();
+      return;
+    }
+    
     // Verificar se estamos retomando após navegação URL
     if (!st.urlNavigationInProgress) {
       return;
