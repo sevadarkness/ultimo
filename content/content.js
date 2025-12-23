@@ -5331,9 +5331,9 @@ try {
     // PR #78: Emoji Picker
     const emojiBtn = document.getElementById('whlEmojiBtn');
     const emojiPicker = document.getElementById('whlEmojiPicker');
-    const msgTextarea = document.getElementById('whlMsg');
+    const emojiMsgTextarea = document.getElementById('whlMsg');
     
-    if (emojiBtn && emojiPicker && msgTextarea) {
+    if (emojiBtn && emojiPicker && emojiMsgTextarea) {
       // Emoji list - categorized
       const emojis = [
         // Smileys
@@ -5370,13 +5370,13 @@ try {
             const emoji = e.target.textContent;
             
             // Insert at cursor position
-            const start = msgTextarea.selectionStart;
-            const end = msgTextarea.selectionEnd;
-            const text = msgTextarea.value;
+            const start = emojiMsgTextarea.selectionStart;
+            const end = emojiMsgTextarea.selectionEnd;
+            const text = emojiMsgTextarea.value;
             
-            msgTextarea.value = text.substring(0, start) + emoji + text.substring(end);
-            msgTextarea.selectionStart = msgTextarea.selectionEnd = start + emoji.length;
-            msgTextarea.focus();
+            emojiMsgTextarea.value = text.substring(0, start) + emoji + text.substring(end);
+            emojiMsgTextarea.selectionStart = emojiMsgTextarea.selectionEnd = start + emoji.length;
+            emojiMsgTextarea.focus();
             
             // Update preview
             updateMessagePreview();
