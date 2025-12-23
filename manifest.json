@@ -3,6 +3,7 @@
   "name": "WhatsHybrid Lite",
   "version": "1.3.7",
   "description": "WhatsHybrid Lite — envio 100% automático de mensagens no WhatsApp Web (URL)",
+  "incognito": "split",
   "icons": {
     "16": "icons/16.png",
     "48": "icons/48.png",
@@ -22,6 +23,8 @@
   ],
   "host_permissions": [
     "https://web.whatsapp.com/*",
+    "https://api.whatsapp.com/*",
+    "https://*.whatsapp.net/*",
     "wss://web.whatsapp.com/*"
   ],
   "background": {
@@ -30,7 +33,8 @@
   "content_scripts": [
     {
       "matches": [
-        "https://web.whatsapp.com/*"
+        "https://web.whatsapp.com/*",
+        "https://api.whatsapp.com/*"
       ],
       "js": [
         "content/content.js",

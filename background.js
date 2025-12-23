@@ -223,47 +223,57 @@ async function startCampaign(queue, config) {
 }
 
 async function ensureWorkerTab() {
-  // Check if worker tab exists and is valid
+  // Reaproveita se já existe
   if (workerTabId) {
-    try {
-      const tab = await chrome.tabs.get(workerTabId);
-      if (tab && tab.url?.includes('web.whatsapp.com')) {
-        console.log('[WHL Background] Reusing existing worker tab');
-        return;
-      }
-    } catch (e) {
-      workerTabId = null;
+    try { 
+      await chrome.tabs.get(workerTabId); 
+      return workerTabId; 
+    } catch { 
+      workerTabId = null; 
     }
   }
+
+  // Verifica permissão para incógnito
+  const allowedIncognito = await new Promise(res => 
+    chrome.extension.isAllowedIncognitoAccess(res)
+  );
   
-  // Create new worker tab (minimized/hidden)
-  console.log('[WHL Background] Creating new worker tab...');
-  
-  const tab = await chrome.tabs.create({
+  if (!allowedIncognito) {
+    console.warn('[WHL Background] Extensão sem permissão em anônimo');
+    notifyPopup({ action: 'NEED_INCOGNITO_PERMISSION' });
+    // Fallback: criar tab normal se não tem permissão
+    const tab = await chrome.tabs.create({
+      url: 'https://web.whatsapp.com/?whl_worker=true',
+      active: false,
+      pinned: true
+    });
+    workerTabId = tab.id;
+    chrome.storage.local.set({ workerTabId });
+    return workerTabId;
+  }
+
+  // Cria janela incógnita minimizada
+  const win = await chrome.windows.create({
     url: 'https://web.whatsapp.com/?whl_worker=true',
-    active: false, // Don't focus on the tab
-    pinned: true   // Pinned to avoid accidental closure
+    incognito: true,
+    focused: false,
+    state: 'minimized'
   });
-  
+
+  const tab = win.tabs && win.tabs[0];
   workerTabId = tab.id;
   chrome.storage.local.set({ workerTabId });
-  
-  // Wait for tab to load
-  await new Promise((resolve) => {
-    const listener = (tabId, changeInfo) => {
-      if (tabId === workerTabId && changeInfo.status === 'complete') {
-        chrome.tabs.onUpdated.removeListener(listener);
-        resolve();
-      }
-    };
-    chrome.tabs.onUpdated.addListener(listener);
-    
-    // Timeout after 30 seconds
-    setTimeout(() => {
-      chrome.tabs.onUpdated.removeListener(listener);
-      resolve();
-    }, 30000);
-  });
+  console.log('[WHL Background] Worker (incognito) criado:', workerTabId);
+  return workerTabId;
+}
+
+// Helper: timeout para evitar travas
+function withTimeout(promise, ms = 45000) {
+  let t;
+  const timeout = new Promise((_, rej) => 
+    t = setTimeout(() => rej(new Error('TIMEOUT')), ms)
+  );
+  return Promise.race([promise.finally(() => clearTimeout(t)), timeout]);
 }
 
 async function processNextInQueue() {
@@ -272,7 +282,7 @@ async function processNextInQueue() {
   }
   
   if (campaignState.currentIndex >= campaignQueue.length) {
-    console.log('[WHL Background] 🎉 Campaign completed!');
+    console.log('[WHL Background] 🎉 Campanha finalizada!');
     campaignState.isRunning = false;
     saveCampaignState();
     notifyPopup({ action: 'CAMPAIGN_COMPLETED' });
@@ -288,35 +298,38 @@ async function processNextInQueue() {
     return;
   }
   
-  console.log(`[WHL Background] Processing ${current.phone} (${campaignState.currentIndex + 1}/${campaignQueue.length})`);
+  console.log(`[WHL Background] Processando ${current.phone} (${campaignState.currentIndex + 1}/${campaignQueue.length})`);
   
   // Update status to "sending"
   current.status = 'sending';
   saveCampaignState();
   notifyPopup({ action: 'CAMPAIGN_PROGRESS', current: campaignState.currentIndex, total: campaignQueue.length });
   
+  await ensureWorkerTab();
+
+  let result;
   try {
-    // Send command to worker tab
-    const result = await chrome.tabs.sendMessage(workerTabId, {
-      action: 'SEND_MESSAGE_URL',
-      phone: current.phone,
-      text: campaignState.config?.message || '',
-      imageData: campaignState.config?.imageData || null
-    });
-    
-    if (result.success) {
-      current.status = 'sent';
-      console.log(`[WHL Background] ✅ Sent to ${current.phone}`);
-    } else {
-      current.status = 'failed';
-      current.error = result.error;
-      console.log(`[WHL Background] ❌ Failed to send to ${current.phone}: ${result.error}`);
-    }
-    
-  } catch (error) {
+    result = await withTimeout(
+      chrome.tabs.sendMessage(workerTabId, {
+        action: 'SEND_MESSAGE_URL',
+        phone: current.phone,
+        text: campaignState.config?.message || '',
+        imageData: campaignState.config?.imageData || null
+      }), 
+      45000
+    );
+  } catch (err) {
+    result = { success: false, error: err?.message || 'Unknown error' };
+  }
+  
+  // Atualização de status SEMPRE acontece
+  if (result && result.success) {
+    current.status = 'sent';
+    console.log(`[WHL Background] ✅ Enviado para ${current.phone}`);
+  } else {
     current.status = 'failed';
-    current.error = error.message;
-    console.error(`[WHL Background] ❌ Error sending to ${current.phone}:`, error);
+    current.error = result?.error || 'No response from worker';
+    console.log(`[WHL Background] ❌ Falha: ${current.phone} - ${current.error}`);
   }
   
   // Move to next
@@ -331,7 +344,7 @@ async function processNextInQueue() {
     error: current.error 
   });
   
-  // Humanized delay before next
+  // Delay humanizado
   const minDelay = campaignState.config?.delayMin || 3000;
   const maxDelay = campaignState.config?.delayMax || 8000;
   const delay = Math.floor(Math.random() * (maxDelay - minDelay)) + minDelay;
