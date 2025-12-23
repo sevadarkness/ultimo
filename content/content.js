@@ -86,7 +86,7 @@
       this.observerChats();
       this.hookNetwork();
       this.localStorageExtract();
-      this.autoScroll();
+      // REMOVIDO: this.autoScroll() - scroll só deve ocorrer ao clicar "Extrair Contatos"
       setInterval(() => {
         try {
           HarvesterStore.save();
@@ -778,9 +778,10 @@
           
           <div class="row" style="margin-top:10px">
             <button class="success" style="flex:1" id="whlExtractContacts">📥 Extrair contatos</button>
-            <button style="width:150px" id="whlCopyExtracted">📋 Copiar Números</button>
+            <button style="width:150px" id="whlCopyExtracted">📋 Copiar Todos</button>
           </div>
           
+          <!-- Botões de controle - SEMPRE VISÍVEIS durante extração -->
           <div class="row" style="margin-top:8px;display:none" id="whlExtractControls">
             <button class="warning" style="flex:1" id="whlPauseExtraction">⏸️ Pausar</button>
             <button class="danger" style="flex:1" id="whlCancelExtraction">⛔ Cancelar</button>
@@ -793,8 +794,34 @@
             <div class="tiny" style="margin-top:6px;text-align:center" id="whlExtractProgressText">0%</div>
           </div>
           
-          <textarea id="whlExtractedNumbers" placeholder="Clique em 'Extrair contatos'…" style="margin-top:10px;min-height:300px"></textarea>
-          <div class="tiny" id="whlExtractStatus" style="margin-top:6px;opacity:.8"></div>
+          <!-- Seção: Contatos Normais -->
+          <div class="extract-section" style="margin-top:12px">
+            <label style="display:block;font-weight:700;margin-bottom:6px">
+              📱 Contatos Normais (<span id="whlNormalCount">0</span>)
+            </label>
+            <textarea id="whlExtractedNumbers" placeholder="Clique em 'Extrair contatos'…" style="min-height:200px"></textarea>
+            <button style="width:100%;margin-top:6px" id="whlCopyNormal">📋 Copiar Normais</button>
+          </div>
+          
+          <!-- Seção: Contatos Arquivados - DESTACADO -->
+          <div class="extract-section archived" style="margin-top:12px;background:#f5f5f5;border-left:4px solid #888;padding:12px;border-radius:8px">
+            <label style="display:block;font-weight:700;margin-bottom:6px;color:#333">
+              📁 Arquivados (<span id="whlArchivedCount">0</span>)
+            </label>
+            <textarea id="whlArchivedNumbers" placeholder="Nenhum contato arquivado" style="min-height:120px;background:#fff"></textarea>
+            <button style="width:100%;margin-top:6px" id="whlCopyArchived">📋 Copiar Arquivados</button>
+          </div>
+          
+          <!-- Seção: Contatos Bloqueados - DESTACADO -->
+          <div class="extract-section blocked" style="margin-top:12px;background:#ffe6e6;border-left:4px solid #d00;padding:12px;border-radius:8px">
+            <label style="display:block;font-weight:700;margin-bottom:6px;color:#900">
+              🚫 Bloqueados (<span id="whlBlockedCount">0</span>)
+            </label>
+            <textarea id="whlBlockedNumbers" placeholder="Nenhum contato bloqueado" style="min-height:120px;background:#fff"></textarea>
+            <button style="width:100%;margin-top:6px" id="whlCopyBlocked">📋 Copiar Bloqueados</button>
+          </div>
+          
+          <div class="tiny" id="whlExtractStatus" style="margin-top:10px;opacity:.8"></div>
           
           <button class="primary" style="width:100%;margin-top:8px" id="whlExportExtractedCsv">📥 Exportar CSV</button>
         </div>
@@ -2465,8 +2492,29 @@ try {
     }
 
     if (e.data.type === 'WHL_EXTRACT_RESULT') {
-      const nums = e.data.numbers || [];
-      if (boxExtract) boxExtract.value = nums.join('\n');
+      // Receber resultados categorizados
+      const normal = e.data.normal || e.data.numbers || [];
+      const archived = e.data.archived || [];
+      const blocked = e.data.blocked || [];
+      
+      // Preencher textareas
+      if (boxExtract) boxExtract.value = normal.join('\n');
+      
+      const archivedBox = document.getElementById('whlArchivedNumbers');
+      if (archivedBox) archivedBox.value = archived.join('\n');
+      
+      const blockedBox = document.getElementById('whlBlockedNumbers');
+      if (blockedBox) blockedBox.value = blocked.join('\n');
+      
+      // Atualizar contadores
+      const normalCount = document.getElementById('whlNormalCount');
+      if (normalCount) normalCount.textContent = normal.length;
+      
+      const archivedCount = document.getElementById('whlArchivedCount');
+      if (archivedCount) archivedCount.textContent = archived.length;
+      
+      const blockedCount = document.getElementById('whlBlockedCount');
+      if (blockedCount) blockedCount.textContent = blocked.length;
       
       isExtracting = false;
       isPaused = false;
@@ -2474,10 +2522,11 @@ try {
       if (extractControls) extractControls.style.display = 'none';
       
       const statusEl = document.getElementById('whlExtractStatus');
+      const totalCount = normal.length + archived.length + blocked.length;
       if (e.data.cancelled) {
-        if (statusEl) statusEl.textContent = `⛔ Extração cancelada. Total: ${nums.length} números`;
+        if (statusEl) statusEl.textContent = `⛔ Extração cancelada. Total: ${totalCount} números (${normal.length} normais, ${archived.length} arquivados, ${blocked.length} bloqueados)`;
       } else {
-        if (statusEl) statusEl.textContent = `✅ Finalizado! Total: ${nums.length} números`;
+        if (statusEl) statusEl.textContent = `✅ Finalizado! Total: ${totalCount} números (${normal.length} normais, ${archived.length} arquivados, ${blocked.length} bloqueados)`;
       }
       
       const progressBar = document.getElementById('whlExtractProgress');
@@ -2526,18 +2575,27 @@ try {
     }
   });
 
-  // Copiar números para clipboard (NÃO adiciona automaticamente na aba principal)
+  // Copiar TODOS os números (soma de normais + arquivados + bloqueados)
   const btnCopyToClipboard = document.getElementById('whlCopyExtracted');
-  if (btnCopyToClipboard && boxExtract) {
+  if (btnCopyToClipboard) {
     btnCopyToClipboard.addEventListener('click', async () => {
-      const numbers = boxExtract.value || '';
-      if (!numbers.trim()) {
+      const normalBox = document.getElementById('whlExtractedNumbers');
+      const archivedBox = document.getElementById('whlArchivedNumbers');
+      const blockedBox = document.getElementById('whlBlockedNumbers');
+      
+      const normal = (normalBox?.value || '').split('\n').filter(n => n.trim());
+      const archived = (archivedBox?.value || '').split('\n').filter(n => n.trim());
+      const blocked = (blockedBox?.value || '').split('\n').filter(n => n.trim());
+      
+      const allNumbers = [...normal, ...archived, ...blocked].join('\n');
+      
+      if (!allNumbers.trim()) {
         alert('Nenhum número para copiar. Execute a extração primeiro.');
         return;
       }
       
       try {
-        await navigator.clipboard.writeText(numbers);
+        await navigator.clipboard.writeText(allNumbers);
         const originalText = btnCopyToClipboard.textContent;
         btnCopyToClipboard.textContent = '✅ Copiado!';
         setTimeout(() => {
@@ -2546,12 +2604,90 @@ try {
         
         const statusEl = document.getElementById('whlExtractStatus');
         if (statusEl) {
-          const count = numbers.split('\n').filter(n => n.trim()).length;
-          statusEl.textContent = `✅ ${count} números copiados para área de transferência`;
+          const total = normal.length + archived.length + blocked.length;
+          statusEl.textContent = `✅ ${total} números copiados (${normal.length} normais, ${archived.length} arquivados, ${blocked.length} bloqueados)`;
         }
       } catch (err) {
         console.error('[WHL] Erro ao copiar:', err);
         alert('Erro ao copiar números para área de transferência');
+      }
+    });
+  }
+  
+  // Copiar apenas números NORMAIS
+  const btnCopyNormal = document.getElementById('whlCopyNormal');
+  if (btnCopyNormal) {
+    btnCopyNormal.addEventListener('click', async () => {
+      const normalBox = document.getElementById('whlExtractedNumbers');
+      const numbers = normalBox?.value || '';
+      
+      if (!numbers.trim()) {
+        alert('Nenhum número normal para copiar.');
+        return;
+      }
+      
+      try {
+        await navigator.clipboard.writeText(numbers);
+        const originalText = btnCopyNormal.textContent;
+        btnCopyNormal.textContent = '✅ Copiado!';
+        setTimeout(() => {
+          btnCopyNormal.textContent = originalText;
+        }, 2000);
+      } catch (err) {
+        console.error('[WHL] Erro ao copiar:', err);
+        alert('Erro ao copiar números');
+      }
+    });
+  }
+  
+  // Copiar apenas números ARQUIVADOS
+  const btnCopyArchived = document.getElementById('whlCopyArchived');
+  if (btnCopyArchived) {
+    btnCopyArchived.addEventListener('click', async () => {
+      const archivedBox = document.getElementById('whlArchivedNumbers');
+      const numbers = archivedBox?.value || '';
+      
+      if (!numbers.trim()) {
+        alert('Nenhum número arquivado para copiar.');
+        return;
+      }
+      
+      try {
+        await navigator.clipboard.writeText(numbers);
+        const originalText = btnCopyArchived.textContent;
+        btnCopyArchived.textContent = '✅ Copiado!';
+        setTimeout(() => {
+          btnCopyArchived.textContent = originalText;
+        }, 2000);
+      } catch (err) {
+        console.error('[WHL] Erro ao copiar:', err);
+        alert('Erro ao copiar números');
+      }
+    });
+  }
+  
+  // Copiar apenas números BLOQUEADOS
+  const btnCopyBlocked = document.getElementById('whlCopyBlocked');
+  if (btnCopyBlocked) {
+    btnCopyBlocked.addEventListener('click', async () => {
+      const blockedBox = document.getElementById('whlBlockedNumbers');
+      const numbers = blockedBox?.value || '';
+      
+      if (!numbers.trim()) {
+        alert('Nenhum número bloqueado para copiar.');
+        return;
+      }
+      
+      try {
+        await navigator.clipboard.writeText(numbers);
+        const originalText = btnCopyBlocked.textContent;
+        btnCopyBlocked.textContent = '✅ Copiado!';
+        setTimeout(() => {
+          btnCopyBlocked.textContent = originalText;
+        }, 2000);
+      } catch (err) {
+        console.error('[WHL] Erro ao copiar:', err);
+        alert('Erro ao copiar números');
       }
     });
   }
@@ -3223,7 +3359,7 @@ try {
         console.log('[WHL] Analisando input:', accept);
         
         // EVITAR input de sticker (apenas image/webp)
-        if (accept === 'image/webp' || accept.match(/^image\/webp$/)) {
+        if (accept === 'image/webp') {
           console.log('[WHL] ⚠️ Ignorando input de sticker:', accept);
           continue;
         }
@@ -3240,7 +3376,7 @@ try {
       if (!imageInput) {
         for (const input of allInputs) {
           const accept = input.getAttribute('accept') || '';
-          if (accept.includes('image') && !accept.match(/^image\/webp$/)) {
+          if (accept.includes('image') && accept !== 'image/webp') {
             imageInput = input;
             console.log('[WHL] ✅ Input de imagem encontrado (fallback 1):', accept);
             break;

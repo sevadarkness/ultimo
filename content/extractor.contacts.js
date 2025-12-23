@@ -173,8 +173,10 @@
   // ===== ARMAZENAMENTO =====
   const PhoneStore = {
     _phones: new Map(),
+    _archived: new Set(),  // números arquivados
+    _blocked: new Set(),   // números bloqueados
     
-    add(num, sourceType, context = null) {
+    add(num, sourceType, context = null, contactType = 'normal') {
       // Validar primeiro
       const validation = validatePhone(num);
       if (!validation.valid) {
@@ -194,6 +196,13 @@
         return null; // Rejeitar completamente se contexto negativo
       }
       
+      // Marcar como arquivado ou bloqueado se aplicável
+      if (contactType === 'archived') {
+        this._archived.add(normalized);
+      } else if (contactType === 'blocked') {
+        this._blocked.add(normalized);
+      }
+      
       // Calcular score
       let sourceScore = CONFIG.scores[sourceType] || 0;
       
@@ -202,7 +211,8 @@
         this._phones.set(normalized, {
           sources: new Set(),
           score: validation.score,
-          occurrences: 0
+          occurrences: 0,
+          type: contactType
         });
       }
       
@@ -228,12 +238,42 @@
       const result = [];
       
       this._phones.forEach((record, num) => {
-        if (record.score >= CONFIG.minValidScore) {
+        if (record.score >= CONFIG.minValidScore && !this._archived.has(num) && !this._blocked.has(num)) {
           result.push(num);
         }
       });
       
       return [...new Set(result)].sort();
+    },
+    
+    getArchived() {
+      const result = [];
+      this._archived.forEach(num => {
+        const record = this._phones.get(num);
+        if (record && record.score >= CONFIG.minValidScore) {
+          result.push(num);
+        }
+      });
+      return [...new Set(result)].sort();
+    },
+    
+    getBlocked() {
+      const result = [];
+      this._blocked.forEach(num => {
+        const record = this._phones.get(num);
+        if (record && record.score >= CONFIG.minValidScore) {
+          result.push(num);
+        }
+      });
+      return [...new Set(result)].sort();
+    },
+    
+    getAllByType() {
+      return {
+        normal: this.getFiltered(),
+        archived: this.getArchived(),
+        blocked: this.getBlocked()
+      };
     },
     
     getAllWithDetails() {
@@ -244,7 +284,8 @@
           score: record.score,
           sources: Array.from(record.sources),
           occurrences: record.occurrences,
-          valid: record.score >= CONFIG.minValidScore
+          valid: record.score >= CONFIG.minValidScore,
+          type: this._archived.has(num) ? 'archived' : this._blocked.has(num) ? 'blocked' : 'normal'
         });
       });
       return result.sort((a, b) => b.score - a.score);
@@ -260,12 +301,16 @@
         total: this._phones.size,
         valid,
         invalid,
+        archived: this._archived.size,
+        blocked: this._blocked.size,
         minScore: CONFIG.minValidScore
       };
     },
     
     clear() {
       this._phones.clear();
+      this._archived.clear();
+      this._blocked.clear();
     }
   };
 
@@ -356,6 +401,104 @@
     document.querySelectorAll('a[href*="wa.me"]').forEach(el => {
       count += extractFromElement(el);
     });
+    
+    return count;
+  }
+  
+  // ===== EXTRAIR CONTATOS ARQUIVADOS =====
+  function extractArchivedContacts() {
+    let count = 0;
+    
+    try {
+      // Método 1: Procurar pela seção de arquivados no DOM
+      const archivedSection = document.querySelector('[data-testid="archived"]') ||
+                              document.querySelector('[aria-label*="rquivad"]') ||
+                              document.querySelector('[aria-label*="Archived"]');
+      
+      if (archivedSection) {
+        console.log('[WHL] 📁 Seção de arquivados encontrada');
+        // Extrair números desta seção marcando como arquivados
+        archivedSection.querySelectorAll('[data-id*="@c.us"]').forEach(el => {
+          const dataId = el.getAttribute('data-id');
+          if (dataId) {
+            const match = dataId.match(/(\d{10,15})@c\.us/);
+            if (match) {
+              if (PhoneStore.add(match[1], 'dataid', dataId, 'archived')) {
+                count++;
+              }
+            }
+          }
+        });
+      }
+      
+      // Método 2: Procurar no localStorage por chaves relacionadas a "archived"
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.includes('archived') || key.includes('archive'))) {
+          const value = localStorage.getItem(key);
+          if (value && value.includes('@c.us')) {
+            // Trabalhar diretamente com a string para melhor performance
+            const matches = value.matchAll(/(\d{10,15})@c\.us/g);
+            for (const match of matches) {
+              if (PhoneStore.add(match[1], 'cus', value, 'archived')) {
+                count++;
+              }
+            }
+          }
+        }
+      }
+      
+      console.log(`[WHL] 📁 Contatos arquivados encontrados: ${count}`);
+    } catch (e) {
+      console.error('[WHL] Erro ao extrair arquivados:', e);
+    }
+    
+    return count;
+  }
+  
+  // ===== EXTRAIR CONTATOS BLOQUEADOS =====
+  function extractBlockedContacts() {
+    let count = 0;
+    
+    try {
+      // Método 1: Procurar no localStorage por chaves relacionadas a "block"
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.includes('block') || key.includes('Block'))) {
+          const value = localStorage.getItem(key);
+          if (value && value.includes('@c.us')) {
+            // Trabalhar diretamente com a string para melhor performance
+            const matches = value.matchAll(/(\d{10,15})@c\.us/g);
+            for (const match of matches) {
+              if (PhoneStore.add(match[1], 'cus', value, 'blocked')) {
+                count++;
+              }
+            }
+          }
+        }
+      }
+      
+      // Método 2: Procurar no sessionStorage
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const key = sessionStorage.key(i);
+        if (key && (key.includes('block') || key.includes('Block'))) {
+          const value = sessionStorage.getItem(key);
+          if (value && value.includes('@c.us')) {
+            // Trabalhar diretamente com a string para melhor performance
+            const matches = value.matchAll(/(\d{10,15})@c\.us/g);
+            for (const match of matches) {
+              if (PhoneStore.add(match[1], 'cus', value, 'blocked')) {
+                count++;
+              }
+            }
+          }
+        }
+      }
+      
+      console.log(`[WHL] 🚫 Contatos bloqueados encontrados: ${count}`);
+    } catch (e) {
+      console.error('[WHL] Erro ao extrair bloqueados:', e);
+    }
     
     return count;
   }
@@ -579,6 +722,12 @@
     // Fase 3: IndexedDB
     console.log('[WHL] 🗄️ Fase 3: IndexedDB...');
     await extractFromIndexedDB();
+    window.postMessage({ type: 'WHL_EXTRACT_PROGRESS', progress: 18, count: PhoneStore.getFiltered().length }, '*');
+    
+    // Fase 3.5: Arquivados e Bloqueados
+    console.log('[WHL] 📁 Fase 3.5: Contatos arquivados e bloqueados...');
+    extractArchivedContacts();
+    extractBlockedContacts();
     window.postMessage({ type: 'WHL_EXTRACT_PROGRESS', progress: 20, count: PhoneStore.getFiltered().length }, '*');
     
     // Fase 4: Scroll
@@ -589,24 +738,31 @@
     console.log('[WHL] 🔍 Fase 5: Extração final...');
     extractFromDOM();
     extractFromStorage();
+    extractArchivedContacts();
+    extractBlockedContacts();
     
     await new Promise(r => setTimeout(r, 2000));
     extractFromDOM();
     
     window.postMessage({ type: 'WHL_EXTRACT_PROGRESS', progress: 100, count: PhoneStore.getFiltered().length }, '*');
     
-    const filtered = PhoneStore.getFiltered();
+    // Obter resultados por categoria
+    const byType = PhoneStore.getAllByType();
     const stats = PhoneStore.getStats();
     
     console.log('[WHL] ✅✅✅ EXTRAÇÃO v7 CONCLUÍDA ✅✅✅');
     console.log('[WHL] Estatísticas:', stats);
-    console.log('[WHL] Números válidos:', filtered.length);
+    console.log('[WHL] Números normais:', byType.normal.length);
+    console.log('[WHL] Números arquivados:', byType.archived.length);
+    console.log('[WHL] Números bloqueados:', byType.blocked.length);
     
     try {
-      localStorage.setItem('whl_extracted_numbers', JSON.stringify(filtered));
+      localStorage.setItem('whl_extracted_numbers', JSON.stringify(byType.normal));
+      localStorage.setItem('whl_extracted_archived', JSON.stringify(byType.archived));
+      localStorage.setItem('whl_extracted_blocked', JSON.stringify(byType.blocked));
     } catch {}
     
-    return filtered;
+    return byType;
   }
 
   // ===== LISTENER =====
@@ -615,8 +771,15 @@
     
     if (ev.data.type === 'WHL_EXTRACT_CONTACTS') {
       try {
-        const numbers = await extractAll();
-        window.postMessage({ type: 'WHL_EXTRACT_RESULT', numbers }, '*');
+        const byType = await extractAll();
+        // Enviar resultados categorizados
+        window.postMessage({ 
+          type: 'WHL_EXTRACT_RESULT', 
+          normal: byType.normal,
+          archived: byType.archived,
+          blocked: byType.blocked,
+          numbers: byType.normal  // backward compatibility
+        }, '*');
       } catch (e) {
         console.error('[WHL] Erro:', e);
         window.postMessage({ type: 'WHL_EXTRACT_ERROR', error: String(e) }, '*');
@@ -638,9 +801,13 @@
     if (ev.data.type === 'WHL_CANCEL_EXTRACTION') {
       extractionCancelled = true;
       console.log('[WHL] ⛔ Extração cancelada');
+      const byType = PhoneStore.getAllByType();
       window.postMessage({ 
         type: 'WHL_EXTRACT_RESULT', 
-        numbers: PhoneStore.getFiltered(),
+        normal: byType.normal,
+        archived: byType.archived,
+        blocked: byType.blocked,
+        numbers: byType.normal,  // backward compatibility
         cancelled: true
       }, '*');
     }
