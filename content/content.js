@@ -4885,6 +4885,116 @@ try {
 
 })();
 
+// ===== WHL: Listeners para eventos de Arquivados, Bloqueados, Grupos e Recover =====
+(function() {
+  if (window.__WHL_EVENT_LISTENERS__) return;
+  window.__WHL_EVENT_LISTENERS__ = true;
+
+  // ===== ARQUIVADOS & BLOQUEADOS =====
+  window.addEventListener('message', (e) => {
+    if (e.data?.type === 'WHL_ARCHIVED_BLOCKED_RESULT') {
+      const { archived, blocked } = e.data;
+      
+      // Atualizar UI
+      const archivedBox = document.getElementById('whlArchivedNumbers');
+      const blockedBox = document.getElementById('whlBlockedNumbers');
+      
+      if (archivedBox) archivedBox.value = archived.join('\n');
+      if (blockedBox) blockedBox.value = blocked.join('\n');
+      
+      // Estatísticas
+      const archCnt = document.getElementById('whlArchivedCount');
+      const blkCnt = document.getElementById('whlBlockedCount');
+      
+      if (archCnt) archCnt.textContent = archived.length;
+      if (blkCnt) blkCnt.textContent = blocked.length;
+      
+      console.log(`[WHL] Arquivados: ${archived.length}, Bloqueados: ${blocked.length}`);
+    }
+
+    if (e.data?.type === 'WHL_ARCHIVED_BLOCKED_ERROR') {
+      console.error('[WHL] Erro arquivados/bloqueados:', e.data.error);
+    }
+  });
+
+  // ===== RECOVER HISTÓRICO =====
+  const recoveredList = [];
+
+  window.addEventListener('message', (e) => {
+    if (e.data?.type === 'WHL_RECOVERED_MESSAGE') {
+      recoveredList.push(e.data.payload);
+      
+      // Salvar no storage
+      try {
+        chrome.storage.local.set({ recoveredList });
+      } catch(err) {
+        console.warn('[WHL] Erro ao salvar recoveredList:', err);
+      }
+
+      // Atualizar contador
+      const cnt = document.getElementById('whlRecoveredCount');
+      if (cnt) cnt.textContent = recoveredList.length;
+
+      // Adicionar ao histórico visual
+      const history = document.getElementById('whlRecoverHistory');
+      if (history) {
+        const row = document.createElement('div');
+        row.className = 'whl-rec-row';
+        row.textContent = `[${new Date(e.data.payload.ts).toLocaleString()}] ${e.data.payload.preview}`;
+        history.prepend(row);
+      }
+      
+      console.log(`[WHL Recover] Nova mensagem recuperada, total: ${recoveredList.length}`);
+    }
+  });
+
+  // ===== EXTRAÇÃO INSTANTÂNEA =====
+  window.addEventListener('message', (e) => {
+    if (e.data?.type === 'WHL_EXTRACT_INSTANT_RESULT') {
+      const numbers = e.data.numbers || [];
+      console.log(`[WHL] Extração instantânea: ${numbers.length} números`);
+      
+      // Adicionar ao HarvesterStore se existir
+      if (window.HarvesterStore) {
+        numbers.forEach(n => HarvesterStore.processPhone(n, HarvesterStore.ORIGINS.STORE));
+      }
+    }
+  });
+
+  // ===== GRUPOS =====
+  window.addEventListener('message', (e) => {
+    if (e.data?.type === 'WHL_GROUPS_RESULT') {
+      const groups = e.data.groups || [];
+      console.log(`[WHL] ${groups.length} grupos carregados`);
+      // updateGroupsUI(groups) - implementar quando UI estiver disponível
+    }
+    
+    if (e.data?.type === 'WHL_GROUP_MEMBERS_RESULT') {
+      const { groupId, members } = e.data;
+      console.log(`[WHL] Grupo ${groupId}: ${members.length} membros`);
+      // Adicionar membros à lista de extração se necessário
+      if (window.HarvesterStore && members) {
+        members.forEach(m => HarvesterStore.processPhone(m, HarvesterStore.ORIGINS.GROUP));
+      }
+    }
+  });
+
+  // Funções auxiliares para solicitar dados
+  window.loadArchivedBlocked = function() {
+    window.postMessage({ type: 'WHL_LOAD_ARCHIVED_BLOCKED' }, '*');
+  };
+
+  window.extractInstant = function() {
+    window.postMessage({ type: 'WHL_EXTRACT_INSTANT' }, '*');
+  };
+
+  window.loadGroups = function() {
+    window.postMessage({ type: 'WHL_LOAD_GROUPS' }, '*');
+  };
+
+  console.log('[WHL] Event listeners registrados');
+})();
+
 
 // ===== WHL: Loader seguro do extrator isolado =====
 (function(){

@@ -8,6 +8,45 @@
 (function() {
     'use strict';
     
+    // ===== UTILITY FUNCTIONS =====
+    
+    // Clica em botão por texto
+    function clickByText(needles) {
+      const lc = s => s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim();
+      const match = el => needles.some(n => lc(el.textContent || '').includes(lc(n)));
+      const candidates = Array.from(document.querySelectorAll('button, [role="button"], a, span'));
+      const hit = candidates.find(match);
+      if (hit) { 
+        hit.click(); 
+        return true; 
+      }
+      return false;
+    }
+
+    // Resolver intersticiais (Usar aqui, Continuar, etc.)
+    async function resolveInterstitialsCycle(maxMs = 8000) {
+      const start = Date.now();
+      while (Date.now() - start < maxMs) {
+        // "Usar aqui / Use here"
+        if (clickByText(['usar aqui', 'use here', 'utilizar aqui'])) return true;
+
+        // "Continuar / Continue to chat"
+        if (clickByText(['continuar', 'continue', 'continuar para a conversa', 'continue to chat'])) return true;
+
+        // "Manter mensagem / Keep"
+        if (clickByText(['manter', 'keep'])) return true;
+
+        // Banner de "abrindo em outra guia"
+        const banner = document.body.innerText || '';
+        if (/outra guia|outra aba|another tab|another window/i.test(banner)) {
+          if (clickByText(['usar aqui', 'use here'])) return true;
+        }
+
+        await new Promise(r => setTimeout(r, 300));
+      }
+      return false;
+    }
+    
     // Check if this is the worker tab
     const urlParams = new URLSearchParams(window.location.search);
     const isWorkerTab = urlParams.has('whl_worker') || 
@@ -140,100 +179,101 @@
     }
     
     async function handleSendMessage(phone, text, imageData = null) {
-        console.log(`[WHL Worker] Sending to ${phone}...`);
-        
         try {
-            // Check and handle multi-device popup before sending
-            handleMultiDevicePopup();
+            console.log(`[WHL Worker] Iniciando envio para ${phone}...`);
             
-            // Navigate to send URL
-            const encodedText = encodeURIComponent(text);
-            const sendUrl = `https://web.whatsapp.com/send?phone=${phone}&text=${encodedText}`;
+            const sendUrl = `https://web.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`;
+            window.location.assign(sendUrl);
+
+            const opened = await waitForChatOpen(phone, 30000);
             
-            // Navigate
-            window.location.href = sendUrl;
-            
-            // Wait for chat to open
-            const chatOpened = await waitForChatOpen(phone, 15000);
-            
-            if (!chatOpened.success) {
-                return { success: false, error: chatOpened.error, phone };
+            if (!opened.success) {
+                console.log(`[WHL Worker] ❌ Falha ao abrir chat: ${opened.error}`);
+                return { success: false, error: opened.error || 'OPEN_CHAT_FAILED' };
             }
-            
-            // If there's an image, attach it
+
+            // Encontrar composer
+            const composer = document.querySelector('[data-testid="conversation-compose-box-input"]')
+                || document.querySelector('[contenteditable="true"][data-tab="10"]')
+                || document.querySelector('footer [contenteditable="true"]');
+
+            if (!composer) {
+                return { success: false, error: 'COMPOSER_NOT_FOUND' };
+            }
+
+            // Focar e inserir texto
+            composer.focus();
+            document.execCommand('insertText', false, text);
+            composer.dispatchEvent(new InputEvent('input', { bubbles: true }));
+
+            // Se tem imagem, anexar primeiro
             if (imageData) {
-                const imageAttached = await attachImage(imageData);
-                if (!imageAttached.success) {
-                    return { success: false, error: 'Failed to attach image', phone };
+                const imgResult = await attachImage(imageData);
+                if (!imgResult.success) {
+                    console.log(`[WHL Worker] ⚠️ Falha ao anexar imagem, enviando só texto`);
                 }
             }
+
+            // Pressionar Enter para enviar
+            const enterEvent = new KeyboardEvent('keydown', { 
+                key: 'Enter', 
+                code: 'Enter', 
+                which: 13, 
+                keyCode: 13, 
+                bubbles: true 
+            });
+            composer.dispatchEvent(enterEvent);
+
+            // Aguardar envio processar
+            await new Promise(r => setTimeout(r, 1500));
+
+            console.log(`[WHL Worker] ✅ Enviado para ${phone}`);
+            return { success: true };
             
-            // Click send button
-            const sent = await clickSendButton();
-            
-            if (!sent.success) {
-                return { success: false, error: sent.error, phone };
-            }
-            
-            // Wait for send confirmation
-            await new Promise(r => setTimeout(r, 1000));
-            
-            console.log(`[WHL Worker] ✅ Sent to ${phone}`);
-            return { success: true, phone };
-            
-        } catch (error) {
-            console.error(`[WHL Worker] ❌ Error sending to ${phone}:`, error);
-            return { success: false, error: error.message, phone };
+        } catch (err) {
+            console.error(`[WHL Worker] ❌ Exceção:`, err);
+            return { success: false, error: err.message || 'SEND_EXCEPTION' };
         }
     }
     
-    function waitForChatOpen(phone, timeout = 15000) {
+    async function waitForChatOpen(phone, timeout = 30000) {
+        const start = Date.now();
+        
         return new Promise((resolve) => {
-            const startTime = Date.now();
-            
-            const check = () => {
-                // Check if chat opened
-                const messageInput = document.querySelector('[data-testid="conversation-compose-box-input"]') ||
-                                    document.querySelector('[contenteditable="true"][data-tab="10"]') ||
-                                    document.querySelector('footer [contenteditable="true"]');
+            const tick = async () => {
+                // Tenta resolver intersticiais primeiro
+                await resolveInterstitialsCycle(1200);
+
+                // Caixa de mensagem pronta?
+                const input = document.querySelector('[data-testid="conversation-compose-box-input"]')
+                    || document.querySelector('[contenteditable="true"][data-tab="10"]')
+                    || document.querySelector('footer [contenteditable="true"]');
                 
-                // Check for error popup "Invalid number"
-                const errorPopup = document.querySelector('[data-testid="popup"]');
-                const errorText = errorPopup?.textContent || '';
-                
-                if (errorText.includes('inválido') || 
-                    errorText.includes('invalid') ||
-                    errorText.includes('não existe') ||
-                    errorText.includes('does not exist')) {
-                    resolve({ success: false, error: 'Invalid number or no WhatsApp' });
-                    return;
+                if (input) {
+                    return resolve({ success: true });
                 }
-                
-                // Check if need to click "Continue to chat"
-                const continueButton = Array.from(document.querySelectorAll('div[role="button"]'))
-                    .find(btn => btn.textContent.includes('Continuar') || 
-                                 btn.textContent.includes('Continue'));
-                
-                if (continueButton) {
-                    continueButton.click();
-                    setTimeout(check, 500);
-                    return;
+
+                // QR visível?
+                const qr = document.querySelector('[data-testid="qrcode"], canvas[aria-label]');
+                if (qr) {
+                    return resolve({ success: false, error: 'QR_CODE_REQUIRED' });
                 }
-                
-                if (messageInput) {
-                    resolve({ success: true });
-                    return;
+
+                // Popup de número inválido
+                const popupText = (document.querySelector('[data-testid="popup"]')?.textContent || '').toLowerCase();
+                if (/(inválido|invalid|não existe|does not exist)/.test(popupText)) {
+                    return resolve({ success: false, error: 'INVALID_NUMBER' });
                 }
-                
-                if (Date.now() - startTime > timeout) {
-                    resolve({ success: false, error: 'Timeout waiting for chat to open' });
-                    return;
+
+                // Timeout?
+                if (Date.now() - start > timeout) {
+                    return resolve({ success: false, error: 'OPEN_CHAT_TIMEOUT' });
                 }
-                
-                setTimeout(check, 300);
+
+                setTimeout(tick, 350);
             };
             
-            check();
+            tick();
         });
     }
     
