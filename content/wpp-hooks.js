@@ -1386,7 +1386,7 @@ window.whl_hooks_main = () => {
 
                 // Normalização FINAL (c.us + lid)
                 if (id.server === 'c.us' || id.server === 'lid') {
-                    return id.user;  // Retorna apenas o número sem +
+                    return id.user;  // Retorna apenas o número limpo
                 }
 
                 return null;
