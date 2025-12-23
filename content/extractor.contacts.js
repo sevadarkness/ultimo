@@ -99,13 +99,14 @@
     async start() {
       console.log('[WHL] 🚀 Iniciando WAExtractor...');
       await this.waitLoad();
-      // this.exposeStore(); // COMENTADO - bloqueado pelo CSP
+      // NÃO chamar exposeStore() - bloqueado pelo CSP
+      // this.exposeStore();
       this.observerChats();
       this.hookNetwork();
       this.localStorageExtract();
       this.autoScroll();
       
-      // Salvar periodicamente
+      // Salvar periodicamente com try-catch
       setInterval(() => {
         try {
           HarvesterStore.save();
@@ -426,10 +427,106 @@
     return sources;
   }
 
-  async function extractAll() {
-    console.log('[WHL] 🚀 Iniciando extração completa com sistema Harvester...');
+  // ===== EXTRAÇÃO ROBUSTA SEM window.Store =====
+  
+  // Função auxiliar para extrair de elementos visíveis
+  function extractFromVisibleElements(store) {
+    // 1. Extrair de data-id (principal fonte)
+    document.querySelectorAll('[data-id*="@c.us"]').forEach(el => {
+      const dataId = el.getAttribute('data-id');
+      if (dataId) {
+        const phone = dataId.split('@')[0].replace(/\D/g, '');
+        if (phone.length >= 8 && phone.length <= 15) {
+          store.processPhone(phone, 'dom', { source: 'data-id' });
+        }
+      }
+    });
     
-    // Garantir que HarvesterStore está disponível
+    // 2. Extrair de data-jid
+    document.querySelectorAll('[data-jid*="@c.us"]').forEach(el => {
+      const dataJid = el.getAttribute('data-jid');
+      if (dataJid) {
+        const phone = dataJid.split('@')[0].replace(/\D/g, '');
+        if (phone.length >= 8 && phone.length <= 15) {
+          store.processPhone(phone, 'dom', { source: 'data-jid' });
+        }
+      }
+    });
+    
+    // 3. Extrair de títulos e aria-labels
+    document.querySelectorAll('[title], [aria-label]').forEach(el => {
+      const title = el.getAttribute('title') || '';
+      const ariaLabel = el.getAttribute('aria-label') || '';
+      const text = title + ' ' + ariaLabel;
+      
+      // Procurar números de telefone (8-15 dígitos)
+      const matches = text.match(/\+?\d[\d\s\-\(\)]{7,18}\d/g);
+      if (matches) {
+        matches.forEach(match => {
+          const phone = match.replace(/\D/g, '');
+          if (phone.length >= 8 && phone.length <= 15) {
+            store.processPhone(phone, 'dom', { source: 'title/aria-label' });
+          }
+        });
+      }
+    });
+    
+    // 4. Extrair de elementos de chat (role="row" ou role="listitem")
+    document.querySelectorAll('[role="row"], [role="listitem"], [role="gridcell"]').forEach(el => {
+      // Verificar atributos do elemento e filhos
+      const allElements = [el, ...el.querySelectorAll('*')];
+      allElements.forEach(child => {
+        // Verificar data-id
+        const dataId = child.getAttribute('data-id');
+        if (dataId && dataId.includes('@c.us')) {
+          const phone = dataId.split('@')[0].replace(/\D/g, '');
+          if (phone.length >= 8 && phone.length <= 15) {
+            store.processPhone(phone, 'dom', { source: 'chat-element' });
+          }
+        }
+        
+        // Verificar texto
+        if (child.textContent) {
+          const text = child.textContent;
+          // Padrão para números brasileiros e internacionais
+          const patterns = [
+            /\+55\s?\d{2}\s?\d{4,5}[\s\-]?\d{4}/g,  // +55 11 99999-9999
+            /\(?\d{2}\)?\s?9?\d{4}[\s\-]?\d{4}/g,   // (11) 99999-9999
+            /\d{10,13}/g                             // 5511999999999
+          ];
+          
+          patterns.forEach(pattern => {
+            const matches = text.match(pattern);
+            if (matches) {
+              matches.forEach(match => {
+                const phone = match.replace(/\D/g, '');
+                if (phone.length >= 10 && phone.length <= 15) {
+                  store.processPhone(phone, 'dom', { source: 'text-content' });
+                }
+              });
+            }
+          });
+        }
+      });
+    });
+    
+    // 5. Extrair de spans com números visíveis
+    document.querySelectorAll('span').forEach(span => {
+      const text = span.textContent || '';
+      // Procurar padrões de telefone
+      if (/^\+?\d[\d\s\-\(\)]{7,18}\d$/.test(text.trim())) {
+        const phone = text.replace(/\D/g, '');
+        if (phone.length >= 8 && phone.length <= 15) {
+          store.processPhone(phone, 'dom', { source: 'span-text' });
+        }
+      }
+    });
+  }
+
+  // Função principal de extração - NÃO depende de window.Store
+  async function extractAll() {
+    console.log('[WHL] 🚀 Iniciando extração completa (modo DOM)...');
+    
     const store = window.HarvesterStore || HarvesterStore;
     if (!store) {
       console.error('[WHL] HarvesterStore não disponível!');
@@ -440,113 +537,127 @@
     // Limpar store anterior
     store.clear();
     
-    // Fase 1: Iniciar WAExtractor (Store, Observer, Network hooks, etc)
-    window.postMessage({ 
-      type: 'WHL_EXTRACT_PROGRESS', 
-      progress: 10,
-      count: store._valid.size
-    }, '*');
+    window.postMessage({ type: 'WHL_EXTRACT_PROGRESS', progress: 5, count: 0 }, '*');
     
-    await WAExtractor.start();
+    // ===== FASE 1: Extração de atributos data-id e data-jid =====
+    console.log('[WHL] 📱 Fase 1: Extraindo de data-id e data-jid...');
     
-    // Fase 2: Extração DOM tradicional com scroll
-    window.postMessage({ 
-      type: 'WHL_EXTRACT_PROGRESS', 
-      progress: 30,
-      count: store._valid.size
-    }, '*');
-    
-    const list = findChatList();
-    if (!list) {
-      console.log('[WHL] ⚠️ Lista de chats não encontrada, usando apenas extração do Store');
-    } else {
-      list.scrollTop = 0;
-      await new Promise(r => setTimeout(r, 800));
-
-      let lastTop = -1, stable = 0;
-      let scrollCount = 0;
-      const scrollHeight = list.scrollHeight || 10000;
-      const clientHeight = list.clientHeight || 100;
-      const estimatedScrolls = Math.ceil(scrollHeight / (clientHeight * 0.7)) || 50;
-      const maxScrolls = Math.min(estimatedScrolls, 100);
-      
-      while (stable < 7 && scrollCount < maxScrolls) {
-        const items = list.querySelectorAll('[role="row"], [role="listitem"]');
-        items.forEach(item => {
-          collectDeepFrom(item, 'scroll');
-        });
-
-        findAllSources().forEach(source => {
-          collectDeepFrom(source, 'sources');
-        });
-
-        scrollCount++;
-        const progress = Math.min(70, 30 + Math.round((scrollCount / maxScrolls) * 40));
-        window.postMessage({ 
-          type: 'WHL_EXTRACT_PROGRESS', 
-          progress: progress,
-          count: store._valid.size
-        }, '*');
-
-        const increment = Math.floor(list.clientHeight * 0.7);
-        const next = Math.min(list.scrollTop + increment, list.scrollHeight);
-        list.scrollTop = next;
-        list.dispatchEvent(new Event('scroll', {bubbles:true}));
-        
-        await new Promise(r => setTimeout(r, 1100));
-
-        if (list.scrollTop === lastTop) {
-          stable++;
-        } else {
-          stable = 0;
+    // Procurar todos elementos com data-id que contém @c.us (contatos individuais)
+    document.querySelectorAll('[data-id]').forEach(el => {
+      const dataId = el.getAttribute('data-id');
+      if (dataId && dataId.includes('@c.us')) {
+        const phone = dataId.replace('@c.us', '').replace(/\D/g, '');
+        if (phone.length >= 8 && phone.length <= 15) {
+          store.processPhone(phone, 'data-id', { source: 'data-id' });
+          console.log('[WHL] ✅ Encontrado via data-id:', phone);
         }
-        lastTop = list.scrollTop;
+      }
+    });
+    
+    // Procurar em data-jid
+    document.querySelectorAll('[data-jid]').forEach(el => {
+      const dataJid = el.getAttribute('data-jid');
+      if (dataJid && dataJid.includes('@c.us')) {
+        const phone = dataJid.replace('@c.us', '').replace(/\D/g, '');
+        if (phone.length >= 8 && phone.length <= 15) {
+          store.processPhone(phone, 'data-jid', { source: 'data-jid' });
+          console.log('[WHL] ✅ Encontrado via data-jid:', phone);
+        }
+      }
+    });
+    
+    window.postMessage({ type: 'WHL_EXTRACT_PROGRESS', progress: 20, count: store._valid.size }, '*');
+    
+    // ===== FASE 2: Scroll e extração contínua =====
+    console.log('[WHL] 📜 Fase 2: Scroll automático...');
+    
+    const pane = document.querySelector('#pane-side');
+    if (pane) {
+      // Scroll para o topo primeiro
+      pane.scrollTop = 0;
+      await new Promise(r => setTimeout(r, 500));
+      
+      let lastScrollTop = -1;
+      let stableCount = 0;
+      let scrollCount = 0;
+      const maxScrolls = 50;
+      
+      while (stableCount < 5 && scrollCount < maxScrolls) {
+        // Extrair durante o scroll
+        extractFromVisibleElements(store);
+        
+        // Scroll para baixo
+        const scrollAmount = pane.clientHeight * 0.8;
+        pane.scrollTop += scrollAmount;
+        pane.dispatchEvent(new Event('scroll', { bubbles: true }));
+        
+        scrollCount++;
+        const progress = Math.min(70, 20 + Math.round((scrollCount / maxScrolls) * 50));
+        window.postMessage({ type: 'WHL_EXTRACT_PROGRESS', progress, count: store._valid.size }, '*');
+        
+        await new Promise(r => setTimeout(r, 800));
+        
+        // Verificar se chegou ao fim
+        if (pane.scrollTop === lastScrollTop) {
+          stableCount++;
+        } else {
+          stableCount = 0;
+        }
+        lastScrollTop = pane.scrollTop;
       }
       
-      // Coleta final
-      list.scrollTop = 0;
-      await new Promise(r => setTimeout(r, 1000));
-
-      const items = list.querySelectorAll('[role="row"], [role="listitem"]');
-      items.forEach(item => {
-        collectDeepFrom(item, 'final');
-      });
-
-      findAllSources().forEach(source => {
-        collectDeepFrom(source, 'final');
-      });
+      // Voltar ao topo e fazer extração final
+      pane.scrollTop = 0;
+      await new Promise(r => setTimeout(r, 500));
     }
-
-    // Fase 3: Aguardar hooks de rede coletarem mais dados
-    window.postMessage({ 
-      type: 'WHL_EXTRACT_PROGRESS', 
-      progress: 80,
-      count: store._valid.size
-    }, '*');
     
-    await new Promise(r => setTimeout(r, 3000));
+    window.postMessage({ type: 'WHL_EXTRACT_PROGRESS', progress: 80, count: store._valid.size }, '*');
     
-    // Retornar apenas números validados (com score >= 60)
-    const validNumbers = Array.from(store._valid).sort();
-
-    window.postMessage({ 
-      type: 'WHL_EXTRACT_PROGRESS', 
-      progress: 100,
-      count: validNumbers.length
-    }, '*');
-
-    // Estatísticas
-    const stats = store.stats();
+    // ===== FASE 3: Extração final de todos os elementos =====
+    console.log('[WHL] 🔍 Fase 3: Extração final...');
+    extractFromVisibleElements(store);
+    
+    // ===== FASE 4: Extrair de localStorage do WhatsApp =====
+    console.log('[WHL] 💾 Fase 4: Extraindo de localStorage...');
+    try {
+      Object.keys(localStorage).forEach(key => {
+        const value = localStorage.getItem(key);
+        if (value) {
+          // Procurar padrão @c.us
+          const matches = value.match(/(\d{10,15})@c\.us/g);
+          if (matches) {
+            matches.forEach(match => {
+              const phone = match.replace('@c.us', '');
+              store.processPhone(phone, 'localStorage', { source: 'localStorage' });
+            });
+          }
+        }
+      });
+    } catch (e) {
+      console.log('[WHL] Erro ao extrair localStorage:', e);
+    }
+    
+    window.postMessage({ type: 'WHL_EXTRACT_PROGRESS', progress: 100, count: store._valid.size }, '*');
+    
+    // Resultados
+    const allNumbers = Array.from(store._phones.keys());
+    const validNumbers = Array.from(store._valid);
+    
     console.log('[WHL] ✅ Extração concluída:', {
-      total: store._phones.size,
+      total: allNumbers.length,
       validos: validNumbers.length,
-      stats: stats
+      stats: store.stats()
     });
     
     // Salvar
-    store.save();
+    try {
+      store.save();
+    } catch (e) {
+      console.log('[WHL] Erro ao salvar:', e);
+    }
     
-    return validNumbers;
+    // Retornar TODOS os números (não apenas válidos) para o usuário ver
+    return allNumbers.length > 0 ? allNumbers : validNumbers;
   }
 
   // ===== LISTENER DE MENSAGENS =====
