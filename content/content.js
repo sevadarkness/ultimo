@@ -630,6 +630,18 @@
         color: #fbbf24;
       }
 
+      #whlPanel .pill.confirming {
+        background: rgba(255, 200, 0, .25);
+        border: 1px solid rgba(255, 200, 0, .50);
+        color: #fbbf24;
+        animation: pulse 1s infinite;
+      }
+
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+      }
+
 
       /* Additions */
       #whlPanel .tip{position:relative;display:inline-block}
@@ -2642,13 +2654,19 @@
       
       if (cur) {
         if (e.data.success) {
-          // Sucesso! (resultado: {messageSendResult: 'OK'})
-          console.log('[WHL] ✅ Texto enviado com sucesso via API para', cur.phone);
-          cur.status = 'sent';
-          cur.retries = cur.retries || 0;
-          st.stats.sent++;
-          st.stats.pending--;
-          st.index++;
+          // NOVO: Aguardar confirmação visual antes de avançar
+          console.log('[WHL] 📤 Mensagem enviada, aguardando confirmação visual...');
+          cur.status = 'confirming';
+          await setState(st);
+          await render();
+          
+          // Solicitar confirmação visual
+          window.postMessage({
+            type: 'WHL_WAIT_VISUAL_CONFIRMATION',
+            message: st.message,
+            timeout: 10000,
+            requestId: Date.now().toString()
+          }, '*');
         } else {
           // Falha - verificar retry
           console.log('[WHL] ❌ Falha ao enviar texto via API para', cur.phone, ':', e.data.error);
@@ -2681,8 +2699,9 @@
         await setState(st);
         await render();
         
-        // Continuar campanha se ainda está rodando
-        if (st.isRunning && !st.isPaused) {
+        // ATUALIZADO: Continuar campanha apenas em caso de FALHA
+        // Sucesso agora aguarda confirmação visual antes de continuar
+        if (!e.data.success && st.isRunning && !st.isPaused) {
           if (st.index < st.queue.length) {
             const delay = getRandomDelay(st.delayMin, st.delayMax);
             console.log(`[WHL] ⏳ Aguardando ${(delay/1000).toFixed(1)}s antes do próximo envio...`);
@@ -2762,6 +2781,55 @@
             await render();
           }
         }
+      }
+    }
+    
+    // NOVO: Handler para resultado da confirmação visual
+    if (type === 'WHL_VISUAL_CONFIRMATION_RESULT') {
+      const st = await getState();
+      if (!st.isRunning) return;
+      
+      const cur = st.queue[st.index];
+      if (!cur) return;
+      
+      if (e.data.confirmed) {
+        // ✅ Confirmado visualmente - avançar para próximo
+        console.log('[WHL] ✅ Confirmação visual OK! Avançando para próximo...');
+        cur.status = 'sent';
+        cur.confirmedAt = Date.now();
+        st.stats.sent++;
+        st.stats.pending--;
+        st.index++;
+      } else {
+        // ⚠️ Não confirmado - tentar novamente ou marcar como falha
+        console.warn('[WHL] ⚠️ Sem confirmação visual:', e.data.reason);
+        cur.retries = (cur.retries || 0) + 1;
+        
+        if (cur.retries >= (st.retryMax || 1)) {
+          cur.status = 'failed';
+          cur.errorReason = 'Sem confirmação visual após ' + cur.retries + ' tentativas';
+          st.stats.failed++;
+          st.stats.pending--;
+          st.index++;
+        } else {
+          cur.status = 'pending_retry';
+          console.log(`[WHL] 🔄 Tentando novamente (${cur.retries}/${st.retryMax})...`);
+        }
+      }
+      
+      await setState(st);
+      await render();
+      
+      // Continuar campanha
+      if (st.isRunning && !st.isPaused && st.index < st.queue.length) {
+        const delay = getRandomDelay(st.delayMin, st.delayMax);
+        console.log(`[WHL] ⏳ Aguardando ${(delay/1000).toFixed(1)}s antes do próximo envio...`);
+        setTimeout(() => processCampaignStepDirect(), delay);
+      } else if (st.index >= st.queue.length) {
+        console.log('[WHL] 🎉 Campanha finalizada!');
+        st.isRunning = false;
+        await setState(st);
+        await render();
       }
     }
     
@@ -3182,7 +3250,7 @@
     // Update statistics
     const sent = state.queue.filter(c => c.status === 'sent').length;
     const failed = state.queue.filter(c => c.status === 'failed').length;
-    const pending = state.queue.filter(c => c.status === 'pending' || c.status === 'opened').length;
+    const pending = state.queue.filter(c => c.status === 'pending' || c.status === 'opened' || c.status === 'confirming').length;
 
     document.getElementById('whlStatSent').textContent = sent;
     document.getElementById('whlStatFailed').textContent = failed;

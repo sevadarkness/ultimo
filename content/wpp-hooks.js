@@ -382,6 +382,63 @@ window.whl_hooks_main = () => {
         return results;
     }
 
+    /**
+     * Aguarda confirmação visual de que a mensagem apareceu no chat
+     * @param {string} mensagemEnviada - Texto da mensagem enviada
+     * @param {number} timeout - Tempo máximo de espera em ms (padrão: 10000)
+     * @returns {Promise<{success: boolean, confirmed: boolean, reason?: string}>}
+     */
+    async function aguardarConfirmacaoVisual(mensagemEnviada, timeout = 10000) {
+        console.log('[WHL] ⏳ Aguardando confirmação visual no DOM...');
+        
+        const startTime = Date.now();
+        const textoParaBuscar = mensagemEnviada.substring(0, 50); // Primeiros 50 chars
+        
+        while (Date.now() - startTime < timeout) {
+            try {
+                // Seletores para mensagens no chat
+                const mensagensNoChat = document.querySelectorAll(
+                    '[data-testid="msg-container"], ' +
+                    '.message-out, ' +
+                    '[class*="message-out"], ' +
+                    '[data-testid="conversation-panel-messages"] [role="row"]'
+                );
+                
+                for (const msgEl of mensagensNoChat) {
+                    const texto = msgEl.textContent || '';
+                    
+                    // Verificar se a mensagem apareceu (comparar início do texto)
+                    if (texto.includes(textoParaBuscar)) {
+                        // Verificar se tem o tick de enviado (✓ ou ✓✓)
+                        const ticks = msgEl.querySelector(
+                            '[data-testid="msg-check"], ' +
+                            '[data-testid="msg-dblcheck"], ' +
+                            '[data-icon="msg-check"], ' +
+                            '[data-icon="msg-dblcheck"], ' +
+                            'span[data-icon="msg-time"]'
+                        );
+                        
+                        if (ticks) {
+                            console.log('[WHL] ✅ Confirmação visual: Mensagem apareceu no chat com tick!');
+                            return { success: true, confirmed: true };
+                        }
+                        
+                        // Se encontrou a mensagem mas sem tick ainda, aguardar mais um pouco
+                        console.log('[WHL] 📝 Mensagem encontrada, aguardando tick...');
+                    }
+                }
+            } catch (e) {
+                console.warn('[WHL] Erro ao verificar confirmação visual:', e);
+            }
+            
+            // Verificar a cada 500ms
+            await new Promise(r => setTimeout(r, 500));
+        }
+        
+        console.warn('[WHL] ⚠️ Timeout: Mensagem não confirmada visualmente após', timeout, 'ms');
+        return { success: false, confirmed: false, reason: 'TIMEOUT' };
+    }
+
     class Hook {
         constructor() { 
             this.is_registered = false; 
@@ -1380,6 +1437,27 @@ window.whl_hooks_main = () => {
                 } catch (error) {
                     window.postMessage({ 
                         type: 'WHL_EXTRACT_ARCHIVED_BLOCKED_DOM_ERROR', 
+                        requestId, 
+                        error: error.message 
+                    }, '*');
+                }
+            })();
+        }
+        
+        // Listener para aguardar confirmação visual
+        if (event.data.type === 'WHL_WAIT_VISUAL_CONFIRMATION') {
+            const { message, timeout, requestId } = event.data;
+            (async () => {
+                try {
+                    const result = await aguardarConfirmacaoVisual(message, timeout || 10000);
+                    window.postMessage({ 
+                        type: 'WHL_VISUAL_CONFIRMATION_RESULT', 
+                        requestId,
+                        ...result
+                    }, '*');
+                } catch (error) {
+                    window.postMessage({ 
+                        type: 'WHL_VISUAL_CONFIRMATION_ERROR', 
                         requestId, 
                         error: error.message 
                     }, '*');
