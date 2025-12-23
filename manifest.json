@@ -23,8 +23,7 @@
   "host_permissions": [
     "https://web.whatsapp.com/*",
     "https://api.whatsapp.com/*",
-    "https://*.whatsapp.net/*",
-    "wss://web.whatsapp.com/*"
+    "https://*.whatsapp.net/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -52,7 +51,10 @@
         "icons/48.png",
         "icons/128.png"
       ],
-      "matches": ["https://web.whatsapp.com/*"]
+      "matches": [
+        "https://web.whatsapp.com/*",
+        "https://api.whatsapp.com/*"
+      ]
     }
   ]
 }
