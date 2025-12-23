@@ -20,9 +20,10 @@
   // true = API direta (10x mais rápido, sem reload)
   // false = URL mode (fallback, com reload de página)
   const WHL_CONFIG = {
-    USE_DIRECT_API: true,  // Usar API direta por padrão
+    USE_DIRECT_API: false,  // Desabilitado - usar Input + Enter ao invés
     API_RETRY_ON_FAIL: true,  // Se API falhar, tentar URL mode
-    USE_WORKER_FOR_SENDING: true,  // NEW: Use hidden worker tab for sending
+    USE_WORKER_FOR_SENDING: false,  // DISABLED: Hidden Worker Tab não funciona - usar Input + Enter
+    USE_INPUT_ENTER_METHOD: true,  // NEW: Use tested Input + Enter method for sending
   };
 
   // Injetar wpp-hooks.js no contexto da página
@@ -2254,6 +2255,92 @@
 
   // ===== NEW DOM-BASED CAMPAIGN PROCESSING =====
   
+  // ===== INPUT + ENTER METHOD (TESTED AND WORKING) =====
+  
+  /**
+   * Enviar mensagem usando Input + Enter
+   * Este é o método TESTADO e CONFIRMADO FUNCIONANDO pelo usuário
+   */
+  async function sendMessageViaInput(phone, text) {
+    console.log(`[WHL] 📨 Enviando via Input + Enter para: ${phone}`);
+    
+    // Verificar se já está no chat correto
+    const currentUrl = window.location.href;
+    const needsNavigation = !currentUrl.includes(phone);
+    
+    if (needsNavigation) {
+      // Abrir chat via URL
+      console.log('[WHL] 🔗 Abrindo chat via URL...');
+      window.location.href = `https://web.whatsapp.com/send?phone=${phone}`;
+      
+      // Aguardar página carregar e input aparecer
+      const chatOpened = await new Promise(resolve => {
+        let attempts = 0;
+        const check = () => {
+          attempts++;
+          const input = document.querySelector('[data-testid="conversation-compose-box-input"]') ||
+                        document.querySelector('footer [contenteditable="true"]');
+          
+          if (input) {
+            console.log('[WHL] ✅ Chat aberto, input encontrado');
+            resolve(true);
+          } else if (attempts < 60) {
+            setTimeout(check, 500);
+          } else {
+            console.error('[WHL] ⏱️ Timeout aguardando input');
+            resolve(false);
+          }
+        };
+        setTimeout(check, 2000); // Aguardar página começar a carregar
+      });
+      
+      if (!chatOpened) {
+        return { success: false, error: 'CHAT_OPEN_TIMEOUT' };
+      }
+    }
+    
+    // Encontrar input
+    const input = document.querySelector('[data-testid="conversation-compose-box-input"]') ||
+                  document.querySelector('footer [contenteditable="true"]');
+    
+    if (!input) {
+      console.error('[WHL] ❌ Input não encontrado!');
+      return { success: false, error: 'INPUT_NOT_FOUND' };
+    }
+    
+    try {
+      // Limpar e focar
+      input.innerHTML = '';
+      input.focus();
+      
+      // Inserir texto (usando execCommand que é o método testado)
+      document.execCommand('insertText', false, text);
+      input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      
+      // Aguardar texto ser processado
+      await new Promise(r => setTimeout(r, 300));
+      
+      // Simular Enter para enviar
+      const enterEvent = new KeyboardEvent('keydown', {
+        key: 'Enter',
+        code: 'Enter',
+        keyCode: 13,
+        which: 13,
+        bubbles: true
+      });
+      input.dispatchEvent(enterEvent);
+      
+      // Aguardar envio processar
+      await new Promise(r => setTimeout(r, 1000));
+      
+      console.log('[WHL] ✅ Mensagem enviada via Input + Enter');
+      return { success: true };
+    } catch (e) {
+      console.error('[WHL] ❌ Erro ao enviar:', e.message);
+      return { success: false, error: e.message };
+    }
+  }
+  
   // ===== DIRECT API CAMPAIGN PROCESSING (NO RELOAD) =====
   
   /**
@@ -2350,6 +2437,116 @@
     if (campaignInterval) clearTimeout(campaignInterval);
     campaignInterval = setTimeout(() => {
       processCampaignStepDirect();
+    }, 100);
+  }
+  
+  // ===== INPUT + ENTER CAMPAIGN PROCESSING =====
+  
+  /**
+   * Processa campanha usando método Input + Enter (TESTADO E FUNCIONANDO)
+   * Este é o método confirmado pelo usuário que funciona corretamente
+   */
+  async function processCampaignStepViaInput() {
+    const st = await getState();
+    
+    if (!st.isRunning || st.isPaused) {
+      console.log('[WHL] Campanha parada ou pausada');
+      return;
+    }
+    
+    if (st.index >= st.queue.length) {
+      console.log('[WHL] 🎉 Campanha finalizada!');
+      st.isRunning = false;
+      await setState(st);
+      await render();
+      return;
+    }
+    
+    const cur = st.queue[st.index];
+    
+    // Pular números inválidos
+    if (cur && cur.valid === false) {
+      console.log('[WHL] ⚠️ Número inválido, pulando:', cur.phone);
+      cur.status = 'failed';
+      cur.errorReason = 'Número inválido';
+      st.index++;
+      st.stats.failed++;
+      st.stats.pending--;
+      await setState(st);
+      await render();
+      scheduleCampaignStepViaInput();
+      return;
+    }
+    
+    // Pular se não existe
+    if (!cur) {
+      st.index++;
+      await setState(st);
+      scheduleCampaignStepViaInput();
+      return;
+    }
+    
+    // Pular números já processados
+    if (cur.status === 'sent') {
+      st.index++;
+      await setState(st);
+      scheduleCampaignStepViaInput();
+      return;
+    }
+    
+    // Se já falhou e não é para retry, pular
+    if (cur.status === 'failed' && !cur.retryPending) {
+      st.index++;
+      await setState(st);
+      scheduleCampaignStepViaInput();
+      return;
+    }
+    
+    console.log(`[WHL] 📨 Enviando via Input + Enter: ${st.index + 1}/${st.queue.length} - ${cur.phone}`);
+    cur.status = 'opened';
+    await setState(st);
+    await render();
+    
+    // Enviar via Input + Enter
+    const result = await sendMessageViaInput(cur.phone, st.message);
+    
+    if (result.success) {
+      // Sucesso!
+      console.log('[WHL] ✅ Mensagem enviada com sucesso para', cur.phone);
+      cur.status = 'sent';
+      st.stats.sent++;
+      st.stats.pending--;
+    } else {
+      // Falha
+      console.log('[WHL] ❌ Falha ao enviar para', cur.phone, ':', result.error);
+      cur.status = 'failed';
+      cur.errorReason = result.error;
+      st.stats.failed++;
+      st.stats.pending--;
+    }
+    
+    st.index++;
+    await setState(st);
+    await render();
+    
+    // Continuar campanha após delay
+    if (st.isRunning && !st.isPaused && st.index < st.queue.length) {
+      const delay = getRandomDelay(st.delayMin, st.delayMax);
+      console.log(`[WHL] ⏳ Aguardando ${(delay/1000).toFixed(1)}s antes do próximo envio...`);
+      setTimeout(() => processCampaignStepViaInput(), delay);
+    } else if (st.index >= st.queue.length) {
+      // Campanha finalizada
+      st.isRunning = false;
+      await setState(st);
+      await render();
+      console.log('[WHL] 🎉 Campanha finalizada!');
+    }
+  }
+  
+  function scheduleCampaignStepViaInput() {
+    if (campaignInterval) clearTimeout(campaignInterval);
+    campaignInterval = setTimeout(() => {
+      processCampaignStepViaInput();
     }, 100);
   }
   
@@ -2568,15 +2765,18 @@
 
     console.log('[WHL] 🚀 Campanha iniciada');
     
-    // Check if worker mode is enabled (from user settings)
+    // DISABLED: Hidden Worker Tab não funciona
+    // Usar Input + Enter method que foi TESTADO e CONFIRMADO FUNCIONANDO
     if (st.useWorker) {
-      console.log('[WHL] 🔧 Using Hidden Worker Tab for sending');
-      await startCampaignViaWorker();
-      return;
+      console.log('[WHL] ⚠️ Worker mode disabled - usando Input + Enter ao invés');
+      // Don't use worker - fall through to Input + Enter method
     }
     
-    // Usar configuração global para escolher modo
-    if (WHL_CONFIG.USE_DIRECT_API) {
+    // Usar método Input + Enter (TESTADO E FUNCIONANDO)
+    if (WHL_CONFIG.USE_INPUT_ENTER_METHOD) {
+      console.log('[WHL] 🔧 Using Input + Enter method for sending');
+      processCampaignStepViaInput();
+    } else if (WHL_CONFIG.USE_DIRECT_API) {
       console.log('[WHL] 📡 Usando API direta (WPP Boladão) - SEM RELOAD!');
       processCampaignStepDirect();
     } else {
@@ -2585,7 +2785,9 @@
     }
   }
 
-  // NEW: Function to start campaign via worker tab
+  // DISABLED: Hidden Worker Tab function (não funciona)
+  // Usar Input + Enter method ao invés
+  /*
   async function startCampaignViaWorker() {
     const st = await getState();
     
@@ -2608,6 +2810,7 @@
       }
     });
   }
+  */
 
   async function pauseCampaign() {
     console.log('[WHL] 🔸 Botão PAUSAR clicado');
@@ -2620,16 +2823,18 @@
       await setState(st);
       await render();
       
-      // Check if using worker mode (from user settings)
+      // DISABLED: Worker mode não funciona
       if (st.useWorker) {
-        chrome.runtime.sendMessage({ action: 'RESUME_CAMPAIGN' });
-        return;
+        console.log('[WHL] ⚠️ Worker mode disabled - usando Input + Enter');
+        // Don't use worker
       }
       
       // Continuar processamento de onde parou
       if (st.isRunning) {
         // Usar o mesmo modo configurado
-        if (WHL_CONFIG.USE_DIRECT_API) {
+        if (WHL_CONFIG.USE_INPUT_ENTER_METHOD) {
+          scheduleCampaignStepViaInput();
+        } else if (WHL_CONFIG.USE_DIRECT_API) {
           scheduleCampaignStepDirect();
         } else {
           scheduleCampaignStepViaDom();
@@ -2642,10 +2847,10 @@
       await setState(st);
       await render();
       
-      // Check if using worker mode (from user settings)
+      // DISABLED: Worker mode não funciona
       if (st.useWorker) {
-        chrome.runtime.sendMessage({ action: 'PAUSE_CAMPAIGN' });
-        return;
+        console.log('[WHL] ⚠️ Worker mode disabled');
+        // Don't use worker
       }
       
       // Limpar interval para parar o loop
@@ -2663,10 +2868,10 @@
     await setState(st);
     await render();
 
-    // Check if using worker mode (from user settings)
+    // DISABLED: Worker mode não funciona
     if (st.useWorker) {
-      chrome.runtime.sendMessage({ action: 'STOP_CAMPAIGN' });
-      return;
+      console.log('[WHL] ⚠️ Worker mode disabled');
+      // Don't use worker
     }
 
     if (campaignInterval) {
