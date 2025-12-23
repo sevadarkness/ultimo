@@ -895,11 +895,11 @@
           <div class="muted" style="margin-top:6px">✅ Método testado e validado - extrai nomes e telefones dos participantes.</div>
           
           <div class="row" style="margin-top:10px">
-            <button class="primary" style="flex:1" id="whlLoadGroups">🔄 Carregar Grupos</button>
+            <button class="primary" style="flex:1" id="whlLoadGroups">🔄 Carregar Grupos (Opcional)</button>
           </div>
           
           <select id="whlGroupsList" size="8" style="width:100%;margin-top:10px;min-height:200px;background:rgba(255,255,255,0.05);color:#fff;border-radius:8px;padding:8px;border:1px solid rgba(255,255,255,0.1)">
-            <option disabled style="color:#888">Clique em "Carregar Grupos" primeiro...</option>
+            <option disabled style="color:#888">Lista de grupos (apenas para referência)...</option>
           </select>
           
           <div class="row" style="margin-top:10px">

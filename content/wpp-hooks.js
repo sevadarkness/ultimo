@@ -1118,6 +1118,7 @@ window.whl_hooks_main = () => {
             }
 
             if (phone) {
+                // Remove WhatsApp status text after ~ (e.g., "~Available", "~Online")
                 phone = phone.replace(/~.*$/, '').trim();
                 const cleanPhone = phone.replace(/[^\d+]/g, '');
                 if (cleanPhone) phone = cleanPhone;
