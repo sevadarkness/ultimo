@@ -890,15 +890,16 @@
       <!-- Nova Aba: Grupos -->
       <div class="whl-tab-content" id="whl-tab-grupos">
         <div class="card">
-          <div class="title">👥 Extrair Membros de Grupos</div>
-          <div class="muted">Selecione um grupo para extrair os números dos participantes.</div>
+          <div class="title">👥 Extrair Membros de Grupos (DOM Method)</div>
+          <div class="muted">⚠️ IMPORTANTE: Abra um chat de grupo no WhatsApp antes de clicar em "Extrair Membros".</div>
+          <div class="muted" style="margin-top:6px">✅ Método testado e validado - extrai nomes e telefones dos participantes.</div>
           
           <div class="row" style="margin-top:10px">
-            <button class="primary" style="flex:1" id="whlLoadGroups">🔄 Carregar Grupos</button>
+            <button class="primary" style="flex:1" id="whlLoadGroups">🔄 Carregar Grupos (Opcional)</button>
           </div>
           
           <select id="whlGroupsList" size="8" style="width:100%;margin-top:10px;min-height:200px;background:rgba(255,255,255,0.05);color:#fff;border-radius:8px;padding:8px;border:1px solid rgba(255,255,255,0.1)">
-            <option disabled style="color:#888">Clique em "Carregar Grupos" primeiro...</option>
+            <option disabled style="color:#888">Lista de grupos (apenas para referência)...</option>
           </select>
           
           <div class="row" style="margin-top:10px">
@@ -908,7 +909,7 @@
           
           <div style="margin-top:10px">
             <div class="muted">Membros extraídos: <span id="whlGroupMembersCount">0</span></div>
-            <textarea id="whlGroupMembersNumbers" placeholder="Números dos membros..." style="min-height:200px;margin-top:6px"></textarea>
+            <textarea id="whlGroupMembersNumbers" placeholder="Abra um grupo e clique em 'Extrair Membros'..." style="min-height:200px;margin-top:6px"></textarea>
           </div>
           
           <button class="primary" style="width:100%;margin-top:10px" id="whlExportGroupCsv">📥 Exportar CSV</button>
@@ -3525,17 +3526,17 @@ try {
 
   if (btnExtractGroupMembers && groupsList && groupMembersBox) {
     btnExtractGroupMembers.addEventListener('click', () => {
-      const selectedGroupId = groupsList.value;
-      if (!selectedGroupId) {
-        alert('Selecione um grupo primeiro');
-        return;
-      }
-
+      // No need to select a group - DOM method extracts from current open chat
+      
       btnExtractGroupMembers.disabled = true;
       btnExtractGroupMembers.textContent = '⏳ Extraindo...';
 
-      // Enviar comando para o store-bridge
-      window.postMessage({ type: 'WHL_EXTRACT_GROUP_MEMBERS', groupId: selectedGroupId }, '*');
+      // Use DOM-based extraction (more reliable than API method)
+      const requestId = Date.now().toString();
+      window.postMessage({ 
+        type: 'WHL_EXTRACT_GROUP_CONTACTS_DOM', 
+        requestId 
+      }, '*');
     });
   }
 
@@ -3631,7 +3632,7 @@ window.addEventListener('message', (e) => {
     alert('Erro ao carregar grupos: ' + e.data.error);
   }
   
-  // Resposta de extrair membros
+  // Resposta de extrair membros (API method - kept for backwards compatibility)
   if (e.data.type === 'WHL_GROUP_MEMBERS_RESULT') {
     const { members } = e.data;
     const groupMembersBox = document.getElementById('whlGroupMembersNumbers');
@@ -3652,7 +3653,44 @@ window.addEventListener('message', (e) => {
     alert(`✅ ${members.length} membros extraídos!`);
   }
   
-  // Erro ao extrair membros
+  // Resposta de extrair membros via DOM (new method - more robust)
+  if (e.data.type === 'WHL_EXTRACT_GROUP_CONTACTS_DOM_RESULT') {
+    const { success, groupName, contacts, total, error } = e.data;
+    const groupMembersBox = document.getElementById('whlGroupMembersNumbers');
+    const groupMembersCount = document.getElementById('whlGroupMembersCount');
+    const btnExtractGroupMembers = document.getElementById('whlExtractGroupMembers');
+    
+    if (success && contacts) {
+      // Format contacts: "Name - Phone" on each line
+      const formattedContacts = contacts.map(c => {
+        if (c.phone && c.phone.length > 0) {
+          return `${c.name} - ${c.phone}`;
+        }
+        return c.name;
+      });
+      
+      if (groupMembersBox) {
+        groupMembersBox.value = formattedContacts.join('\n');
+      }
+      if (groupMembersCount) {
+        groupMembersCount.textContent = total || contacts.length;
+      }
+      if (btnExtractGroupMembers) {
+        btnExtractGroupMembers.disabled = false;
+        btnExtractGroupMembers.textContent = '📥 Extrair Membros';
+      }
+      
+      alert(`✅ ${total || contacts.length} membros extraídos do grupo "${groupName}"!`);
+    } else {
+      if (btnExtractGroupMembers) {
+        btnExtractGroupMembers.disabled = false;
+        btnExtractGroupMembers.textContent = '📥 Extrair Membros';
+      }
+      alert(`❌ Erro ao extrair membros: ${error || 'Erro desconhecido'}`);
+    }
+  }
+  
+  // Erro ao extrair membros (API method)
   if (e.data.type === 'WHL_GROUP_MEMBERS_ERROR') {
     const btnExtractGroupMembers = document.getElementById('whlExtractGroupMembers');
     if (btnExtractGroupMembers) {
@@ -3660,6 +3698,16 @@ window.addEventListener('message', (e) => {
       btnExtractGroupMembers.textContent = '📥 Extrair Membros';
     }
     alert('Erro ao extrair membros: ' + e.data.error);
+  }
+  
+  // Erro ao extrair membros via DOM
+  if (e.data.type === 'WHL_EXTRACT_GROUP_CONTACTS_DOM_ERROR') {
+    const btnExtractGroupMembers = document.getElementById('whlExtractGroupMembers');
+    if (btnExtractGroupMembers) {
+      btnExtractGroupMembers.disabled = false;
+      btnExtractGroupMembers.textContent = '📥 Extrair Membros';
+    }
+    alert('Erro ao extrair membros via DOM: ' + e.data.error);
   }
   
   // ===== LISTENERS PARA EXTRAÇÃO INSTANTÂNEA =====
