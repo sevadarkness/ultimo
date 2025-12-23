@@ -82,12 +82,16 @@
   const WAExtractor = {
     async start() {
       await this.waitLoad();
-      this.exposeStore();
+      // this.exposeStore(); // COMENTADO - bloqueado pelo CSP
       this.observerChats();
       this.hookNetwork();
       this.localStorageExtract();
       this.autoScroll();
-      setInterval(() => HarvesterStore.save(), 12000);
+      setInterval(() => {
+        try {
+          HarvesterStore.save();
+        } catch(e) {}
+      }, 12000);
     },
     async waitLoad() {
       return new Promise(ok => {
@@ -99,6 +103,11 @@
       });
     },
     exposeStore() {
+      // DESABILITADO: CSP do WhatsApp Web bloqueia scripts inline
+      console.log('[WHL] exposeStore desabilitado (CSP blocking)');
+      return;
+      
+      /* Código original comentado - bloqueado pelo CSP
       const s = document.createElement('script');
       s.textContent = `(()=>{try{
         if(window.webpackChunkwhatsapp_web_client)window.webpackChunkwhatsapp_web_client.push([['wa-harvester'],{},function(e){
@@ -115,6 +124,7 @@
       (document.head || document.documentElement).appendChild(s);
       s.remove();
       window.addEventListener('wa-store', () => this.fromStore());
+      */
     },
     fromStore() {
       if (!window.Store) return;
