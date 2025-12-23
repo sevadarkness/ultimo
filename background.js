@@ -1,3 +1,21 @@
+// ===== STRICT MODE AND ERROR HANDLING =====
+'use strict';
+
+// Verify Chrome APIs are available
+if (typeof chrome === 'undefined' || !chrome.runtime) {
+    console.error('[WHL Background] Chrome APIs not available');
+}
+
+// Global error handler
+self.addEventListener('error', (event) => {
+    console.error('[WHL Background] Global error:', event.error);
+});
+
+// Unhandled promise rejection handler
+self.addEventListener('unhandledrejection', (event) => {
+    console.error('[WHL Background] Unhandled promise rejection:', event.reason);
+});
+
 // ===== CONFIGURATION CONSTANTS =====
 const SEND_MESSAGE_TIMEOUT_MS = 45000; // 45 seconds timeout for message sending
 
