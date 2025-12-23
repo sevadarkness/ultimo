@@ -469,14 +469,30 @@
         display: block;
       }
 
-      /* ===== QUEUE TABLE CONTAINER ===== */
+      /* ===== QUEUE TABLE CONTAINER - SUPER EXPANDIDO ===== */
       #whlPanel .whl-queue-container {
-        max-height: 600px !important; /* Aumentado de 450px */
+        max-height: 800px !important; /* AUMENTADO de 600px para 800px */
         overflow-y: auto;
         border: 1px solid rgba(255,255,255,.10);
         border-radius: 12px;
         background: rgba(0,0,0,.15);
         margin-top: 10px;
+        scroll-behavior: smooth;
+      }
+
+      /* Header fixo */
+      #whlPanel .whl-queue-container thead {
+        position: sticky;
+        top: 0;
+        background: rgba(30,20,50,.98);
+        z-index: 10;
+      }
+
+      /* Células mais compactas para mostrar mais linhas */
+      #whlPanel .whl-queue-container td,
+      #whlPanel .whl-queue-container th {
+        padding: 6px 8px !important;
+        font-size: 12px;
       }
 
       #whlPanel tbody tr:nth-child(even) {
@@ -499,15 +515,23 @@
 
       /* Status badges com cores mais visíveis */
       #whlPanel .pill.sent {
-        background: rgba(0,200,100,.20);
-        border: 1px solid rgba(0,200,100,.40);
+        background: rgba(0,200,100,.25);
+        border: 1px solid rgba(0,200,100,.50);
         color: #4ade80;
+        font-weight: 600;
       }
 
       #whlPanel .pill.failed {
-        background: rgba(255,80,80,.20);
-        border: 1px solid rgba(255,80,80,.40);
+        background: rgba(255,80,80,.25);
+        border: 1px solid rgba(255,80,80,.50);
         color: #f87171;
+        font-weight: 600;
+      }
+
+      #whlPanel .pill.pending {
+        background: rgba(255,200,0,.20);
+        border: 1px solid rgba(255,200,0,.40);
+        color: #fbbf24;
       }
 
 
@@ -2233,44 +2257,37 @@
     st.numbersText = document.getElementById('whlNumbers').value || '';
     st.message = document.getElementById('whlMsg').value || '';
 
-    // Extrair números
-    const rawNums = (st.numbersText||'').split(/\r?\n/).map(n => whlSanitize(n)).filter(n => n.length >= 1);
+    const rawNums = (st.numbersText||'').split(/\r?\n/).map(n => whlSanitize(n)).filter(n => n.length >= 8);
     
-    // MELHORIA: Remover duplicatas usando Set
-    // Normaliza para evitar que 5521... e 21... sejam considerados diferentes
-    // NOTA: Sistema projetado para números brasileiros. Números com 10-11 dígitos são assumidos como brasileiros.
+    // FILTRAGEM DE DUPLICATAS COM NORMALIZAÇÃO
     const uniqueNums = [];
     const seen = new Set();
+    let duplicatesRemoved = 0;
     
     for (const num of rawNums) {
-      // Normalizar: adicionar 55 se for número brasileiro sem código (10-11 dígitos)
-      let normalized = num;
-      if (num.length === 10 || num.length === 11) {
-        normalized = '55' + num;
+      // Normalizar: adicionar 55 se for número brasileiro sem código
+      let normalized = num.replace(/\D/g, '');
+      if (normalized.length === 10 || normalized.length === 11) {
+        normalized = '55' + normalized;
       }
       
-      // Se já vimos este número (ou sua versão normalizada), pular
-      if (seen.has(normalized)) {
-        console.log('[WHL] Número duplicado removido:', num);
+      // Verificar duplicata (considerando versões com e sem 55)
+      const without55 = normalized.startsWith('55') && normalized.length >= 12 
+        ? normalized.substring(2) 
+        : normalized;
+      
+      if (seen.has(normalized) || seen.has(without55)) {
+        duplicatesRemoved++;
+        console.log('[WHL] Duplicata removida:', num);
         continue;
       }
       
-      // Para números brasileiros válidos (12-13 dígitos com 55), também verificar versão sem 55
-      // Isso garante que 5521999999999 e 21999999999 sejam tratados como duplicados (mesmo número)
-      if (normalized.startsWith('55') && (normalized.length === 12 || normalized.length === 13)) {
-        const without55 = normalized.substring(2);
-        if (seen.has(without55)) {
-          console.log('[WHL] Número duplicado removido (variante):', num);
-          continue;
-        }
-        seen.add(without55);
-      }
-      
       seen.add(normalized);
-      uniqueNums.push(normalized); // Usar versão normalizada (com 55)
+      seen.add(without55);
+      uniqueNums.push(normalized);
     }
     
-    // Criar fila apenas com números únicos
+    // Criar fila com números únicos
     st.queue = uniqueNums.map(n => ({ 
       phone: n, 
       status: whlIsValidPhone(n) ? 'pending' : 'failed', 
@@ -2279,24 +2296,20 @@
     }));
     
     st.index = 0;
-    
-    // Mostrar quantos duplicados foram removidos
-    const duplicatesRemoved = rawNums.length - uniqueNums.length;
-    if (duplicatesRemoved > 0) {
-      console.log(`[WHL] ${duplicatesRemoved} número(s) duplicado(s) removido(s)`);
-    }
-    
-    // Reset stats
     st.stats = { sent: 0, failed: 0, pending: uniqueNums.length };
     
     await setState(st);
     await render();
     
-    // Feedback visual se houve remoção de duplicatas
-    if (duplicatesRemoved > 0) {
-      const hintEl = document.getElementById('whlHint');
-      if (hintEl) {
+    // Feedback visual
+    const hintEl = document.getElementById('whlHint');
+    if (hintEl) {
+      if (duplicatesRemoved > 0) {
         hintEl.textContent = `✅ ${uniqueNums.length} números únicos (${duplicatesRemoved} duplicata(s) removida(s))`;
+        hintEl.style.color = '#4ade80';
+      } else {
+        hintEl.textContent = `✅ ${uniqueNums.length} números carregados`;
+        hintEl.style.color = '#4ade80';
       }
     }
   }
