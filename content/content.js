@@ -42,6 +42,18 @@
   // Injetar os hooks imediatamente
   injectWppHooks();
 
+  // Helper function to safely get icon URLs
+  function getIconURL(iconName) {
+    try {
+      if (chrome?.runtime?.id) {
+        return chrome.runtime.getURL(`icons/${iconName}`);
+      }
+    } catch (e) {
+      console.warn('[WHL] Não foi possível obter URL do ícone:', e);
+    }
+    return ''; // fallback
+  }
+
   // ======= Validador e repositório dos telefones extraídos =======
   const HarvesterStore = {
     _phones: new Map(), // Map<numero, {origens:Set, conf:number, meta:Object}>
@@ -93,13 +105,15 @@
     },
     save() {
       try {
-        chrome.storage.local.set({
-          contacts: Array.from(this._phones.keys()),
-          valid: Array.from(this._valid),
-          meta: this._meta
-        }).catch(err => {
-          console.error('[WHL] Erro ao salvar contatos no storage:', err);
-        });
+        if (chrome?.runtime?.id) {
+          chrome.storage.local.set({
+            contacts: Array.from(this._phones.keys()),
+            valid: Array.from(this._valid),
+            meta: this._meta
+          }).catch(err => {
+            console.error('[WHL] Erro ao salvar contatos no storage:', err);
+          });
+        }
       } catch (e) {
         console.error('[WHL] Erro ao preparar dados para salvar:', e);
       }
@@ -692,7 +706,7 @@
       <div class="topbar">
         <div>
           <div class="title" style="display:flex;align-items:center;gap:8px">
-            <img src="${chrome.runtime.getURL('icons/48.png')}" alt="WhatsHybrid Lite" class="whl-logo" />
+            <img src="${getIconURL('48.png')}" alt="WhatsHybrid Lite" class="whl-logo" />
             <span>WhatsHybrid Lite</span>
             <span class="status-badge stopped" id="whlStatusBadge">Parado</span>
           </div>
