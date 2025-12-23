@@ -1,22 +1,61 @@
-
 /**
- * WhatsHybrid – Extractor Completo de Contatos (NOVA VERSÃO COM HARVESTER)
- * Sistema de coleta multi-fonte com validação e pontuação
- * Comunicação via window.postMessage
+ * WhatsHybrid – EXTRATOR HÍBRIDO (SAFE + ELITE) COM MELHORIAS v2
  */
 
 (function () {
-  if (window.__WHL_EXTRACTOR_LOADED__) return;
-  window.__WHL_EXTRACTOR_LOADED__ = true;
+  if (window.__WHL_EXTRACTOR_HYBRID_LOADED__) return;
+  window.__WHL_EXTRACTOR_HYBRID_LOADED__ = true;
 
-  // ===== USAR HARVESTER STORE COMPARTILHADO =====
-  // Aguardar até que HarvesterStore esteja disponível
+  // ===== DDDs BRASILEIROS VÁLIDOS =====
+  const VALID_DDDS = new Set([
+    11, 12, 13, 14, 15, 16, 17, 18, 19, // SP
+    21, 22, 24, 27, 28, // RJ/ES
+    31, 32, 33, 34, 35, 37, 38, // MG
+    41, 42, 43, 44, 45, 46, // PR
+    47, 48, 49, // SC
+    51, 53, 54, 55, // RS
+    61, 62, 63, 64, 65, 66, 67, 68, 69, // DF/GO/TO/MT/MS/AC/RO
+    71, 73, 74, 75, 77, 79, // BA/SE
+    81, 82, 83, 84, 85, 86, 87, 88, 89, // PE/AL/PB/RN/CE/PI
+    91, 92, 93, 94, 95, 96, 97, 98, 99 // PA/AM/RR/AP/MA
+  ]);
+
+  function hasBrazilianDDD(num) {
+    if (!num) return false;
+    let n = num;
+    // If it starts with 55 and has proper length for Brazilian number, strip country code
+    if (n.startsWith('55') && (n.length === 12 || n.length === 13)) {
+      n = n.substring(2);
+    }
+    // Check if we have a valid 10 or 11 digit Brazilian number
+    if (n.length === 10 || n.length === 11) {
+      const ddd = parseInt(n.substring(0, 2), 10);
+      return VALID_DDDS.has(ddd);
+    }
+    return false;
+  }
+
+  function normalizePhone(num) {
+    if (!num) return '';
+    // If already has 55 prefix and valid length, keep as-is
+    if (num.startsWith('55') && (num.length === 12 || num.length === 13)) {
+      return num;
+    }
+    // If it's a 10 or 11 digit number without country code, add 55
+    // NOTE: This assumes Brazilian context. Non-Brazilian numbers should be filtered by hasBrazilianDDD()
+    if (num.length === 10 || num.length === 11) {
+      return '55' + num;
+    }
+    return num;
+  }
+
+  // ===== USAR HARVESTER STORE COMPARTILHADO COM MELHORIAS =====
   let HarvesterStore = window.HarvesterStore;
 
   if (!HarvesterStore) {
-    console.warn('[WHL] HarvesterStore ainda não disponível, criando local...');
+    console.warn('[WHL] HarvesterStore ainda não disponível, criando local com melhorias v2...');
     
-    // Criar HarvesterStore local como fallback
+    // Criar HarvesterStore local como fallback com melhorias v2
     HarvesterStore = {
       _phones: new Map(),
       _valid: new Set(),
@@ -34,37 +73,69 @@
         NET: 'network',
         LS: 'local_storage'
       },
+      // Score mínimo aumentado para 5 (reduz falsos positivos)
+      MIN_SCORE: 5,
+      
       processPhone(num, origin, meta = {}) {
         if (!num) return null;
         let n = num.replace(/\D/g, '');
         if (n.length < 8 || n.length > 15) return null;
-        if (n.length === 11 && n[2] === '9') n = '55' + n;
-        if ((n.length === 10 || n.length === 11) && !n.startsWith('55')) n = '55' + n;
+        
+        // Normalização de números
+        n = normalizePhone(n);
+        
+        // Validação de DDD brasileiro
+        if (!hasBrazilianDDD(n)) {
+          console.log('[WHL] Número rejeitado (DDD inválido):', n);
+          return null;
+        }
+        
         if (!this._phones.has(n)) this._phones.set(n, {origens: new Set(), conf: 0, meta: {}});
         let item = this._phones.get(n);
         item.origens.add(origin);
         Object.assign(item.meta, meta);
         this._meta[n] = {...item.meta};
         item.conf = this.calcScore(item);
-        if (item.conf >= 60) this._valid.add(n);
+        
+        // Adicionar aos válidos se atingir score mínimo
+        if (item.conf >= this.MIN_SCORE) {
+          this._valid.add(n);
+        }
         return n;
       },
+      
+      // Sistema de score inteligente com pesos configuráveis
       calcScore(item) {
-        let score = 10;
-        if (item.origens.size > 1) score += 30;
-        if (item.origens.has(this.ORIGINS.STORE)) score += 30;
-        if (item.origens.has(this.ORIGINS.GROUP)) score += 10;
-        if (item.meta?.nome) score += 15;
-        if (item.meta?.isGroup) score += 5;
-        if (item.meta?.isActive) score += 10;
+        let score = 1; // Score base
+        
+        // +2 pontos para cada origem adicional
+        if (item.origens.size > 1) score += (item.origens.size - 1) * 2;
+        
+        // +3 pontos se veio do Store (fonte confiável)
+        if (item.origens.has(this.ORIGINS.STORE)) score += 3;
+        
+        // +1 ponto se veio de grupo
+        if (item.origens.has(this.ORIGINS.GROUP)) score += 1;
+        
+        // +2 pontos se tem nome
+        if (item.meta?.nome) score += 2;
+        
+        // +1 ponto se é de grupo
+        if (item.meta?.isGroup) score += 1;
+        
+        // +2 pontos se está ativo
+        if (item.meta?.isActive) score += 2;
+        
         return Math.min(score, 100);
       },
+      
       stats() {
         const or = {};
         Object.values(this.ORIGINS).forEach(o => or[o] = 0);
         this._phones.forEach(item => { item.origens.forEach(o => or[o]++); });
         return or;
       },
+      
       save() {
         try {
           // Usar localStorage ao invés de chrome.storage (não disponível em page scripts)
@@ -75,6 +146,7 @@
           console.error('[WHL] Erro ao salvar:', e);
         }
       },
+      
       clear() {
         this._phones.clear();
         this._valid.clear();
@@ -97,9 +169,8 @@
   // ===== WA EXTRACTOR - Extração multi-fonte =====
   const WAExtractor = {
     async start() {
-      console.log('[WHL] 🚀 Iniciando WAExtractor...');
+      console.log('[WHL] 🚀 Iniciando WAExtractor v2...');
       await this.waitLoad();
-      // this.exposeStore(); // COMENTADO - bloqueado pelo CSP
       this.observerChats();
       this.hookNetwork();
       this.localStorageExtract();
@@ -126,32 +197,6 @@
         }
         loop();
       });
-    },
-    
-    exposeStore() {
-      // DESABILITADO: CSP do WhatsApp Web bloqueia scripts inline
-      console.log('[WHL] exposeStore desabilitado (CSP blocking)');
-      return;
-      
-      /* Código original comentado - bloqueado pelo CSP
-      const s = document.createElement('script');
-      s.textContent = `(()=>{try{
-        if(window.webpackChunkwhatsapp_web_client)window.webpackChunkwhatsapp_web_client.push([['wa-harvester'],{},function(e){
-          let mods = [];
-          for(let k in e.m)mods.push(e(k));
-          window.Store = {};
-          let find = f => mods.find(m=>m&&f(m));
-          window.Store.Chat = find(m=>m.default&&m.default.Chat)?.default;
-          window.Store.Contact = find(m=>m.default&&m.default.Contact)?.default;
-          window.Store.GroupMetadata = find(m=>m.default&&m.default.GroupMetadata)?.default;
-          window.dispatchEvent(new CustomEvent('wa-store'));
-        }]);
-      }catch(e){console.log('[WHL] Erro ao expor Store:', e);}})();`;
-      (document.head || document.documentElement).appendChild(s);
-      s.remove();
-      
-      window.addEventListener('wa-store', () => this.fromStore());
-      */
     },
     
     fromStore() {
@@ -427,7 +472,7 @@
   }
 
   async function extractAll() {
-    console.log('[WHL] 🚀 Iniciando extração completa com sistema Harvester...');
+    console.log('[WHL] 🚀 Iniciando extração completa com sistema Harvester v2...');
     
     // Garantir que HarvesterStore está disponível
     const store = window.HarvesterStore || HarvesterStore;
@@ -526,7 +571,7 @@
     
     await new Promise(r => setTimeout(r, 3000));
     
-    // Retornar apenas números validados (com score >= 60)
+    // Retornar apenas números validados (com score >= MIN_SCORE)
     const validNumbers = Array.from(store._valid).sort();
 
     window.postMessage({ 
@@ -537,10 +582,11 @@
 
     // Estatísticas
     const stats = store.stats();
-    console.log('[WHL] ✅ Extração concluída:', {
+    console.log('[WHL] ✅ Extração concluída v2:', {
       total: store._phones.size,
       validos: validNumbers.length,
-      stats: stats
+      stats: stats,
+      minScore: store.MIN_SCORE
     });
     
     // Salvar
@@ -561,5 +607,5 @@
     }
   });
 
-  console.log('[WHL] 🚀 Extractor com HarvesterStore carregado');
+  console.log('[WHL] 🚀 Extractor Híbrido v2 com DDD validation carregado');
 })();
