@@ -44,7 +44,14 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["content/extractor.contacts.js", "content/wpp-hooks.js"],
+      "resources": [
+        "content/extractor.contacts.js",
+        "content/wpp-hooks.js",
+        "icons/*.png",
+        "icons/16.png",
+        "icons/48.png",
+        "icons/128.png"
+      ],
       "matches": ["https://web.whatsapp.com/*"]
     }
   ]
