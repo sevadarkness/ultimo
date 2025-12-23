@@ -3253,6 +3253,9 @@
     }, 100);
   }
 
+  // PR #78: Store scheduled timeout ID for cancellation
+  let scheduledCampaignTimeout = null;
+  
   async function startCampaign() {
     const st = await getState();
     
@@ -3265,6 +3268,51 @@
       console.log('[WHL] Campaign already running');
       return;
     }
+
+    // PR #78: Check if scheduling is enabled
+    if (st.scheduleAt) {
+      const scheduledTime = new Date(st.scheduleAt);
+      const now = new Date();
+      
+      // Validate the date
+      if (isNaN(scheduledTime.getTime())) {
+        console.error('[WHL] Invalid schedule date:', st.scheduleAt);
+        alert('⚠️ Data de agendamento inválida. Por favor, defina uma data válida.');
+        return;
+      }
+      
+      if (scheduledTime > now) {
+        const delayMs = scheduledTime - now;
+        const delayMinutes = Math.round(delayMs / 60000);
+        
+        console.log(`[WHL] 📅 Campanha agendada para ${scheduledTime.toLocaleString('pt-BR')}`);
+        console.log(`[WHL] ⏰ Aguardando ${delayMinutes} minutos...`);
+        
+        alert(`✅ Campanha agendada!\nInício: ${scheduledTime.toLocaleString('pt-BR')}\nAguardando ${delayMinutes} minutos...`);
+        
+        // Cancel any previous scheduled campaign
+        if (scheduledCampaignTimeout) {
+          clearTimeout(scheduledCampaignTimeout);
+        }
+        
+        // Schedule the start and store the timeout ID
+        scheduledCampaignTimeout = setTimeout(() => {
+          startCampaignNow();
+          scheduledCampaignTimeout = null;
+        }, delayMs);
+        
+        return;
+      } else {
+        console.log('[WHL] ⚠️ Horário agendado já passou, iniciando imediatamente');
+      }
+    }
+    
+    // Start immediately
+    startCampaignNow();
+  }
+  
+  async function startCampaignNow() {
+    const st = await getState();
 
     // Calculate stats
     st.stats.sent = st.queue.filter(c => c.status === 'sent').length;
@@ -3383,6 +3431,13 @@
     if (campaignInterval) {
       clearTimeout(campaignInterval);
       campaignInterval = null;
+    }
+    
+    // PR #78: Cancel scheduled campaign if exists
+    if (scheduledCampaignTimeout) {
+      clearTimeout(scheduledCampaignTimeout);
+      scheduledCampaignTimeout = null;
+      console.log('[WHL] Scheduled campaign cancelled');
     }
 
     console.log('[WHL] Campaign stopped');

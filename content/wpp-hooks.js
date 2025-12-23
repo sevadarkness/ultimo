@@ -218,7 +218,8 @@ window.whl_hooks_main = () => {
                     const serialized = m.id._serialized || '';
                     return serialized.replace('@c.us', '');
                 })
-                .filter(n => n && /^\d{10,15}$/.test(String(n).replace(/\D/g, '')));
+                .map(n => String(n).replace(/\D/g, ''))  // PR #78: Clean before filtering
+                .filter(n => n && /^\d{10,15}$/.test(n));  // PR #78: Test cleaned value
             
             const uniqueContatos = [...new Set(contatos)];
             console.log('[WHL] Contatos extraídos:', uniqueContatos.length);
