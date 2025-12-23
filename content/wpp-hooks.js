@@ -459,44 +459,49 @@ window.whl_hooks_main = () => {
         console.log('[WHL] 📱 Abrindo chat para:', phone);
         
         try {
-            // Método 1: Usar API interna para abrir chat
             const WF = require('WAWebWidFactory');
             const CC = require('WAWebChatCollection');
-            const CMD = require('WAWebCmd');
             
             const wid = WF.createWid(phone + '@c.us');
             let chat = CC.ChatCollection.get(wid);
             
             if (!chat) {
-                // Criar chat se não existir
                 const ChatModel = require('WAWebChatModel');
                 chat = new ChatModel.Chat({ id: wid });
                 CC.ChatCollection.add(chat);
             }
             
-            // Abrir o chat usando CMD
-            if (CMD && CMD.openChatAt) {
-                await CMD.openChatAt(chat);
-            } else if (chat.open) {
-                await chat.open();
-            } else {
-                // Fallback: Navegar via URL (não causa reload)
-                window.history.pushState({}, '', `/send?phone=${phone}`);
-                // Disparar evento para WhatsApp processar
-                window.dispatchEvent(new PopStateEvent('popstate'));
+            // MÉTODO CORRETO: Usar openChat do CMD
+            try {
+                const CMD = require('WAWebCmd');
+                if (CMD && CMD.openChatAt) {
+                    await CMD.openChatAt(chat);
+                    await new Promise(r => setTimeout(r, 2000));
+                    return true;
+                }
+            } catch (e) {
+                console.log('[WHL] CMD não disponível, tentando método alternativo...');
             }
             
-            // Aguardar chat carregar
-            await new Promise(r => setTimeout(r, 1500));
+            // FALLBACK: Simular clique no contato ou usar URL
+            // Navegar para o chat via URL do WhatsApp Web
+            const currentUrl = window.location.href;
+            const targetUrl = `https://web.whatsapp.com/send?phone=${phone}`;
             
-            // Verificar se chat foi aberto corretamente
-            const currentChat = document.querySelector('[data-testid="conversation-header"]');
-            if (currentChat) {
-                console.log('[WHL] ✅ Chat aberto com sucesso');
-                return true;
+            if (!currentUrl.includes(phone)) {
+                // Criar link e clicar
+                const link = document.createElement('a');
+                link.href = targetUrl;
+                link.target = '_self';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                // Aguardar página carregar
+                await new Promise(r => setTimeout(r, 3000));
             }
             
-            return true; // Assumir sucesso
+            return true;
         } catch (e) {
             console.error('[WHL] Erro ao abrir chat:', e);
             return false;
@@ -663,8 +668,9 @@ window.whl_hooks_main = () => {
 
     // ===== RECOVER HISTORY TRACKING =====
     // CORREÇÃO BUG 4: Cache mais robusto de mensagens para recuperar conteúdo quando forem apagadas
-    // Mantém as últimas 500 mensagens em memória
+    // Mantém as últimas 1000 mensagens em memória
     const messageCache = new Map(); // Map<messageId, {body, from, timestamp, type}>
+    const MAX_CACHE_SIZE = 1000; // Aumentar para 1000
     
     // Array para armazenar histórico de mensagens recuperadas
     const historicoRecover = [];
@@ -675,37 +681,37 @@ window.whl_hooks_main = () => {
     function cachearMensagem(msg) {
         if (!msg) return;
         
-        // CORREÇÃO BUG 4: Tentar múltiplos IDs
-        const messageId = msg.id?.id || msg.id?._serialized || '';
-        if (!messageId) return;
+        // Múltiplos IDs para cache
+        const ids = [
+            msg.id?.id,
+            msg.id?._serialized,
+            msg.id?.remote?._serialized + '_' + msg.id?.id
+        ].filter(Boolean);
         
         const body = msg.body || msg.caption || msg.text || '';
-        const from = msg.from?._serialized || msg.from?.user || msg.author?._serialized || '';
+        const from = msg.from?._serialized || msg.from?.user || msg.author?._serialized || msg.id?.remote?._serialized || '';
         
-        if (body || from) {
-            messageCache.set(messageId, {
-                body: body,
-                from: from,
-                timestamp: Date.now(),
-                type: msg.type || 'chat'
-            });
-            
-            // CORREÇÃO BUG 4: Também cachear por _serialized se disponível
-            if (msg.id?._serialized && msg.id._serialized !== messageId) {
-                messageCache.set(msg.id._serialized, {
-                    body: body,
-                    from: from,
-                    timestamp: Date.now(),
-                    type: msg.type || 'chat'
-                });
-            }
-            
-            // Limitar cache a 500 mensagens (remover mais antigas)
-            if (messageCache.size > 500) {
-                const firstKey = messageCache.keys().next().value;
-                messageCache.delete(firstKey);
-            }
+        if (!body && !from) return;
+        
+        const cacheData = {
+            body: body,
+            from: from,
+            timestamp: Date.now(),
+            type: msg.type || 'chat'
+        };
+        
+        // Cachear com TODOS os IDs possíveis
+        ids.forEach(id => {
+            messageCache.set(id, cacheData);
+        });
+        
+        // Limitar tamanho do cache
+        if (messageCache.size > MAX_CACHE_SIZE) {
+            const firstKey = messageCache.keys().next().value;
+            messageCache.delete(firstKey);
         }
+        
+        console.log('[WHL Cache] Mensagem cacheada:', body.substring(0, 30), 'IDs:', ids.length);
     }
     
     /**
@@ -716,28 +722,30 @@ window.whl_hooks_main = () => {
         let body = msg.body || msg.caption || msg.text || '';
         let from = msg.from?._serialized || msg.from?.user || msg.author?._serialized || msg.id?.remote?._serialized || '';
         
-        // CORREÇÃO BUG 4: Tentar recuperar do cache usando múltiplos IDs possíveis
-        const possibleIds = [
-            msg.protocolMessageKey?.id,
-            msg.id?.id,
-            msg.id?._serialized,
-            msg.quotedStanzaID
-        ].filter(Boolean);
-        
-        for (const id of possibleIds) {
-            const cached = messageCache.get(id);
-            if (cached) {
-                if (!body && cached.body) body = cached.body;
-                if (!from && cached.from) from = cached.from;
-                console.log('[WHL Recover] ✅ Dados recuperados do cache para ID:', id);
-                break;
+        // Se body estiver vazio, TENTAR RECUPERAR DO CACHE
+        if (!body) {
+            const possibleIds = [
+                msg.protocolMessageKey?.id,
+                msg.id?.id,
+                msg.id?._serialized,
+                msg.quotedStanzaID,
+                msg.id?.remote?._serialized + '_' + msg.protocolMessageKey?.id
+            ].filter(Boolean);
+            
+            for (const id of possibleIds) {
+                const cached = messageCache.get(id);
+                if (cached && cached.body) {
+                    body = cached.body;
+                    if (!from && cached.from) from = cached.from;
+                    console.log('[WHL Recover] ✅ Conteúdo recuperado do cache:', body.substring(0, 50));
+                    break;
+                }
             }
         }
         
-        // Formatar número
-        from = from.replace('@c.us', '').replace('@s.whatsapp.net', '');
-        
-        if (!body) body = '[Mensagem sem texto ou mídia]';
+        // Formatar
+        from = (from || '').replace('@c.us', '').replace('@s.whatsapp.net', '');
+        if (!body) body = '[Mensagem sem texto - mídia ou sticker]';
         if (!from) from = 'Número desconhecido';
         
         const entrada = {
@@ -1380,19 +1388,40 @@ window.whl_hooks_main = () => {
                 return { success: false, error: 'Nenhum participante encontrado.', members: [], count: 0 };
             }
 
+            // CORREÇÃO CRÍTICA BUG 3: Extrair número de telefone CORRETAMENTE
             const members = participants.map(p => {
                 const id = p.id;
-                if (!id || !id.user) return null;
+                if (!id) return null;
 
-                // Normalização FINAL (c.us + lid)
-                if (id.server === 'c.us' || id.server === 'lid') {
-                    return id.user;  // Retorna apenas o número limpo
+                // MÉTODO 1: Usar _serialized e extrair número
+                if (id._serialized) {
+                    const serialized = id._serialized;
+                    // Formato: "5511999998888@c.us" ou "5511999998888@s.whatsapp.net"
+                    const numero = serialized.replace('@c.us', '').replace('@s.whatsapp.net', '').replace('@lid', '');
+                    if (/^\d{10,15}$/.test(numero)) {
+                        return numero;
+                    }
+                }
+
+                // MÉTODO 2: Usar user diretamente se for número válido
+                if (id.user && /^\d{10,15}$/.test(id.user)) {
+                    return id.user;
+                }
+
+                // MÉTODO 3: Para servidores c.us e lid
+                if ((id.server === 'c.us' || id.server === 'lid') && id.user) {
+                    const numero = String(id.user);
+                    if (/^\d{10,15}$/.test(numero)) {
+                        return numero;
+                    }
                 }
 
                 return null;
             }).filter(Boolean);
 
             const uniqueMembers = [...new Set(members)];
+
+            console.log('[WHL Hooks] Membros extraídos:', uniqueMembers.length, 'de', participants.length);
 
             return {
                 success: true,

@@ -3693,6 +3693,8 @@ try {
       const blockedCount = blockedContacts.length;
       const totalCount = normalCount + archivedCount + blockedCount;
       
+      console.log('[WHL] Extração instantânea - Normais:', normalCount, 'Arquivados:', archivedCount, 'Bloqueados:', blockedCount);
+      
       // Preencher caixas de texto
       const normalBox = document.getElementById('whlExtractedNumbers');
       if (normalBox) normalBox.value = normalContacts.join('\n');
@@ -3703,15 +3705,24 @@ try {
       const blockedBox = document.getElementById('whlBlockedNumbers');
       if (blockedBox) blockedBox.value = blockedContacts.join('\n');
       
-      // CORREÇÃO: Atualizar contadores usando length dos arrays
+      // CORREÇÃO BUG 2: Atualizar contadores CORRETAMENTE
       const normalCountEl = document.getElementById('whlNormalCount');
-      if (normalCountEl) normalCountEl.textContent = normalCount;
+      if (normalCountEl) {
+        normalCountEl.textContent = normalCount;
+        console.log('[WHL] Contador normais atualizado:', normalCount);
+      }
       
       const archivedCountEl = document.getElementById('whlArchivedCount');
-      if (archivedCountEl) archivedCountEl.textContent = archivedCount;
+      if (archivedCountEl) {
+        archivedCountEl.textContent = archivedCount;
+        console.log('[WHL] Contador arquivados atualizado:', archivedCount);
+      }
       
       const blockedCountEl = document.getElementById('whlBlockedCount');
-      if (blockedCountEl) blockedCountEl.textContent = blockedCount;
+      if (blockedCountEl) {
+        blockedCountEl.textContent = blockedCount;
+        console.log('[WHL] Contador bloqueados atualizado:', blockedCount);
+      }
       
       // Restaurar botão
       const btnExtract = document.getElementById('whlExtractContacts');
