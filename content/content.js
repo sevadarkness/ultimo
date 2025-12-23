@@ -2506,6 +2506,42 @@
   
   // ===== DIRECT API CAMPAIGN PROCESSING (NO RELOAD) =====
   
+  // PR #78: Function to replace dynamic variables in messages
+  function substituirVariaveis(mensagem, contato) {
+    if (!mensagem) return '';
+    
+    // Extract contact info from phone number or contact object
+    let nome = '';
+    let firstName = '';
+    let lastName = '';
+    let phone = '';
+    let email = '';
+    
+    if (typeof contato === 'object') {
+      nome = contato.name || contato.pushname || '';
+      phone = contato.phone || contato.number || '';
+      email = contato.email || '';
+    } else {
+      // If just a phone string
+      phone = String(contato || '');
+    }
+    
+    // Split name into first and last
+    if (nome) {
+      const partes = nome.split(' ').filter(p => p.length > 0);
+      firstName = partes[0] || '';
+      lastName = partes.slice(1).join(' ') || '';
+    }
+    
+    // Replace all variables
+    return mensagem
+      .replace(/{{nome}}/gi, nome)
+      .replace(/{{first_name}}/gi, firstName)
+      .replace(/{{last_name}}/gi, lastName)
+      .replace(/{{phone}}/gi, phone)
+      .replace(/{{email}}/gi, email);
+  }
+  
   /**
    * Processa campanha usando API direta (sem reload)
    * Envia mensagens via postMessage para wpp-hooks.js
@@ -2571,6 +2607,9 @@
     await setState(st);
     await render();
     
+    // PR #78: Apply variable substitution
+    const messageToSend = substituirVariaveis(st.message || '', cur.phone);
+    
     // ATUALIZADO: Usar métodos testados e validados (WHL_SEND_MESSAGE_API e WHL_SEND_IMAGE_DOM)
     const requestId = Date.now().toString();
     
@@ -2581,7 +2620,7 @@
         type: 'WHL_SEND_IMAGE_TO_NUMBER',  // CORREÇÃO BUG 2: Novo tipo que abre chat correto
         phone: cur.phone,
         image: st.imageData,
-        caption: st.message || '',
+        caption: messageToSend,  // PR #78: Use substituted message
         requestId: requestId
       }, '*');
     } else {
@@ -2592,7 +2631,7 @@
       window.postMessage({
         type: 'WHL_SEND_MESSAGE_API',
         phone: cur.phone,
-        message: st.message,
+        message: messageToSend,  // PR #78: Use substituted message
         requestId: requestId
       }, '*');
     }
@@ -3493,6 +3532,43 @@
     if (stopBtn) {
       stopBtn.disabled = !state.isRunning;
       stopBtn.style.opacity = stopBtn.disabled ? '0.5' : '1';
+    }
+  }
+
+  // PR #78: Function to update message preview in real-time
+  function updateMessagePreview() {
+    try {
+      const previewEl = document.getElementById('whlPreviewText');
+      const messageEl = document.getElementById('whlMsg');
+      
+      if (!previewEl || !messageEl) return;
+      
+      const message = messageEl.value || '';
+      
+      // Replace variables with highlighted placeholders
+      const previewHTML = message
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\n/g, '<br>')
+        .replace(/{{nome}}/gi, '<span style="background:rgba(111,0,255,0.3);padding:2px 6px;border-radius:4px;color:#fff">[Nome]</span>')
+        .replace(/{{first_name}}/gi, '<span style="background:rgba(111,0,255,0.3);padding:2px 6px;border-radius:4px;color:#fff">[Primeiro Nome]</span>')
+        .replace(/{{last_name}}/gi, '<span style="background:rgba(111,0,255,0.3);padding:2px 6px;border-radius:4px;color:#fff">[Último Nome]</span>')
+        .replace(/{{phone}}/gi, '<span style="background:rgba(111,0,255,0.3);padding:2px 6px;border-radius:4px;color:#fff">[Telefone]</span>')
+        .replace(/{{email}}/gi, '<span style="background:rgba(111,0,255,0.3);padding:2px 6px;border-radius:4px;color:#fff">[Email]</span>');
+      
+      previewEl.innerHTML = previewHTML;
+      
+      // Update time
+      const timeEl = document.getElementById('whlPreviewMeta');
+      if (timeEl) {
+        const d = new Date();
+        const hh = String(d.getHours()).padStart(2,'0');
+        const mm = String(d.getMinutes()).padStart(2,'0');
+        timeEl.textContent = `${hh}:${mm}`;
+      }
+    } catch (e) {
+      console.error('[WHL] Erro ao atualizar preview:', e);
     }
   }
 
@@ -4436,7 +4512,13 @@ try {
       const st = await getState();
       st.message = e.target.value || '';
       await setState(st);
+      // PR #78: Update preview automatically
+      updateMessagePreview();
     });
+    
+    // PR #78: Add blur and change listeners for preview update
+    document.getElementById('whlMsg').addEventListener('blur', updateMessagePreview);
+    document.getElementById('whlMsg').addEventListener('change', updateMessagePreview);
     
     // Enter key to auto-generate queue (build table)
     const msgTextarea = document.getElementById('whlMsg');

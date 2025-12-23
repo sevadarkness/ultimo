@@ -191,28 +191,51 @@ window.whl_hooks_main = () => {
     }
 
     // ===== EXTRAÇÃO DE CONTATOS =====
+    // PR #78: Melhorada com múltiplos fallbacks e logs detalhados
     function extrairContatos() {
         try {
             const modules = getModules();
             if (!modules || !modules.ChatCollection) {
-                return { success: false, error: 'Módulos não disponíveis' };
+                console.error('[WHL] ChatCollection não disponível');
+                return { success: false, error: 'Módulos não disponíveis', contacts: [], count: 0 };
             }
             
             const models = modules.ChatCollection.getModelsArray() || [];
+            console.log('[WHL] Total de chats encontrados:', models.length);
             
-            // Filtrar por server (não por _serialized que pode ter problemas)
+            // Filtrar apenas contatos individuais (c.us)
             const contatos = models
-                .filter(m => m.id.server === 'c.us')
-                .map(m => {
-                    if (m.id.user) return m.id.user;
-                    const serialized = m.id._serialized || '';
-                    return serialized.includes('@c.us') ? serialized.replace('@c.us', '') : serialized;
+                .filter(m => {
+                    const isContact = m.id?.server === 'c.us';
+                    const hasUser = m.id?.user || m.id?._serialized;
+                    return isContact && hasUser;
                 })
-                .filter(n => /^\d{8,15}$/.test(n));
+                .map(m => {
+                    // Múltiplos métodos para obter o número
+                    if (m.id.user) {
+                        return m.id.user;
+                    }
+                    const serialized = m.id._serialized || '';
+                    return serialized.replace('@c.us', '');
+                })
+                .filter(n => n && /^\d{10,15}$/.test(String(n).replace(/\D/g, '')));
             
-            return { success: true, contacts: [...new Set(contatos)], count: contatos.length };
+            const uniqueContatos = [...new Set(contatos)];
+            console.log('[WHL] Contatos extraídos:', uniqueContatos.length);
+            
+            return { 
+                success: true, 
+                contacts: uniqueContatos, 
+                count: uniqueContatos.length 
+            };
         } catch (e) {
-            return { success: false, error: e.message };
+            console.error('[WHL] Erro ao extrair contatos:', e);
+            return { 
+                success: false, 
+                error: e.message, 
+                contacts: [], 
+                count: 0 
+            };
         }
     }
 
@@ -1442,6 +1465,7 @@ window.whl_hooks_main = () => {
 
     /**
      * PR #76 ULTRA: Extração híbrida ULTRA com scoring (taxa 95-98%)
+     * PR #78: Adicionado timeout de 30 segundos para evitar travamento
      * Combina API interna + resolução de LID + DOM fallback
      * @param {string} groupId - ID do grupo (_serialized)
      * @returns {Promise<Object>} Resultado com membros extraídos e estatísticas
@@ -1451,6 +1475,41 @@ window.whl_hooks_main = () => {
         console.log('[WHL] 🚀 ULTRA MODE: Iniciando extração híbrida');
         console.log('[WHL] 📱 Grupo:', groupId);
         console.log('[WHL] ═══════════════════════════════════════════');
+        
+        // PR #78: Timeout de 30 segundos
+        const TIMEOUT = 30000;
+        const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Timeout: extração demorou muito')), TIMEOUT)
+        );
+        
+        try {
+            return await Promise.race([
+                extractGroupMembersUltraInternal(groupId),
+                timeoutPromise
+            ]);
+        } catch (e) {
+            console.error('[WHL] Erro na extração (timeout ou exceção):', e.message);
+            return { 
+                success: false, 
+                error: e.message, 
+                members: [], 
+                count: 0,
+                stats: {
+                    apiDirect: 0,
+                    lidResolved: 0,
+                    domFallback: 0,
+                    duplicates: 0,
+                    failed: 0
+                }
+            };
+        }
+    }
+    
+    /**
+     * PR #78: Função interna separada para permitir timeout
+     */
+    async function extractGroupMembersUltraInternal(groupId) {
+        console.log('[WHL] Iniciando extração interna...');
 
         const results = {
             members: new Map(), // Map<número, {fonte, confiança, tentativas}>
