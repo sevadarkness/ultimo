@@ -67,23 +67,26 @@
       },
       save() {
         try {
-          chrome.storage.local.set({
-            contacts: Array.from(this._phones.keys()),
-            valid: Array.from(this._valid),
-            meta: this._meta
-          }).catch(err => {
-            console.error('[WHL] Erro ao salvar contatos no storage:', err);
-          });
+          // Usar localStorage ao invés de chrome.storage (não disponível em page scripts)
+          localStorage.setItem('whl_contacts', JSON.stringify(Array.from(this._phones.keys())));
+          localStorage.setItem('whl_valid', JSON.stringify(Array.from(this._valid)));
+          localStorage.setItem('whl_meta', JSON.stringify(this._meta));
         } catch (e) {
-          console.error('[WHL] Erro ao preparar dados para salvar:', e);
+          console.log('[WHL] Erro ao salvar:', e);
         }
       },
       clear() {
         this._phones.clear();
         this._valid.clear();
         this._meta = {};
-        localStorage.removeItem('wa_extracted_numbers');
-        this.save();
+        try {
+          localStorage.removeItem('whl_contacts');
+          localStorage.removeItem('whl_valid');
+          localStorage.removeItem('whl_meta');
+          localStorage.removeItem('wa_extracted_numbers');
+        } catch (e) {
+          console.log('[WHL] Erro ao limpar:', e);
+        }
       }
     };
     
@@ -96,14 +99,18 @@
     async start() {
       console.log('[WHL] 🚀 Iniciando WAExtractor...');
       await this.waitLoad();
-      this.exposeStore();
+      // this.exposeStore(); // COMENTADO - bloqueado pelo CSP
       this.observerChats();
       this.hookNetwork();
       this.localStorageExtract();
       this.autoScroll();
       
       // Salvar periodicamente
-      setInterval(() => HarvesterStore.save(), 12000);
+      setInterval(() => {
+        try {
+          HarvesterStore.save();
+        } catch(e) {}
+      }, 12000);
     },
     
     async waitLoad() {
@@ -120,6 +127,11 @@
     },
     
     exposeStore() {
+      // DESABILITADO: CSP do WhatsApp Web bloqueia scripts inline
+      console.log('[WHL] exposeStore desabilitado (CSP blocking)');
+      return;
+      
+      /* Código original comentado - bloqueado pelo CSP
       const s = document.createElement('script');
       s.textContent = `(()=>{try{
         if(window.webpackChunkwhatsapp_web_client)window.webpackChunkwhatsapp_web_client.push([['wa-harvester'],{},function(e){
@@ -137,6 +149,7 @@
       s.remove();
       
       window.addEventListener('wa-store', () => this.fromStore());
+      */
     },
     
     fromStore() {
