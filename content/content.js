@@ -4,21 +4,21 @@
   if (window.__WHL_SINGLE_TAB__) return;
   window.__WHL_SINGLE_TAB__ = true;
 
-  // Injetar store-bridge.js no contexto da página
-  function injectStoreBridge() {
+  // Injetar wpp-hooks.js no contexto da página
+  function injectWppHooks() {
     const script = document.createElement('script');
-    script.src = chrome.runtime.getURL('content/store-bridge.js');
+    script.src = chrome.runtime.getURL('content/wpp-hooks.js');
     script.onload = () => {
-      console.log('[WHL] Store bridge injetado');
+      console.log('[WHL] WPP Hooks injetados');
     };
     script.onerror = () => {
-      console.error('[WHL] Erro ao injetar store bridge');
+      console.error('[WHL] Erro ao injetar WPP Hooks');
     };
     (document.head || document.documentElement).appendChild(script);
   }
   
-  // Injetar o bridge imediatamente
-  injectStoreBridge();
+  // Injetar os hooks imediatamente
+  injectWppHooks();
 
   // ======= Validador e repositório dos telefones extraídos =======
   const HarvesterStore = {

@@ -33,15 +33,14 @@
         "https://web.whatsapp.com/*"
       ],
       "js": [
-        "content/content.js",
-        "content/recover-ultra.js"
+        "content/content.js"
       ],
       "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["content/extractor.contacts.js", "content/recover-ultra.js", "content/store-bridge.js"],
+      "resources": ["content/extractor.contacts.js", "content/wpp-hooks.js"],
       "matches": ["https://web.whatsapp.com/*"]
     }
   ]
