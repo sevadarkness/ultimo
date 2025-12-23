@@ -21,9 +21,14 @@
   ]);
 
   function hasBrazilianDDD(num) {
+    if (!num) return false;
     let n = num;
-    if (n.startsWith('55') && n.length >= 12) n = n.substring(2);
-    if (n.length >= 10) {
+    // If it starts with 55 and has proper length for Brazilian number, strip country code
+    if (n.startsWith('55') && (n.length === 12 || n.length === 13)) {
+      n = n.substring(2);
+    }
+    // Check if we have a valid 10 or 11 digit Brazilian number
+    if (n.length === 10 || n.length === 11) {
       const ddd = parseInt(n.substring(0, 2), 10);
       return VALID_DDDS.has(ddd);
     }
@@ -32,8 +37,14 @@
 
   function normalizePhone(num) {
     if (!num) return '';
-    if (num.startsWith('55') && num.length >= 12) return num;
-    if (num.length === 10 || num.length === 11) return '55' + num;
+    // If already has 55 prefix and valid length, keep as-is
+    if (num.startsWith('55') && (num.length === 12 || num.length === 13)) {
+      return num;
+    }
+    // If it's a 10 or 11 digit number without country code, add 55
+    if (num.length === 10 || num.length === 11) {
+      return '55' + num;
+    }
     return num;
   }
 

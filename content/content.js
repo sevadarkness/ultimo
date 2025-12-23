@@ -2242,7 +2242,7 @@
     const seen = new Set();
     
     for (const num of rawNums) {
-      // Normalizar: adicionar 55 se for número brasileiro sem código
+      // Normalizar: adicionar 55 se for número brasileiro sem código (10-11 dígitos)
       let normalized = num;
       if (num.length === 10 || num.length === 11) {
         normalized = '55' + num;
@@ -2254,15 +2254,17 @@
         continue;
       }
       
-      // Também verificar a versão sem 55
-      const without55 = normalized.startsWith('55') ? normalized.substring(2) : normalized;
-      if (seen.has(without55)) {
-        console.log('[WHL] Número duplicado removido (variante):', num);
-        continue;
+      // Também verificar a versão sem 55 para números brasileiros (12-13 dígitos com 55)
+      if (normalized.startsWith('55') && (normalized.length === 12 || normalized.length === 13)) {
+        const without55 = normalized.substring(2);
+        if (seen.has(without55)) {
+          console.log('[WHL] Número duplicado removido (variante):', num);
+          continue;
+        }
+        seen.add(without55);
       }
       
       seen.add(normalized);
-      seen.add(without55);
       uniqueNums.push(normalized); // Usar versão normalizada (com 55)
     }
     
