@@ -24,13 +24,12 @@ window.whl_hooks_main = () => {
         PROTOBUF_HOOK: ['decodeProtobuf', 'WAWebProtobufdecode', 'WAWebProtobufUtils'],
         SEND_MESSAGE: 'WAWebSendMsgRecordAction',
         QUERY_GROUP: 'WAWebGroupMsgSendUtils',
-        CHAT_STORE: 'WAWebChatCollection',
+        CHAT_COLLECTION: 'WAWebChatCollection',
         CONTACT_STORE: 'WAWebContactCollection',
         GROUP_METADATA: 'WAWebGroupMetadata',
         // Novos módulos para envio direto
         OPEN_CHAT: 'useWAWebSetModelValue',
         WID_FACTORY: 'WAWebWidFactory',
-        CHAT_COLLECTION: 'WAWebChatCollection',
         // Módulos de mídia
         MEDIA_PREP: 'WAWebMediaPrep',
         MEDIA_UPLOAD: 'WAWebMediaUpload',
@@ -184,12 +183,11 @@ window.whl_hooks_main = () => {
             PROCESS_EDIT_MESSAGE: tryRequireModule(WA_MODULES.PROCESS_EDIT_MESSAGE),
             PROCESS_RENDERABLE_MESSAGES: tryRequireModule(WA_MODULES.PROCESS_RENDERABLE_MESSAGES),
             QUERY_GROUP: tryRequireModule(WA_MODULES.QUERY_GROUP),
-            CHAT_STORE: tryRequireModule(WA_MODULES.CHAT_STORE),
+            CHAT_COLLECTION: tryRequireModule(WA_MODULES.CHAT_COLLECTION),
             CONTACT_STORE: tryRequireModule(WA_MODULES.CONTACT_STORE),
             GROUP_METADATA: tryRequireModule(WA_MODULES.GROUP_METADATA),
             // Novos módulos
             WID_FACTORY: tryRequireModule(WA_MODULES.WID_FACTORY),
-            CHAT_COLLECTION: tryRequireModule(WA_MODULES.CHAT_COLLECTION),
             MEDIA_PREP: tryRequireModule(WA_MODULES.MEDIA_PREP),
             MEDIA_UPLOAD: tryRequireModule(WA_MODULES.MEDIA_UPLOAD),
             MSG_MODELS: tryRequireModule(WA_MODULES.MSG_MODELS),
@@ -199,11 +197,10 @@ window.whl_hooks_main = () => {
             PROCESS_EDIT_MESSAGE: !!MODULES.PROCESS_EDIT_MESSAGE,
             PROCESS_RENDERABLE_MESSAGES: !!MODULES.PROCESS_RENDERABLE_MESSAGES,
             QUERY_GROUP: !!MODULES.QUERY_GROUP,
-            CHAT_STORE: !!MODULES.CHAT_STORE,
+            CHAT_COLLECTION: !!MODULES.CHAT_COLLECTION,
             CONTACT_STORE: !!MODULES.CONTACT_STORE,
             GROUP_METADATA: !!MODULES.GROUP_METADATA,
             WID_FACTORY: !!MODULES.WID_FACTORY,
-            CHAT_COLLECTION: !!MODULES.CHAT_COLLECTION,
             MEDIA_PREP: !!MODULES.MEDIA_PREP,
             MEDIA_UPLOAD: !!MODULES.MEDIA_UPLOAD,
             MSG_MODELS: !!MODULES.MSG_MODELS
@@ -347,15 +344,26 @@ window.whl_hooks_main = () => {
             const file = new File([blob], 'image.jpg', { type: blob.type || 'image/jpeg' });
             
             // Preparar mídia usando API interna
-            if (MODULES.MEDIA_PREP && MODULES.MEDIA_PREP.prepareMedia) {
+            if (MODULES.MEDIA_PREP && typeof MODULES.MEDIA_PREP.prepareMedia === 'function') {
                 const mediaData = await MODULES.MEDIA_PREP.prepareMedia(file);
                 
+                // Validar que sendMessage aceita mídia
+                if (!chat.sendMessage || typeof chat.sendMessage !== 'function') {
+                    console.warn('[WHL Hooks] chat.sendMessage não disponível');
+                    return false;
+                }
+                
                 // Enviar com caption
-                await chat.sendMessage(mediaData, { caption });
-                console.log('[WHL Hooks] ✅ Imagem enviada via API para', phoneNumber);
-                return true;
+                try {
+                    await chat.sendMessage(mediaData, { caption });
+                    console.log('[WHL Hooks] ✅ Imagem enviada via API para', phoneNumber);
+                    return true;
+                } catch (sendError) {
+                    console.error('[WHL Hooks] Erro ao chamar sendMessage com mídia:', sendError);
+                    return false;
+                }
             } else {
-                // Fallback: tentar envio simples
+                // Fallback: tentar envio simples se MEDIA_PREP não disponível
                 console.log('[WHL Hooks] MEDIA_PREP não disponível, usando fallback');
                 return false;
             }
@@ -429,8 +437,6 @@ window.whl_hooks_main = () => {
         try {
             const chats = MODULES.CHAT_COLLECTION?.models || 
                          MODULES.CHAT_COLLECTION?.getModelsArray?.() || 
-                         MODULES.CHAT_STORE?.models || 
-                         MODULES.CHAT_STORE?.getModelsArray?.() || 
                          [];
             
             chats.forEach(chat => {
@@ -565,9 +571,9 @@ window.whl_hooks_main = () => {
             const groups = [];
             
             try {
-                // Tentar via CHAT_STORE
-                if (MODULES.CHAT_STORE?.models || MODULES.CHAT_STORE?.getModelsArray) {
-                    const chats = MODULES.CHAT_STORE.getModelsArray?.() || MODULES.CHAT_STORE.models || [];
+                // Tentar via CHAT_COLLECTION
+                if (MODULES.CHAT_COLLECTION?.models || MODULES.CHAT_COLLECTION?.getModelsArray) {
+                    const chats = MODULES.CHAT_COLLECTION.getModelsArray?.() || MODULES.CHAT_COLLECTION.models || [];
                     
                     chats.forEach(chat => {
                         if (isGroupChat(chat)) {
@@ -594,8 +600,8 @@ window.whl_hooks_main = () => {
             const members = [];
             
             try {
-                if (MODULES.CHAT_STORE?.models || MODULES.CHAT_STORE?.getModelsArray) {
-                    const chats = MODULES.CHAT_STORE.getModelsArray?.() || MODULES.CHAT_STORE.models || [];
+                if (MODULES.CHAT_COLLECTION?.models || MODULES.CHAT_COLLECTION?.getModelsArray) {
+                    const chats = MODULES.CHAT_COLLECTION.getModelsArray?.() || MODULES.CHAT_COLLECTION.models || [];
                     const chat = chats.find(c => c.id?._serialized === groupId);
                     
                     if (chat?.groupMetadata?.participants) {

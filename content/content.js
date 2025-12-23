@@ -4,6 +4,15 @@
   if (window.__WHL_SINGLE_TAB__) return;
   window.__WHL_SINGLE_TAB__ = true;
 
+  // ===== CONFIGURAÇÃO GLOBAL =====
+  // Flag para habilitar envio via API direta (WPP Boladão) ou URL tradicional
+  // true = API direta (10x mais rápido, sem reload)
+  // false = URL mode (fallback, com reload de página)
+  const WHL_CONFIG = {
+    USE_DIRECT_API: true,  // Usar API direta por padrão
+    API_RETRY_ON_FAIL: true,  // Se API falhar, tentar URL mode
+  };
+
   // Injetar wpp-hooks.js no contexto da página
   function injectWppHooks() {
     const script = document.createElement('script');
@@ -2536,11 +2545,8 @@
 
     console.log('[WHL] 🚀 Campanha iniciada');
     
-    // NOVO: Tentar usar API direta primeiro (mais rápido, sem reload)
-    // Se falhar, usar modo URL como fallback
-    const useDirectAPI = true; // Flag para habilitar/desabilitar API direta
-    
-    if (useDirectAPI) {
+    // Usar configuração global para escolher modo
+    if (WHL_CONFIG.USE_DIRECT_API) {
       console.log('[WHL] 📡 Usando API direta (WPP Boladão) - SEM RELOAD!');
       processCampaignStepDirect();
     } else {
@@ -2562,9 +2568,8 @@
       
       // Continuar processamento de onde parou
       if (st.isRunning) {
-        // Usar o mesmo modo que estava sendo usado
-        const useDirectAPI = true; // Mesma flag da startCampaign
-        if (useDirectAPI) {
+        // Usar o mesmo modo configurado
+        if (WHL_CONFIG.USE_DIRECT_API) {
           scheduleCampaignStepDirect();
         } else {
           scheduleCampaignStepViaDom();
