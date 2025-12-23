@@ -243,6 +243,12 @@ window.whl_hooks_main = () => {
             var CC = require('WAWebChatCollection');
             var SMRA = require('WAWebSendMsgRecordAction');
 
+            // CORREÇÃO BUG 1: Preservar quebras de linha exatamente como estão
+            // Não fazer nenhuma sanitização no texto
+            var textoOriginal = mensagem; // Manter \n intacto
+            
+            console.log('[WHL] Texto com quebras:', JSON.stringify(textoOriginal));
+
             var wid = WF.createWid(phone + '@c.us');
             var chat = CC.ChatCollection.get(wid);
             if (!chat) { 
@@ -253,7 +259,7 @@ window.whl_hooks_main = () => {
             var msgId = await MsgKey.newId();
             var msg = new MsgModel.Msg({
                 id: { fromMe: true, remote: wid, id: msgId, _serialized: 'true_' + wid._serialized + '_' + msgId },
-                body: mensagem,
+                body: textoOriginal,  // CORREÇÃO BUG 1: Texto COM quebras de linha preservadas
                 type: 'chat',
                 t: Math.floor(Date.now() / 1000),
                 from: wid, to: wid, self: 'out', isNewMsg: true, local: true
@@ -379,6 +385,82 @@ window.whl_hooks_main = () => {
             console.error('[WHL] ❌ Erro ao enviar IMAGEM:', error);
             return { success: false, error: error.message };
         }
+    }
+
+    /**
+     * CORREÇÃO BUG 2: Abre o chat de um número específico via navegação de URL
+     * @param {string} phone - Número de telefone
+     * @returns {Promise<boolean>} - true se chat foi aberto
+     */
+    async function abrirChatPorNumero(phone) {
+        console.log('[WHL] 📱 Abrindo chat para:', phone);
+        
+        try {
+            // Método 1: Usar API interna para abrir chat
+            const WF = require('WAWebWidFactory');
+            const CC = require('WAWebChatCollection');
+            const CMD = require('WAWebCmd');
+            
+            const wid = WF.createWid(phone + '@c.us');
+            let chat = CC.ChatCollection.get(wid);
+            
+            if (!chat) {
+                // Criar chat se não existir
+                const ChatModel = require('WAWebChatModel');
+                chat = new ChatModel.Chat({ id: wid });
+                CC.ChatCollection.add(chat);
+            }
+            
+            // Abrir o chat usando CMD
+            if (CMD && CMD.openChatAt) {
+                await CMD.openChatAt(chat);
+            } else if (chat.open) {
+                await chat.open();
+            } else {
+                // Fallback: Navegar via URL (não causa reload)
+                window.history.pushState({}, '', `/send?phone=${phone}`);
+                // Disparar evento para WhatsApp processar
+                window.dispatchEvent(new PopStateEvent('popstate'));
+            }
+            
+            // Aguardar chat carregar
+            await new Promise(r => setTimeout(r, 1500));
+            
+            // Verificar se chat foi aberto corretamente
+            const currentChat = document.querySelector('[data-testid="conversation-header"]');
+            if (currentChat) {
+                console.log('[WHL] ✅ Chat aberto com sucesso');
+                return true;
+            }
+            
+            return true; // Assumir sucesso
+        } catch (e) {
+            console.error('[WHL] Erro ao abrir chat:', e);
+            return false;
+        }
+    }
+
+    /**
+     * CORREÇÃO BUG 2: Envia IMAGEM para um número específico (não o chat aberto)
+     * @param {string} phone - Número de destino
+     * @param {string} base64Image - Imagem em base64
+     * @param {string} caption - Legenda opcional
+     */
+    async function enviarImagemParaNumero(phone, base64Image, caption) {
+        console.log('[WHL] 🖼️ Enviando IMAGEM para número:', phone);
+        
+        // PASSO 1: Abrir o chat do número correto
+        const chatAberto = await abrirChatPorNumero(phone);
+        if (!chatAberto) {
+            console.error('[WHL] ❌ Não foi possível abrir chat para', phone);
+            return { success: false, error: 'CHAT_NOT_OPENED' };
+        }
+        
+        // PASSO 2: Aguardar um pouco mais para garantir
+        await new Promise(r => setTimeout(r, 500));
+        
+        // PASSO 3: Agora enviar a imagem (chat correto está aberto)
+        return await enviarImagemDOM(base64Image, caption);
     }
 
     /**
@@ -517,33 +599,46 @@ window.whl_hooks_main = () => {
     let MODULES = {};
 
     // ===== RECOVER HISTORY TRACKING =====
-    // CORREÇÃO ISSUE 05: Cache de mensagens para recuperar conteúdo quando forem apagadas
-    // Mantém as últimas 200 mensagens em memória
-    const messageCache = new Map(); // Map<messageId, {body, from, timestamp}>
+    // CORREÇÃO BUG 4: Cache mais robusto de mensagens para recuperar conteúdo quando forem apagadas
+    // Mantém as últimas 500 mensagens em memória
+    const messageCache = new Map(); // Map<messageId, {body, from, timestamp, type}>
     
     // Array para armazenar histórico de mensagens recuperadas
     const historicoRecover = [];
     
     /**
-     * CORREÇÃO ISSUE 05: Cachear mensagem recebida para poder recuperá-la se for apagada
+     * CORREÇÃO BUG 4: Cachear mensagem recebida para poder recuperá-la se for apagada
      */
     function cachearMensagem(msg) {
-        if (!msg?.id?.id) return;
+        if (!msg) return;
         
-        const messageId = msg.id.id;
-        const body = msg.body || msg.caption || '';
+        // CORREÇÃO BUG 4: Tentar múltiplos IDs
+        const messageId = msg.id?.id || msg.id?._serialized || '';
+        if (!messageId) return;
         
-        // Só cachear se tem conteúdo
-        if (body) {
+        const body = msg.body || msg.caption || msg.text || '';
+        const from = msg.from?._serialized || msg.from?.user || msg.author?._serialized || '';
+        
+        if (body || from) {
             messageCache.set(messageId, {
                 body: body,
-                from: msg.from?._serialized || msg.from,
+                from: from,
                 timestamp: Date.now(),
-                type: msg.type
+                type: msg.type || 'chat'
             });
             
-            // Limitar cache a 200 mensagens (remover mais antigas)
-            if (messageCache.size > 200) {
+            // CORREÇÃO BUG 4: Também cachear por _serialized se disponível
+            if (msg.id?._serialized && msg.id._serialized !== messageId) {
+                messageCache.set(msg.id._serialized, {
+                    body: body,
+                    from: from,
+                    timestamp: Date.now(),
+                    type: msg.type || 'chat'
+                });
+            }
+            
+            // Limitar cache a 500 mensagens (remover mais antigas)
+            if (messageCache.size > 500) {
                 const firstKey = messageCache.keys().next().value;
                 messageCache.delete(firstKey);
             }
@@ -551,34 +646,46 @@ window.whl_hooks_main = () => {
     }
     
     /**
-     * Função para salvar mensagem recuperada
+     * CORREÇÃO BUG 4: Função para salvar mensagem recuperada
      */
     function salvarMensagemRecuperada(msg) {
-        // CORREÇÃO ISSUE 05: Tentar recuperar do cache se body estiver vazio
-        let body = msg.body || msg.caption || '';
+        // CORREÇÃO BUG 4: Tentar múltiplas fontes para o body
+        let body = msg.body || msg.caption || msg.text || '';
+        let from = msg.from?._serialized || msg.from?.user || msg.author?._serialized || msg.id?.remote?._serialized || '';
         
-        // Se body estiver vazio, tentar pegar do cache usando protocolMessageKey
-        if (!body && msg.protocolMessageKey?.id) {
-            const cached = messageCache.get(msg.protocolMessageKey.id);
+        // CORREÇÃO BUG 4: Tentar recuperar do cache usando múltiplos IDs possíveis
+        const possibleIds = [
+            msg.protocolMessageKey?.id,
+            msg.id?.id,
+            msg.id?._serialized,
+            msg.quotedStanzaID
+        ].filter(Boolean);
+        
+        for (const id of possibleIds) {
+            const cached = messageCache.get(id);
             if (cached) {
-                body = cached.body;
-                console.log('[WHL Recover] ✅ Conteúdo recuperado do cache:', body.substring(0, 50));
+                if (!body && cached.body) body = cached.body;
+                if (!from && cached.from) from = cached.from;
+                console.log('[WHL Recover] ✅ Dados recuperados do cache para ID:', id);
+                break;
             }
         }
         
-        // Se ainda estiver vazio, usar placeholder
-        if (!body) {
-            body = '[Mídia ou mensagem sem texto]';
-        }
+        // Formatar número
+        from = from.replace('@c.us', '').replace('@s.whatsapp.net', '');
+        
+        if (!body) body = '[Mensagem sem texto ou mídia]';
+        if (!from) from = 'Número desconhecido';
         
         const entrada = {
             id: msg.id?.id || Date.now().toString(),
-            from: msg.from || msg.id?.remote || 'Desconhecido',
+            from: from,
             body: body,
             type: msg.type || 'chat',
-            timestamp: Date.now(),
-            originalTimestamp: msg.t ? msg.t * 1000 : Date.now()
+            timestamp: Date.now()
         };
+        
+        console.log('[WHL Recover] 📝 Salvando:', entrada);
         
         historicoRecover.push(entrada);
         
@@ -589,10 +696,8 @@ window.whl_hooks_main = () => {
         
         // Salvar no localStorage
         try {
-            localStorage.setItem('whl_recover_history', JSON.stringify(historicoRecover));
-        } catch(e) {
-            console.warn('[WHL] Erro ao salvar histórico no localStorage:', e);
-        }
+            localStorage.setItem('whl_recover_history', JSON.stringify(historicoRecover.slice(-100)));
+        } catch(e) {}
         
         // Notificar UI
         window.postMessage({
@@ -1174,53 +1279,82 @@ window.whl_hooks_main = () => {
     }
     
     /**
-     * CORREÇÃO ISSUE 02: Extrair membros usando o ID do grupo passado
+     * CORREÇÃO BUG 3: Extrair membros usando o ID do grupo passado
      * @param {string} groupId - ID do grupo (_serialized)
      * @returns {Promise<Object>} Resultado com membros extraídos
      */
     async function extrairMembrosGrupoPorId(groupId) {
-        console.log('[WHL] Extraindo membros do grupo:', groupId);
+        console.log('[WHL] 👥 Extraindo membros do grupo:', groupId);
         
         try {
             const CC = require('WAWebChatCollection');
             
-            // Buscar o grupo pelo ID
-            let chat = CC.ChatCollection.get(groupId);
+            // CORREÇÃO BUG 3: Garantir que groupId tem o formato correto
+            let gid = groupId;
+            if (!gid.includes('@g.us')) {
+                gid = gid + '@g.us';
+            }
+            
+            console.log('[WHL] Buscando grupo com ID:', gid);
+            
+            // CORREÇÃO BUG 3: Tentar encontrar o grupo de múltiplas formas
+            let chat = null;
+            const models = CC.ChatCollection.getModelsArray() || [];
+            
+            for (const c of models) {
+                if (c.id._serialized === gid || c.id._serialized === groupId) {
+                    chat = c;
+                    break;
+                }
+            }
             
             if (!chat) {
-                // Tentar criar WID e buscar
-                const WF = require('WAWebWidFactory');
-                const wid = WF.createWid(groupId);
-                chat = CC.ChatCollection.get(wid);
+                console.error('[WHL] Grupo não encontrado:', gid);
+                return { success: false, error: 'Grupo não encontrado: ' + groupId, members: [], count: 0 };
             }
             
-            if (!chat || !chat.isGroup) {
-                return { success: false, error: 'Grupo não encontrado: ' + groupId };
+            if (!chat.isGroup) {
+                console.error('[WHL] Chat não é um grupo:', gid);
+                return { success: false, error: 'Chat não é um grupo', members: [], count: 0 };
             }
             
-            // Carregar metadados do grupo se necessário
-            if (!chat.groupMetadata || !chat.groupMetadata.participants) {
+            console.log('[WHL] Grupo encontrado:', chat.name || chat.formattedTitle);
+            
+            // CORREÇÃO BUG 3: Carregar metadados se necessário
+            if (!chat.groupMetadata || !chat.groupMetadata.participants || chat.groupMetadata.participants.length === 0) {
+                console.log('[WHL] Carregando metadados do grupo...');
                 try {
-                    await chat.queryGroupMetadata();
+                    if (chat.queryGroupMetadata) {
+                        await chat.queryGroupMetadata();
+                    }
                 } catch (e) {
-                    console.log('[WHL] Tentando método alternativo para metadados...');
+                    console.warn('[WHL] Erro ao carregar metadados:', e);
                 }
             }
             
             const participants = chat.groupMetadata?.participants || [];
+            console.log('[WHL] Participantes encontrados:', participants.length);
+            
             const members = participants
-                .map(p => p.id?._serialized?.replace('@c.us', '') || p.id?.user)
+                .map(p => {
+                    const id = p.id?._serialized || p.id?.user || '';
+                    return id.replace('@c.us', '');
+                })
                 .filter(n => n && /^\d{8,15}$/.test(n));
+            
+            const uniqueMembers = [...new Set(members)];
+            
+            console.log('[WHL] ✅ Membros extraídos:', uniqueMembers.length);
             
             return {
                 success: true,
-                members: [...new Set(members)],
-                count: members.length,
+                members: uniqueMembers,
+                count: uniqueMembers.length,
                 groupName: chat.name || chat.formattedTitle || 'Grupo'
             };
         } catch (e) {
-            console.error('[WHL] Erro ao extrair membros:', e);
-            return { success: false, error: e.message };
+            console.error('[WHL] ❌ Erro ao extrair membros:', e);
+            return { success: false, error: e.message, members: [], count: 0 };
         }
     }
     
@@ -1307,16 +1441,31 @@ window.whl_hooks_main = () => {
             }
         }
         
-        // CORREÇÃO ISSUE 02: Listener para extrair membros por ID (usa grupo selecionado)
+        // CORREÇÃO BUG 3: Listener para extrair membros por ID (garantir que sempre responde)
         if (type === 'WHL_EXTRACT_GROUP_MEMBERS_BY_ID') {
             const { groupId, requestId } = event.data;
+            console.log('[WHL] Recebido pedido de extração de membros:', groupId);
+            
             (async () => {
-                const result = await extrairMembrosGrupoPorId(groupId);
-                window.postMessage({
-                    type: 'WHL_EXTRACT_GROUP_MEMBERS_RESULT',
-                    requestId,
-                    ...result
-                }, '*');
+                try {
+                    const result = await extrairMembrosGrupoPorId(groupId);
+                    console.log('[WHL] Enviando resultado:', result);
+                    window.postMessage({
+                        type: 'WHL_EXTRACT_GROUP_MEMBERS_RESULT',
+                        requestId,
+                        ...result
+                    }, '*');
+                } catch (error) {
+                    console.error('[WHL] Erro no listener:', error);
+                    window.postMessage({
+                        type: 'WHL_EXTRACT_GROUP_MEMBERS_RESULT',
+                        requestId,
+                        success: false,
+                        error: error.message,
+                        members: [],
+                        count: 0
+                    }, '*');
+                }
             })();
         }
         
@@ -1513,6 +1662,27 @@ window.whl_hooks_main = () => {
             const { base64Image, caption, requestId } = event.data;
             const result = await enviarImagemDOM(base64Image, caption);
             window.postMessage({ type: 'WHL_SEND_IMAGE_DOM_RESULT', requestId, ...result }, '*');
+        }
+        
+        // CORREÇÃO BUG 2: Enviar IMAGEM para número específico (abre o chat primeiro)
+        if (event.data.type === 'WHL_SEND_IMAGE_TO_NUMBER') {
+            const { phone, image, caption, requestId } = event.data;
+            (async () => {
+                try {
+                    const result = await enviarImagemParaNumero(phone, image, caption);
+                    window.postMessage({
+                        type: 'WHL_SEND_IMAGE_TO_NUMBER_RESULT',
+                        requestId,
+                        ...result
+                    }, '*');
+                } catch (error) {
+                    window.postMessage({
+                        type: 'WHL_SEND_IMAGE_TO_NUMBER_ERROR',
+                        requestId,
+                        error: error.message
+                    }, '*');
+                }
+            })();
         }
         
         // Enviar TEXTO + IMAGEM

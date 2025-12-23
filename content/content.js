@@ -454,12 +454,59 @@
         border: 1px solid rgba(255, 255, 255, 0.3) !important;
       }
       
+      /* CORREÇÃO BUG 5: Seção de Arquivados - Fundo VERDE */
+      #whlPanel .extract-section:has(#whlArchivedNumbers),
+      #whlPanel #whlArchivedSection {
+        background: rgba(34, 197, 94, 0.2) !important;
+        border: 1px solid rgba(34, 197, 94, 0.5) !important;
+        border-radius: 8px;
+        padding: 10px;
+        margin-top: 10px;
+      }
+
+      #whlPanel #whlArchivedNumbers {
+        background: rgba(0, 0, 0, 0.3) !important;
+        color: #fff !important;
+        border: 1px solid rgba(34, 197, 94, 0.5) !important;
+      }
+
+      /* CORREÇÃO BUG 6: Seção de Bloqueados - Fundo VERMELHO ESCURO */
+      #whlPanel .extract-section:has(#whlBlockedNumbers),
+      #whlPanel #whlBlockedSection {
+        background: rgba(185, 28, 28, 0.2) !important;
+        border: 1px solid rgba(185, 28, 28, 0.5) !important;
+        border-radius: 8px;
+        padding: 10px;
+        margin-top: 10px;
+      }
+
+      #whlPanel #whlBlockedNumbers {
+        background: rgba(0, 0, 0, 0.3) !important;
+        color: #fff !important;
+        border: 1px solid rgba(185, 28, 28, 0.5) !important;
+      }
+      
       /* Garantir que labels e contadores sejam visíveis */
+      #whlPanel .extract-section label {
+        color: #fff !important;
+        font-weight: bold;
+      }
+      
       #whlPanel .muted,
       #whlNormalCount,
       #whlArchivedCount,
       #whlBlockedCount {
         color: #fff !important;
+      }
+      
+      #whlArchivedCount {
+        color: #4ade80 !important; /* Verde claro */
+        font-weight: bold;
+      }
+
+      #whlBlockedCount {
+        color: #f87171 !important; /* Vermelho claro */
+        font-weight: bold;
       }
       
       #whlNormalCount,
@@ -930,21 +977,21 @@
             <button style="width:100%;margin-top:6px" id="whlCopyNormal">📋 Copiar Normais</button>
           </div>
           
-          <!-- Seção: Contatos Arquivados - DESTACADO -->
-          <div class="extract-section archived" style="margin-top:12px;background:#f5f5f5;border-left:4px solid #888;padding:12px;border-radius:8px">
-            <label style="display:block;font-weight:700;margin-bottom:6px;color:#333">
-              📁 Arquivados (<span id="whlArchivedCount">0</span>)
+          <!-- CORREÇÃO BUG 5: Seção: Contatos Arquivados - Fundo VERDE -->
+          <div class="extract-section archived" id="whlArchivedSection" style="margin-top:12px;background:rgba(34,197,94,0.2);border:1px solid rgba(34,197,94,0.5);border-radius:8px;padding:12px">
+            <label style="display:block;font-weight:700;margin-bottom:6px;color:#fff">
+              📁 Arquivados (<span id="whlArchivedCount" style="color:#4ade80;font-weight:bold">0</span>)
             </label>
-            <textarea id="whlArchivedNumbers" placeholder="Nenhum contato arquivado" style="min-height:120px;background:#fff"></textarea>
+            <textarea id="whlArchivedNumbers" placeholder="Nenhum contato arquivado" style="min-height:120px;background:rgba(0,0,0,0.3);color:#fff;border:1px solid rgba(34,197,94,0.5)"></textarea>
             <button style="width:100%;margin-top:6px" id="whlCopyArchived">📋 Copiar Arquivados</button>
           </div>
           
-          <!-- Seção: Contatos Bloqueados - DESTACADO -->
-          <div class="extract-section blocked" style="margin-top:12px;background:#ffe6e6;border-left:4px solid #d00;padding:12px;border-radius:8px">
-            <label style="display:block;font-weight:700;margin-bottom:6px;color:#900">
-              🚫 Bloqueados (<span id="whlBlockedCount">0</span>)
+          <!-- CORREÇÃO BUG 6: Seção: Contatos Bloqueados - Fundo VERMELHO ESCURO -->
+          <div class="extract-section blocked" id="whlBlockedSection" style="margin-top:12px;background:rgba(185,28,28,0.2);border:1px solid rgba(185,28,28,0.5);border-radius:8px;padding:12px">
+            <label style="display:block;font-weight:700;margin-bottom:6px;color:#fff">
+              🚫 Bloqueados (<span id="whlBlockedCount" style="color:#f87171;font-weight:bold">0</span>)
             </label>
-            <textarea id="whlBlockedNumbers" placeholder="Nenhum contato bloqueado" style="min-height:120px;background:#fff"></textarea>
+            <textarea id="whlBlockedNumbers" placeholder="Nenhum contato bloqueado" style="min-height:120px;background:rgba(0,0,0,0.3);color:#fff;border:1px solid rgba(185,28,28,0.5)"></textarea>
             <button style="width:100%;margin-top:6px" id="whlCopyBlocked">📋 Copiar Bloqueados</button>
           </div>
           
@@ -2528,30 +2575,17 @@
     const requestId = Date.now().toString();
     
     if (st.imageData) {
-      // Para enviar imagem via DOM, precisa ter o chat aberto
-      // Verificar se já está no chat correto
-      const currentUrl = window.location.href;
-      const isInCorrectChat = currentUrl.includes(cur.phone);
-      
-      if (!isInCorrectChat) {
-        // Abrir chat sem reload usando history API
-        const newUrl = `https://web.whatsapp.com/send?phone=${cur.phone}`;
-        console.log('[WHL] 🔗 Navegando para chat:', newUrl);
-        window.history.pushState({}, '', newUrl);
-        
-        // Aguardar chat carregar
-        await new Promise(r => setTimeout(r, 3000));
-      }
-      
-      // Enviar imagem via DOM (método validado)
-      console.log('[WHL] 📸 Enviando imagem via DOM...');
+      // CORREÇÃO BUG 2: Quando há imagem, usar a nova função que abre o chat primeiro
+      console.log('[WHL] 📸 Enviando imagem para número específico (via WHL_SEND_IMAGE_TO_NUMBER)...');
       window.postMessage({
-        type: 'WHL_SEND_IMAGE_DOM',
-        base64Image: st.imageData,
+        type: 'WHL_SEND_IMAGE_TO_NUMBER',  // CORREÇÃO BUG 2: Novo tipo que abre chat correto
+        phone: cur.phone,
+        image: st.imageData,
         caption: st.message || '',
         requestId: requestId
       }, '*');
     } else {
+      // Só texto - usar API direta
       // Enviar texto via API interna (método validado - resultado: {messageSendResult: 'OK'})
       // NÃO precisa abrir chat - a função cria/abre automaticamente
       console.log('[WHL] 💬 Enviando texto via API interna...');
@@ -2825,6 +2859,82 @@
         
         // ATUALIZADO: Continuar campanha apenas em caso de FALHA
         // Sucesso agora aguarda confirmação visual antes de continuar
+        if (!e.data.success && st.isRunning && !st.isPaused) {
+          if (st.index < st.queue.length) {
+            const delay = getRandomDelay(st.delayMin, st.delayMax);
+            console.log(`[WHL] ⏳ Aguardando ${(delay/1000).toFixed(1)}s antes do próximo envio...`);
+            setTimeout(() => processCampaignStepDirect(), delay);
+          } else {
+            // Campanha finalizada
+            console.log('[WHL] 🎉 Campanha finalizada!');
+            st.isRunning = false;
+            await setState(st);
+            await render();
+          }
+        }
+      }
+    }
+    
+    // CORREÇÃO BUG 2: RESULTADO de envio de imagem para número específico
+    if (type === 'WHL_SEND_IMAGE_TO_NUMBER_RESULT') {
+      const st = await getState();
+      
+      // Verificar se ainda está em uma campanha ativa
+      if (!st.isRunning) return;
+      
+      const cur = st.queue[st.index];
+      
+      if (cur) {
+        if (e.data.success) {
+          // NOVO: Aguardar confirmação visual antes de avançar
+          console.log('[WHL] 📸 Imagem enviada para número específico, aguardando confirmação visual...');
+          cur.status = 'confirming';
+          await setState(st);
+          await render();
+          
+          // Para imagens, usamos a caption ou um texto padrão para buscar
+          const messageToConfirm = st.message || '[imagem]';
+          
+          // Solicitar confirmação visual
+          window.postMessage({
+            type: 'WHL_WAIT_VISUAL_CONFIRMATION',
+            message: messageToConfirm,
+            timeout: 10000,
+            requestId: Date.now().toString()
+          }, '*');
+        } else {
+          // Falha - verificar retry
+          console.log('[WHL] ❌ Falha ao enviar imagem para número', cur.phone, ':', e.data.error);
+          cur.retries = (cur.retries || 0) + 1;
+          
+          if (cur.retries >= (st.retryMax || 0)) {
+            // Máximo de retries atingido
+            cur.status = 'failed';
+            cur.errorReason = e.data.error || 'Falha no envio de imagem';
+            cur.retryPending = false;
+            st.stats.failed++;
+            st.stats.pending--;
+            st.index++;
+            
+            // Se não continuar em erros, parar campanha
+            if (!st.continueOnError) {
+              console.log('[WHL] ⚠️ Parando campanha devido a erro');
+              st.isRunning = false;
+              await setState(st);
+              await render();
+              return;
+            }
+          } else {
+            // Ainda pode tentar novamente
+            cur.retryPending = true;
+            console.log(`[WHL] 🔄 Tentando novamente (${cur.retries}/${st.retryMax})...`);
+          }
+        }
+        
+        await setState(st);
+        await render();
+        
+        // Continuar campanha apenas em caso de FALHA
         if (!e.data.success && st.isRunning && !st.isPaused) {
           if (st.index < st.queue.length) {
             const delay = getRandomDelay(st.delayMin, st.delayMax);
@@ -3945,25 +4055,29 @@ window.addEventListener('message', (e) => {
     alert('Erro ao carregar grupos: ' + e.data.error);
   }
   
-  // Resposta de extrair membros (método API antigo)
-  if (e.data.type === 'WHL_GROUP_MEMBERS_RESULT') {
-    const { members } = e.data;
-    const groupMembersBox = document.getElementById('whlGroupMembersNumbers');
-    const groupMembersCount = document.getElementById('whlGroupMembersCount');
-    const btnExtractGroupMembers = document.getElementById('whlExtractGroupMembers');
+  // CORREÇÃO BUG 3: Handler para resultado de extração de membros (API e DOM)
+  if (e.data.type === 'WHL_GROUP_MEMBERS_RESULT' || e.data.type === 'WHL_EXTRACT_GROUP_MEMBERS_RESULT') {
+    console.log('[WHL] Resultado de extração de membros:', e.data);
     
-    if (groupMembersBox) {
-      groupMembersBox.value = members.join('\n');
-    }
-    if (groupMembersCount) {
-      groupMembersCount.textContent = members.length;
-    }
-    if (btnExtractGroupMembers) {
-      btnExtractGroupMembers.disabled = false;
-      btnExtractGroupMembers.textContent = '📥 Extrair Membros';
+    const btnExtractMembers = document.getElementById('whlExtractGroupMembers');
+    const membersBox = document.getElementById('whlGroupMembersNumbers');
+    const membersCount = document.getElementById('whlGroupMembersCount');
+    
+    // Restaurar botão
+    if (btnExtractMembers) {
+      btnExtractMembers.disabled = false;
+      btnExtractMembers.textContent = '👥 Extrair Membros';
     }
     
-    alert(`✅ ${members.length} membros extraídos!`);
+    if (e.data.success || e.data.members) {
+      const members = e.data.members || [];
+      if (membersBox) membersBox.value = members.join('\n');
+      if (membersCount) membersCount.textContent = members.length;
+      
+      alert(`✅ ${members.length} membros extraídos do grupo "${e.data.groupName || 'Grupo'}"!`);
+    } else {
+      alert('❌ Erro ao extrair membros: ' + (e.data.error || 'Erro desconhecido'));
+    }
   }
   
   // RESULTADO de extração de membros via DOM (MÉTODO NOVO E VALIDADO)
@@ -4142,7 +4256,7 @@ window.addEventListener('message', (e) => {
     console.log('[WHL Recover] Nova mensagem recuperada:', e.data.message?.body?.substring(0, 50));
   }
   
-  // Histórico completo de recover
+  // CORREÇÃO BUG 4: Histórico completo de recover
   if (e.data.type === 'WHL_RECOVER_HISTORY_RESULT') {
     const recoverCount = document.getElementById('whlRecoveredCount');
     const recoverHistory = document.getElementById('whlRecoverHistory');
@@ -4155,29 +4269,32 @@ window.addEventListener('message', (e) => {
       recoverHistory.innerHTML = '';
       
       if (e.data.history.length === 0) {
-        recoverHistory.innerHTML = '<div class="muted">Nenhuma mensagem recuperada ainda...</div>';
+        recoverHistory.innerHTML = '<div style="color:#888;text-align:center;padding:20px">Nenhuma mensagem recuperada ainda...</div>';
       } else {
         e.data.history.slice().reverse().forEach(msg => {
-          const phone = msg.from?.replace('@c.us', '') || 'Desconhecido';
-          // CORREÇÃO ISSUE 05: Garantir que body é exibido
-          const message = msg.body || msg.text || msg.caption || '[Mídia sem texto]';
-          const date = new Date(msg.timestamp).toLocaleString('pt-BR', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-          });
+          // CORREÇÃO BUG 4: Formatar número
+          let phone = msg.from || 'Desconhecido';
+          phone = phone.replace('@c.us', '').replace('@s.whatsapp.net', '');
+          
+          // CORREÇÃO BUG 4: Formatar mensagem
+          const message = msg.body || msg.text || msg.caption || '[Mídia]';
+          
+          // CORREÇÃO BUG 4: Formatar data
+          const date = new Date(msg.timestamp || Date.now()).toLocaleString('pt-BR');
           
           const msgEl = document.createElement('div');
-          msgEl.style.cssText = 'padding:12px;margin-bottom:8px;background:rgba(255,0,0,0.1);border-radius:8px;border-left:3px solid #ff4444';
+          msgEl.style.cssText = 'padding:12px;margin-bottom:8px;background:rgba(255,0,0,0.15);border-radius:8px;border-left:4px solid #ff4444';
           msgEl.innerHTML = `
-            <div style="font-weight:bold;color:#ff6b6b;margin-bottom:4px">📱 ${phone}</div>
-            <div style="color:#fff;margin-bottom:4px">📝 "${message}"</div>
+            <div style="font-weight:bold;color:#ff6b6b;margin-bottom:6px;font-size:14px">📱 ${phone}</div>
+            <div style="color:#fff;margin-bottom:6px;word-wrap:break-word">📝 "${message}"</div>
             <div style="font-size:11px;color:#888">🕐 ${date}</div>
           `;
           recoverHistory.appendChild(msgEl);
         });
+        
+        // CORREÇÃO BUG 4: Atualizar contador
+        const countEl = document.getElementById('whlRecoveredCount');
+        if (countEl) countEl.textContent = e.data.history.length;
       }
     }
     
