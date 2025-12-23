@@ -1,28 +1,30 @@
 /**
- * WhatsHybrid – EXTRATOR TURBO v5 com FILTRO RIGOROSO
+ * WhatsHybrid – EXTRATOR TURBO v6 com SISTEMA DE PONTUAÇÃO
  * 
  * ESTRATÉGIA:
  * 1. Coleta AGRESSIVA (máximo de números possível)
- * 2. Filtro RIGOROSO (TODOS os números passam por validação)
+ * 2. Sistema de PONTUAÇÃO por fonte e contexto
+ * 3. Filtro RIGOROSO (validação brasileira + score mínimo)
  * 
- * VALIDAÇÕES OBRIGATÓRIAS PARA TODOS:
- * - Tamanho correto (12-13 dígitos com 55)
- * - DDD brasileiro válido (67 DDDs)
- * - Formato de celular brasileiro (9º dígito = 9 para celulares)
+ * SISTEMA DE PONTUAÇÃO:
+ * - Fonte @c.us/@g.us: +10 pontos
+ * - Fonte data-id/data-jid: +8 pontos
+ * - Fonte wa.me: +6 pontos
+ * - Fonte phone=: +5 pontos
+ * - Fonte title/aria-label: +3 pontos
+ * - DDD brasileiro válido: +4 pontos
+ * - Formato celular correto (9xxxxx): +3 pontos
+ * - Múltiplas ocorrências: +2 pontos por ocorrência extra
+ * - Contexto negativo (data/hora/valor): -5 pontos
  * 
- * NÍVEIS DE CONFIANÇA (após validação):
- * - ALTA: @c.us, data-id, data-jid → Inclui se passar validação
- * - MÉDIA: wa.me/, phone= → Inclui se passar validação
- * - BAIXA: raw → Inclui se passar validação E 2+ ocorrências
- * 
- * Comunicação via window.postMessage
+ * SCORE MÍNIMO: 8 pontos
  */
 
 (function () {
-  if (window.__WHL_EXTRACTOR_TURBO_V5__) return;
-  window.__WHL_EXTRACTOR_TURBO_V5__ = true;
+  if (window.__WHL_EXTRACTOR_TURBO_V6__) return;
+  window.__WHL_EXTRACTOR_TURBO_V6__ = true;
 
-  console.log('[WHL] 🚀 EXTRATOR TURBO v5 com Filtro RIGOROSO iniciando...');
+  console.log('[WHL] 🚀 EXTRATOR TURBO v6 com Sistema de Pontuação iniciando...');
 
   // ===== CONFIGURAÇÃO =====
   const CONFIG = {
@@ -32,206 +34,328 @@
     scrollIncrement: 0.85,
     stabilityCount: 10,
     
-    // Filtro rigoroso
-    minOccurrencesForRaw: 2,
+    // Validação
+    minNumberLength: 10,
+    maxNumberLength: 15,
+    
+    // Score
+    minValidScore: 8,
+    
+    // Pontuação por fonte
+    scores: {
+      source_cus: 10,      // @c.us (WhatsApp ID)
+      source_gus: 10,      // @g.us (grupo)
+      source_dataid: 8,    // data-id
+      source_datajid: 8,   // data-jid
+      source_wame: 6,      // wa.me link
+      source_phone: 5,     // phone= parameter
+      source_href: 4,      // href genérico
+      source_title: 3,     // title attribute
+      source_aria: 3,      // aria-label
+      source_formatted: 2, // número formatado
+      source_raw: 1,       // texto raw
+      
+      // Bônus de validação
+      bonus_valid_ddd: 4,
+      bonus_mobile_format: 3,
+      bonus_occurrence: 2,  // por ocorrência extra
+      
+      // Penalidades
+      penalty_context: -5,  // contexto suspeito
+      penalty_repeated: -8, // número repetitivo
+      penalty_sequence: -6, // sequência óbvia
+    },
+    
+    // Contextos negativos (falsos positivos)
+    negativeContexts: [
+      'data', 'hora', 'time', 'date',
+      'código', 'codigo', 'code',
+      'valor', 'preço', 'preco', 'price',
+      'r$', '$', '€', 'usd', 'brl',
+      'duração', 'duracao', 'duration',
+      'tempo', 'minutos', 'segundos',
+      'cep', 'cnpj', 'cpf', 'rg',
+      'pedido', 'order', 'protocolo',
+      'versão', 'versao', 'version',
+      'id:', 'ref:', 'nº', 'n°'
+    ],
+    
+    // Seletores de contexto negativo
+    negativeSelectors: [
+      '.message-timestamp',
+      '.status-code',
+      '[data-testid*="time"]',
+      '[data-testid*="date"]',
+      '[data-testid*="status"]',
+      '.price',
+      '.value',
+      '.code'
+    ],
     
     debug: true
   };
 
-  // ===== DDDs BRASILEIROS VÁLIDOS (COMPLETO) =====
+  // ===== DDDs BRASILEIROS VÁLIDOS =====
   const VALID_DDDS = new Set([
-    // São Paulo
     11, 12, 13, 14, 15, 16, 17, 18, 19,
-    // Rio de Janeiro / Espírito Santo
     21, 22, 24, 27, 28,
-    // Minas Gerais
     31, 32, 33, 34, 35, 37, 38,
-    // Paraná
     41, 42, 43, 44, 45, 46,
-    // Santa Catarina
     47, 48, 49,
-    // Rio Grande do Sul
     51, 53, 54, 55,
-    // Distrito Federal / Goiás / Tocantins / Mato Grosso / Mato Grosso do Sul / Acre / Rondônia
     61, 62, 63, 64, 65, 66, 67, 68, 69,
-    // Bahia / Sergipe
     71, 73, 74, 75, 77, 79,
-    // Pernambuco / Alagoas / Paraíba / Rio Grande do Norte / Ceará / Piauí
     81, 82, 83, 84, 85, 86, 87, 88, 89,
-    // Pará / Amazonas / Roraima / Amapá / Maranhão
     91, 92, 93, 94, 95, 96, 97, 98, 99
   ]);
 
-  // ===== NÍVEIS DE CONFIANÇA =====
-  const CONFIDENCE = {
-    HIGH: 'high',
-    MEDIUM: 'medium',
-    LOW: 'low'
-  };
-
-  // ===== VALIDAÇÃO RIGOROSA DE NÚMERO BRASILEIRO =====
-  function isValidBrazilianPhone(num) {
-    if (!num) return false;
-    
-    let n = String(num).replace(/\D/g, '');
-    
-    // Normalizar: adicionar 55 se necessário
-    if (n.length === 10 || n.length === 11) {
-      n = '55' + n;
-    }
-    
-    // Deve ter 12 ou 13 dígitos (55 + DDD + número)
-    // 12 dígitos: fixo (55 + DD + 8 dígitos)
-    // 13 dígitos: celular (55 + DD + 9 dígitos)
-    if (n.length !== 12 && n.length !== 13) {
-      return false;
-    }
-    
-    // Deve começar com 55 (Brasil)
-    if (!n.startsWith('55')) {
-      return false;
-    }
-    
-    // Extrair DDD (posição 2-3)
-    const ddd = parseInt(n.substring(2, 4), 10);
-    
-    // DDD deve ser válido
-    if (!VALID_DDDS.has(ddd)) {
-      return false;
-    }
-    
-    // Extrair número local (após DDD)
-    const localNumber = n.substring(4);
-    
-    // Para celular (9 dígitos): deve começar com 9
-    if (localNumber.length === 9) {
-      if (!localNumber.startsWith('9')) {
-        return false;
-      }
-      // O segundo dígito de celular deve ser 6, 7, 8 ou 9
-      const secondDigit = parseInt(localNumber[1], 10);
-      if (secondDigit < 6) {
-        return false;
-      }
-    }
-    
-    // Para fixo (8 dígitos): deve começar com 2, 3, 4 ou 5
-    if (localNumber.length === 8) {
-      const firstDigit = parseInt(localNumber[0], 10);
-      if (firstDigit < 2 || firstDigit > 5) {
-        return false;
-      }
-    }
-    
-    // Rejeitar números repetidos (ex: 99999999999)
-    const uniqueDigits = new Set(n.split(''));
-    if (uniqueDigits.size <= 3) {
-      return false;
-    }
-    
-    // Rejeitar sequências óbvias
-    if (/^55\d{2}(12345678|87654321|11111111|22222222|33333333|44444444|55555555|66666666|77777777|88888888|99999999|00000000)/.test(n)) {
-      return false;
-    }
-    
-    return true;
-  }
-
   // ===== NORMALIZAÇÃO =====
-  function normalizePhone(num) {
-    if (!num) return null;
+  function normalizeNumber(number) {
+    if (!number) return null;
     
-    let n = String(num).replace(/\D/g, '');
+    // Remove caracteres não numéricos (exceto +)
+    let normalized = String(number).replace(/[^\d+]/g, '');
     
-    // Adicionar 55 se necessário
-    if (n.length === 10 || n.length === 11) {
-      n = '55' + n;
+    // Remove prefixos de discagem internacional duplicados
+    if (normalized.includes('+')) {
+      normalized = '+' + normalized.replace(/\+/g, '');
     }
     
-    // Validar
-    if (!isValidBrazilianPhone(n)) {
+    // Remove + e converte para apenas dígitos
+    normalized = normalized.replace(/\+/g, '');
+    
+    // Remove zeros iniciais
+    if (normalized.startsWith('0')) {
+      normalized = normalized.substring(1);
+    }
+    
+    // Adicionar 55 se for número brasileiro sem código
+    if (normalized.length === 10 || normalized.length === 11) {
+      normalized = '55' + normalized;
+    }
+    
+    // Validar comprimento
+    if (normalized.length < CONFIG.minNumberLength || normalized.length > CONFIG.maxNumberLength) {
       return null;
     }
     
-    return n;
+    return normalized;
   }
 
-  // ===== ARMAZENAMENTO =====
-  const PhoneStore = {
-    _phones: new Map(),
+  // ===== VALIDAÇÃO BRASILEIRA =====
+  function validateBrazilianPhone(num) {
+    if (!num) return { valid: false, score: 0 };
     
-    add(num, source, confidence = CONFIDENCE.LOW) {
-      // Normalizar e validar
-      const normalized = normalizePhone(num);
+    let score = 0;
+    const issues = [];
+    
+    // Deve ter 12 ou 13 dígitos
+    if (num.length !== 12 && num.length !== 13) {
+      return { valid: false, score: 0, issues: ['tamanho inválido'] };
+    }
+    
+    // Deve começar com 55
+    if (!num.startsWith('55')) {
+      return { valid: false, score: 0, issues: ['não é brasileiro'] };
+    }
+    
+    // Verificar DDD
+    const ddd = parseInt(num.substring(2, 4), 10);
+    if (VALID_DDDS.has(ddd)) {
+      score += CONFIG.scores.bonus_valid_ddd;
+    } else {
+      return { valid: false, score: 0, issues: ['DDD inválido: ' + ddd] };
+    }
+    
+    // Verificar número local
+    const localNumber = num.substring(4);
+    
+    // Celular (9 dígitos)
+    if (localNumber.length === 9) {
+      if (localNumber.startsWith('9')) {
+        const secondDigit = parseInt(localNumber[1], 10);
+        if (secondDigit >= 6) {
+          score += CONFIG.scores.bonus_mobile_format;
+        } else {
+          issues.push('2º dígito celular inválido');
+          score -= 2;
+        }
+      } else {
+        return { valid: false, score: 0, issues: ['celular deve começar com 9'] };
+      }
+    }
+    
+    // Fixo (8 dígitos)
+    if (localNumber.length === 8) {
+      const firstDigit = parseInt(localNumber[0], 10);
+      if (firstDigit < 2 || firstDigit > 5) {
+        return { valid: false, score: 0, issues: ['fixo inválido'] };
+      }
+    }
+    
+    // Verificar padrões inválidos
+    const uniqueDigits = new Set(num.split(''));
+    if (uniqueDigits.size <= 3) {
+      score += CONFIG.scores.penalty_repeated;
+      issues.push('número muito repetitivo');
+    }
+    
+    // Sequências óbvias
+    if (/12345678|87654321|11111111|22222222|33333333|44444444|55555555|66666666|77777777|88888888|99999999|00000000/.test(num)) {
+      score += CONFIG.scores.penalty_sequence;
+      issues.push('sequência óbvia');
+    }
+    
+    return { 
+      valid: score >= 0, 
+      score, 
+      issues: issues.length ? issues : null 
+    };
+  }
+
+  // ===== DETECÇÃO DE CONTEXTO NEGATIVO =====
+  function hasNegativeContext(element, text) {
+    if (!element && !text) return false;
+    
+    // Verificar seletores negativos
+    if (element) {
+      for (const selector of CONFIG.negativeSelectors) {
+        try {
+          if (element.matches?.(selector) || element.closest?.(selector)) {
+            return true;
+          }
+        } catch {}
+      }
+    }
+    
+    // Verificar contexto textual
+    const contextText = (text || element?.textContent || '').toLowerCase();
+    for (const neg of CONFIG.negativeContexts) {
+      if (contextText.includes(neg)) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  // ===== ARMAZENAMENTO COM SCORE =====
+  const PhoneStore = {
+    _phones: new Map(), // número -> { sources: Set, score: number, occurrences: number, contexts: [] }
+    
+    add(num, sourceType, element = null, context = null) {
+      // Normalizar
+      const normalized = normalizeNumber(num);
       if (!normalized) return null;
+      
+      // Validar formato brasileiro
+      const validation = validateBrazilianPhone(normalized);
+      if (!validation.valid && validation.score < -5) {
+        return null;
+      }
+      
+      // Calcular score da fonte
+      let sourceScore = CONFIG.scores['source_' + sourceType] || CONFIG.scores.source_raw;
+      
+      // Verificar contexto negativo
+      if (hasNegativeContext(element, context)) {
+        sourceScore += CONFIG.scores.penalty_context;
+      }
       
       // Criar ou atualizar registro
       if (!this._phones.has(normalized)) {
         this._phones.set(normalized, {
           sources: new Set(),
-          confidence: confidence,
-          occurrences: 0
+          score: validation.score,
+          occurrences: 0,
+          firstSeen: Date.now()
         });
       }
       
       const record = this._phones.get(normalized);
-      record.sources.add(source);
+      record.sources.add(sourceType);
       record.occurrences++;
       
-      // Upgrade de confiança
-      if (confidence === CONFIDENCE.HIGH) {
-        record.confidence = CONFIDENCE.HIGH;
-      } else if (confidence === CONFIDENCE.MEDIUM && record.confidence === CONFIDENCE.LOW) {
-        record.confidence = CONFIDENCE.MEDIUM;
+      // Adicionar score da fonte (só na primeira vez por fonte)
+      if (!record.sources.has(sourceType + '_counted')) {
+        record.score += sourceScore;
+        record.sources.add(sourceType + '_counted');
+      }
+      
+      // Bônus por múltiplas ocorrências
+      if (record.occurrences > 1) {
+        record.score += CONFIG.scores.bonus_occurrence;
       }
       
       return normalized;
     },
     
-    // Retorna números filtrados (todos já são válidos, mas LOW precisa de 2+ ocorrências)
+    // Retorna números filtrados por score mínimo
     getFiltered() {
       const result = [];
       
       this._phones.forEach((record, num) => {
-        // HIGH e MEDIUM: incluir (já validados no add)
-        if (record.confidence === CONFIDENCE.HIGH || record.confidence === CONFIDENCE.MEDIUM) {
-          result.push(num);
-        }
-        // LOW: precisa de 2+ ocorrências
-        else if (record.confidence === CONFIDENCE.LOW && record.occurrences >= CONFIG.minOccurrencesForRaw) {
-          result.push(num);
+        if (record.score >= CONFIG.minValidScore) {
+          result.push({
+            number: num,
+            score: record.score,
+            sources: Array.from(record.sources).filter(s => !s.endsWith('_counted')),
+            occurrences: record.occurrences
+          });
         }
       });
       
-      return [...new Set(result)].sort();
+      // Ordenar por score (maior primeiro)
+      result.sort((a, b) => b.score - a.score);
+      
+      return result.map(r => r.number);
     },
     
-    getAll() {
-      return Array.from(this._phones.keys()).sort();
+    // Retorna todos com detalhes
+    getAllWithDetails() {
+      const result = [];
+      
+      this._phones.forEach((record, num) => {
+        result.push({
+          number: num,
+          score: record.score,
+          sources: Array.from(record.sources).filter(s => !s.endsWith('_counted')),
+          occurrences: record.occurrences,
+          valid: record.score >= CONFIG.minValidScore
+        });
+      });
+      
+      result.sort((a, b) => b.score - a.score);
+      return result;
     },
     
     getStats() {
-      let high = 0, medium = 0, low = 0;
+      let valid = 0, invalid = 0;
+      let totalScore = 0;
       const sources = {};
       
       this._phones.forEach((record) => {
-        if (record.confidence === CONFIDENCE.HIGH) high++;
-        else if (record.confidence === CONFIDENCE.MEDIUM) medium++;
-        else low++;
+        if (record.score >= CONFIG.minValidScore) {
+          valid++;
+        } else {
+          invalid++;
+        }
+        totalScore += record.score;
         
         record.sources.forEach(s => {
-          const key = s.split('_')[0];
-          sources[key] = (sources[key] || 0) + 1;
+          if (!s.endsWith('_counted')) {
+            sources[s] = (sources[s] || 0) + 1;
+          }
         });
       });
       
       return {
         total: this._phones.size,
-        filtered: this.getFiltered().length,
-        high,
-        medium,
-        low,
-        sources
+        valid,
+        invalid,
+        avgScore: this._phones.size ? (totalScore / this._phones.size).toFixed(1) : 0,
+        sources,
+        minScore: CONFIG.minValidScore
       };
     },
     
@@ -244,7 +368,7 @@
 
   // ===== FUNÇÕES DE EXTRAÇÃO =====
   
-  function extractFromText(text, source, defaultConfidence = CONFIDENCE.LOW) {
+  function extractFromText(text, sourceType, element = null) {
     if (!text || typeof text !== 'string') return 0;
     let count = 0;
     
@@ -252,60 +376,80 @@
     const waIdRe = /(\d{10,15})@c\.us/g;
     let match;
     while ((match = waIdRe.exec(text)) !== null) {
-      if (PhoneStore.add(match[1], source + '_cus', CONFIDENCE.HIGH)) count++;
+      if (PhoneStore.add(match[1], 'cus', element, text)) count++;
     }
     
-    // Padrão @g.us (grupos - ALTA CONFIANÇA)
+    // Padrão @g.us (grupos)
     const groupRe = /(\d{10,15})@g\.us/g;
     while ((match = groupRe.exec(text)) !== null) {
-      if (PhoneStore.add(match[1], source + '_gus', CONFIDENCE.HIGH)) count++;
+      if (PhoneStore.add(match[1], 'gus', element, text)) count++;
     }
     
-    // Links wa.me (MÉDIA CONFIANÇA)
+    // Links wa.me
     const waMeRe = /wa\.me\/(\d{10,15})/g;
     while ((match = waMeRe.exec(text)) !== null) {
-      if (PhoneStore.add(match[1], source + '_wame', CONFIDENCE.MEDIUM)) count++;
+      if (PhoneStore.add(match[1], 'wame', element, text)) count++;
     }
     
-    // Links phone= (MÉDIA CONFIANÇA)
+    // Links phone=
     const phoneRe = /phone=(\d{10,15})/g;
     while ((match = phoneRe.exec(text)) !== null) {
-      if (PhoneStore.add(match[1], source + '_phone', CONFIDENCE.MEDIUM)) count++;
+      if (PhoneStore.add(match[1], 'phone', element, text)) count++;
     }
     
-    // Números formatados (BAIXA CONFIANÇA)
+    // Números formatados (com contexto)
     const formattedRe = /(?:\+?55)?[\s\-\.]?\(?(\d{2})\)?[\s\-\.]?(\d{4,5})[\s\-\.]?(\d{4})/g;
     while ((match = formattedRe.exec(text)) !== null) {
       const num = match[1] + match[2] + match[3];
-      if (PhoneStore.add(num, source + '_formatted', defaultConfidence)) count++;
+      if (PhoneStore.add(num, sourceType || 'formatted', element, text)) count++;
     }
     
     return count;
   }
 
-  function extractFromElement(el, source) {
+  function extractFromElement(el, baseSource) {
     if (!el) return 0;
     let count = 0;
     
-    // data-id e data-jid são ALTA CONFIANÇA
+    // data-id e data-jid (ALTA CONFIANÇA)
     ['data-id', 'data-jid'].forEach(attr => {
       try {
         const val = el.getAttribute?.(attr);
         if (val && (val.includes('@c.us') || val.includes('@g.us'))) {
-          count += extractFromText(val, source + '_' + attr, CONFIDENCE.HIGH);
+          count += extractFromText(val, 'dataid', el);
         }
       } catch {}
     });
     
-    // href, title, aria-label são MÉDIA CONFIANÇA
-    ['href', 'title', 'aria-label'].forEach(attr => {
-      try {
-        const val = el.getAttribute?.(attr);
-        if (val) {
-          count += extractFromText(val, source + '_' + attr, CONFIDENCE.MEDIUM);
+    // href (wa.me links)
+    try {
+      const href = el.getAttribute?.('href');
+      if (href) {
+        if (href.includes('wa.me')) {
+          count += extractFromText(href, 'wame', el);
+        } else if (href.includes('phone')) {
+          count += extractFromText(href, 'phone', el);
+        } else {
+          count += extractFromText(href, 'href', el);
         }
-      } catch {}
-    });
+      }
+    } catch {}
+    
+    // title
+    try {
+      const title = el.getAttribute?.('title');
+      if (title) {
+        count += extractFromText(title, 'title', el);
+      }
+    } catch {}
+    
+    // aria-label
+    try {
+      const aria = el.getAttribute?.('aria-label');
+      if (aria) {
+        count += extractFromText(aria, 'aria', el);
+      }
+    } catch {}
     
     return count;
   }
@@ -313,41 +457,41 @@
   function extractFromDOM(source = 'dom') {
     let count = 0;
     
-    // Elementos com data-id (ALTA CONFIANÇA)
+    // Elementos com data-id/@c.us (ALTA CONFIANÇA)
     document.querySelectorAll('[data-id*="@"]').forEach(el => {
-      count += extractFromElement(el, source + '_dataid');
+      count += extractFromElement(el, 'dataid');
     });
     
-    // Elementos com data-jid (ALTA CONFIANÇA)
+    // Elementos com data-jid
     document.querySelectorAll('[data-jid*="@"]').forEach(el => {
-      count += extractFromElement(el, source + '_datajid');
+      count += extractFromElement(el, 'datajid');
     });
     
     // Células de chat
     document.querySelectorAll('[data-testid*="cell"], [data-testid*="chat"], [data-testid*="contact"]').forEach(el => {
-      count += extractFromElement(el, source + '_cell');
+      count += extractFromElement(el, 'cell');
     });
     
-    // Linhas e itens
+    // Linhas
     document.querySelectorAll('[role="row"], [role="listitem"]').forEach(el => {
-      count += extractFromElement(el, source + '_row');
+      count += extractFromElement(el, 'row');
     });
     
     // Links wa.me
-    document.querySelectorAll('a[href*="wa.me"], a[href*="phone"]').forEach(el => {
-      count += extractFromElement(el, source + '_link');
+    document.querySelectorAll('a[href*="wa.me"]').forEach(el => {
+      count += extractFromElement(el, 'wame');
     });
     
-    // Títulos com números
+    // Títulos
     document.querySelectorAll('span[title], div[title]').forEach(el => {
-      count += extractFromElement(el, source + '_title');
+      count += extractFromElement(el, 'title');
     });
     
     // pane-side
     const pane = document.querySelector('#pane-side');
     if (pane) {
       pane.querySelectorAll('[data-id], [data-jid]').forEach(el => {
-        count += extractFromElement(el, source + '_pane');
+        count += extractFromElement(el, 'pane');
       });
     }
     
@@ -362,7 +506,7 @@
         const key = localStorage.key(i);
         const value = localStorage.getItem(key);
         if (value && (value.includes('@c.us') || value.includes('@g.us'))) {
-          count += extractFromText(value, source + '_ls', CONFIDENCE.HIGH);
+          count += extractFromText(value, 'cus', null);
         }
       }
     } catch {}
@@ -372,7 +516,7 @@
         const key = sessionStorage.key(i);
         const value = sessionStorage.getItem(key);
         if (value && (value.includes('@c.us') || value.includes('@g.us'))) {
-          count += extractFromText(value, source + '_ss', CONFIDENCE.HIGH);
+          count += extractFromText(value, 'cus', null);
         }
       }
     } catch {}
@@ -416,7 +560,7 @@
                   allData.forEach(item => {
                     const str = JSON.stringify(item);
                     if (str.includes('@c.us') || str.includes('@g.us')) {
-                      count += extractFromText(str, source + '_' + storeName, CONFIDENCE.HIGH);
+                      count += extractFromText(str, 'cus', null);
                     }
                   });
                 }
@@ -472,7 +616,8 @@
       lastTop = pane.scrollTop;
       
       if (scrollCount % 30 === 0) {
-        console.log(`[WHL] Scroll ${scrollCount}/${CONFIG.maxScrolls}, válidos: ${PhoneStore.getFiltered().length}`);
+        const stats = PhoneStore.getStats();
+        console.log(`[WHL] Scroll ${scrollCount}/${CONFIG.maxScrolls}, válidos: ${stats.valid}/${stats.total}`);
       }
     }
     
@@ -492,7 +637,7 @@
         const clone = response.clone();
         const text = await clone.text().catch(() => '');
         if (text.includes('@c.us') || text.includes('@g.us')) {
-          extractFromText(text, 'fetch', CONFIDENCE.HIGH);
+          extractFromText(text, 'cus', null);
         }
       } catch {}
       return response;
@@ -505,7 +650,7 @@
         try {
           if (e.data && typeof e.data === 'string') {
             if (e.data.includes('@c.us') || e.data.includes('@g.us')) {
-              extractFromText(e.data, 'ws', CONFIDENCE.HIGH);
+              extractFromText(e.data, 'cus', null);
             }
           }
         } catch {}
@@ -519,7 +664,8 @@
 
   // ===== FUNÇÃO PRINCIPAL =====
   async function extractAllTurbo() {
-    console.log('[WHL] 🚀🚀🚀 EXTRAÇÃO TURBO v5 (FILTRO RIGOROSO) INICIADA 🚀🚀🚀');
+    console.log('[WHL] 🚀🚀🚀 EXTRAÇÃO TURBO v6 (SISTEMA DE PONTUAÇÃO) INICIADA 🚀🚀🚀');
+    console.log('[WHL] Score mínimo:', CONFIG.minValidScore);
     
     PhoneStore.clear();
     
@@ -561,10 +707,13 @@
     const filtered = PhoneStore.getFiltered();
     const stats = PhoneStore.getStats();
     
-    console.log('[WHL] ✅✅✅ EXTRAÇÃO TURBO v5 CONCLUÍDA ✅✅✅');
-    console.log('[WHL] Total coletados (válidos):', stats.total);
-    console.log('[WHL] Após filtro de confiança:', filtered.length);
-    console.log('[WHL] Stats:', stats);
+    console.log('[WHL] ✅✅✅ EXTRAÇÃO TURBO v6 CONCLUÍDA ✅✅✅');
+    console.log('[WHL] Estatísticas:', stats);
+    console.log('[WHL] Números válidos (score >= ' + CONFIG.minValidScore + '):', filtered.length);
+    
+    // Top 10 por score
+    const topNumbers = PhoneStore.getAllWithDetails().slice(0, 10);
+    console.log('[WHL] Top 10 números por score:', topNumbers);
     
     // Salvar
     try {
@@ -590,15 +739,18 @@
   });
 
   // ===== DEBUG =====
-  window.__WHL_TURBO_V5__ = {
+  window.__WHL_TURBO_V6__ = {
     extract: extractAllTurbo,
     store: PhoneStore,
     config: CONFIG,
-    validate: isValidBrazilianPhone,
+    validate: validateBrazilianPhone,
+    normalize: normalizeNumber,
     getFiltered: () => PhoneStore.getFiltered(),
-    getAll: () => PhoneStore.getAll(),
-    getStats: () => PhoneStore.getStats()
+    getAll: () => PhoneStore.getAllWithDetails(),
+    getStats: () => PhoneStore.getStats(),
+    setMinScore: (score) => { CONFIG.minValidScore = score; console.log('[WHL] Score mínimo alterado para:', score); }
   };
 
-  console.log('[WHL] ✅ EXTRATOR TURBO v5 com Filtro RIGOROSO carregado!');
+  console.log('[WHL] ✅ EXTRATOR TURBO v6 com Sistema de Pontuação carregado!');
+  console.log('[WHL] Debug: window.__WHL_TURBO_V6__.getStats() para ver estatísticas');
 })();
