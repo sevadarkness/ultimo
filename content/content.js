@@ -3258,11 +3258,6 @@ try {
     if (clearCsvBtn) {
       clearCsvBtn.addEventListener('click', async () => {
         const csvInput = document.getElementById('whlCsv');
-        const csvHint = document.getElementById('whlCsvHint');
-        
-        if (csvInput) {
-          csvInput.value = '';
-        }
         
         // Limpar fila e números
         const st = await getState();
@@ -3273,15 +3268,10 @@ try {
         await setState(st);
         await render();
         
-        // Atualizar UI
-        if (csvHint) {
-          csvHint.textContent = '';
-        }
-        if (clearCsvBtn) {
-          clearCsvBtn.style.display = 'none';
-        }
-        if (selectCsvBtn) {
-          selectCsvBtn.textContent = '📁 Escolher arquivo';
+        // Clear the file input and trigger change event to update UI
+        if (csvInput) {
+          csvInput.value = '';
+          csvInput.dispatchEvent(new Event('change', { bubbles: true }));
         }
       });
     }
