@@ -72,7 +72,7 @@
           localStorage.setItem('whl_valid', JSON.stringify(Array.from(this._valid)));
           localStorage.setItem('whl_meta', JSON.stringify(this._meta));
         } catch (e) {
-          console.log('[WHL] Erro ao salvar:', e);
+          console.error('[WHL] Erro ao salvar:', e);
         }
       },
       clear() {
@@ -85,7 +85,7 @@
           localStorage.removeItem('whl_meta');
           localStorage.removeItem('wa_extracted_numbers');
         } catch (e) {
-          console.log('[WHL] Erro ao limpar:', e);
+          console.error('[WHL] Erro ao limpar:', e);
         }
       }
     };
@@ -109,7 +109,9 @@
       setInterval(() => {
         try {
           HarvesterStore.save();
-        } catch(e) {}
+        } catch(e) {
+          console.error('[WHL] Erro ao salvar periodicamente:', e);
+        }
       }, 12000);
     },
     

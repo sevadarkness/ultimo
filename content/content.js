@@ -90,7 +90,9 @@
       setInterval(() => {
         try {
           HarvesterStore.save();
-        } catch(e) {}
+        } catch(e) {
+          console.error('[WHL] Erro ao salvar periodicamente:', e);
+        }
       }, 12000);
     },
     async waitLoad() {
