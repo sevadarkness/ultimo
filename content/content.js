@@ -2267,7 +2267,8 @@
     console.log(`[WHL] 📨 Enviando via API (sem reload) para: ${phone}`);
     
     return new Promise((resolve) => {
-        const requestId = Date.now() + Math.random();
+        // Generate unique request ID to match request/response
+        const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         
         // Listener para resposta do wpp-hooks
         const handler = (event) => {

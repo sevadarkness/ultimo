@@ -1244,6 +1244,9 @@ window.whl_hooks_main = () => {
     // ===== ENVIO DE MENSAGEM SEM RELOAD =====
     /**
      * Aguarda elemento aparecer no DOM
+     * @param {string} selector - CSS selector
+     * @param {number} timeout - Timeout em ms (padrão: 10000)
+     * @returns {Promise<Element|null>} - Elemento encontrado ou null se timeout
      */
     function waitForElement(selector, timeout = 10000) {
         return new Promise((resolve) => {
@@ -1263,9 +1266,10 @@ window.whl_hooks_main = () => {
             
             observer.observe(document.body, { childList: true, subtree: true });
             
+            // Explicitly resolve with null on timeout
             setTimeout(() => {
                 observer.disconnect();
-                resolve(document.querySelector(selector));
+                resolve(null);
             }, timeout);
         });
     }
@@ -1301,8 +1305,7 @@ window.whl_hooks_main = () => {
                 // Criar novo chat se não existir
                 console.log('[WHL] Chat não encontrado, criando...');
                 try {
-                    // Método alternativo: usar URL mas interceptar antes do reload
-                    // Navegar para o chat usando a API interna
+                    // Tentar abrir chat via API interna (WAWebChatState)
                     const ChatState = require('WAWebChatState');
                     if (ChatState?.sendChatOpen) {
                         await ChatState.sendChatOpen(wid);
