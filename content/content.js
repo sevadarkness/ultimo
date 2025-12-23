@@ -362,8 +362,6 @@
       #whlPanel .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:800}
       #whlPanel .pill.pending{background:rgba(0,255,255,.10);border:1px solid rgba(0,255,255,.25)}
       #whlPanel .pill.opened{background:rgba(111,0,255,.10);border:1px solid rgba(111,0,255,.25)}
-      #whlPanel .pill.sent{background:rgba(120,255,160,.10);border:1px solid rgba(120,255,160,.25)}
-      #whlPanel .pill.failed{background:rgba(255,80,80,.10);border:1px solid rgba(255,80,80,.25)}
       #whlPanel .tiny{font-size:11px;opacity:.72}
       #whlPanel .iconbtn{width:36px;height:36px;border-radius:14px;margin-top:0}
       #whlPanel .progress-bar{width:100%;height:24px;background:rgba(255,255,255,.08);border-radius:12px;overflow:hidden;margin-top:10px}
