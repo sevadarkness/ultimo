@@ -2815,7 +2815,7 @@
         console.warn('[WHL] ⚠️ Sem confirmação visual:', e.data.reason);
         cur.retries = (cur.retries || 0) + 1;
         
-        if (cur.retries >= (st.retryMax || 1)) {
+        if (cur.retries >= (st.retryMax || 0)) {
           cur.status = 'failed';
           cur.errorReason = 'Sem confirmação visual após ' + cur.retries + ' tentativas';
           st.stats.failed++;
@@ -3260,7 +3260,7 @@
     // Update statistics
     const sent = state.queue.filter(c => c.status === 'sent').length;
     const failed = state.queue.filter(c => c.status === 'failed').length;
-    const pending = state.queue.filter(c => c.status === 'pending' || c.status === 'opened' || c.status === 'confirming').length;
+    const pending = state.queue.filter(c => c.status === 'pending' || c.status === 'opened' || c.status === 'confirming' || c.status === 'pending_retry').length;
 
     document.getElementById('whlStatSent').textContent = sent;
     document.getElementById('whlStatFailed').textContent = failed;
