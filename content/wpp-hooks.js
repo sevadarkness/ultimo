@@ -194,21 +194,27 @@ window.whl_hooks_main = () => {
             const CC = require('WAWebChatCollection');
             const SMRA = require('WAWebSendMsgRecordAction');
             
-            // 1. Criar WID (IMPORTANTE: sem espaços em @c.us!)
-            const wid = WF.createWid(phone + '@c.us');
+            // 1. Limpar e validar número de telefone (remover @c.us se já existir)
+            const cleanPhone = String(phone).replace(/@c\.us$/g, '').replace(/\D/g, '');
+            if (!cleanPhone || cleanPhone.length < 8) {
+                return { success: false, error: 'Número de telefone inválido' };
+            }
             
-            // 2. Criar/obter chat
+            // 2. Criar WID (IMPORTANTE: sem espaços em @c.us!)
+            const wid = WF.createWid(cleanPhone + '@c.us');
+            
+            // 3. Criar/obter chat
             let chat = CC.ChatCollection.get(wid);
             if (!chat) {
                 chat = new ChatModel.Chat({ id: wid });
                 CC.ChatCollection.add(chat);
-                console.log('[WHL] Chat criado para:', phone);
+                console.log('[WHL] Chat criado para:', cleanPhone);
             }
             
-            // 3. Criar ID da mensagem
+            // 4. Criar ID da mensagem
             const msgId = await MsgKey.newId();
             
-            // 4. Criar objeto Msg completo
+            // 5. Criar objeto Msg completo
             const msg = new MsgModel.Msg({
                 id: {
                     fromMe: true,
@@ -226,7 +232,7 @@ window.whl_hooks_main = () => {
                 local: true
             });
             
-            // 5. Enviar via sendMsgRecord
+            // 6. Enviar via sendMsgRecord
             const result = await SMRA.sendMsgRecord(msg);
             
             console.log('[WHL] ✅ Mensagem enviada:', result);

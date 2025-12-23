@@ -2284,6 +2284,9 @@
 
   // ===== NEW DOM-BASED CAMPAIGN PROCESSING =====
   
+  // ===== CONSTANTS =====
+  const API_SEND_TIMEOUT_MS = 30000; // 30 seconds timeout for API message sending
+  
   // ===== INPUT + ENTER METHOD (TESTED AND WORKING) =====
   
   /**
@@ -2314,11 +2317,11 @@
       
       window.addEventListener('message', handleResponse);
       
-      // Timeout de 30 segundos
+      // Timeout configurável
       setTimeout(() => {
         window.removeEventListener('message', handleResponse);
         resolve({ success: false, error: 'TIMEOUT' });
-      }, 30000);
+      }, API_SEND_TIMEOUT_MS);
       
       // Enviar mensagem via postMessage para wpp-hooks.js
       window.postMessage({
