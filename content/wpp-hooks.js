@@ -1022,68 +1022,30 @@ window.whl_hooks_main = () => {
     }
     
     /**
-     * Extração completa (tudo de uma vez)
+     * Extração instantânea unificada - retorna tudo de uma vez
+     * Usa WAWebChatCollection e WAWebBlocklistCollection via require()
      */
     function extrairTudoInstantaneo() {
-        const result = {
-            contacts: [],
-            archived: [],
-            blocked: [],
-            groups: []
-        };
+        console.log('[WHL] 🚀 Iniciando extração instantânea via API interna...');
         
-        try {
-            const CC = require('WAWebChatCollection');
-            const chats = CC?.ChatCollection?.getModelsArray?.() || MODULES.CHAT_COLLECTION?.models || [];
-            
-            if (chats.length > 0) {
-                chats.forEach(chat => {
-                    try {
-                        const id = chat.id?._serialized || chat.id?.user;
-                        const user = chat.id?.user || id?.replace('@c.us', '').replace('@g.us', '');
-                        
-                        if (!id) return;
-                        
-                        if (chat.isGroup || id.endsWith('@g.us')) {
-                            result.groups.push({
-                                id: id,
-                                name: chat.name || chat.formattedTitle || 'Grupo',
-                                participants: chat.groupMetadata?.participants?.length || 0
-                            });
-                        } else if (id.endsWith('@c.us')) {
-                            if (chat.archive) {
-                                result.archived.push(user);
-                            } else {
-                                result.contacts.push(user);
-                            }
-                        }
-                    } catch(e) {
-                        // Ignorar erros individuais
-                    }
-                });
+        const normal = extrairContatos();
+        const archived = extrairArquivados();
+        const blocked = extrairBloqueados();
+
+        console.log(`[WHL] ✅ Extração completa: ${normal.count} normais, ${archived.count} arquivados, ${blocked.count} bloqueados`);
+
+        return {
+            success: true,
+            normal: normal.contacts || [],
+            archived: archived.archived || [],
+            blocked: blocked.blocked || [],
+            stats: {
+                normal: normal.count || 0,
+                archived: archived.count || 0,
+                blocked: blocked.count || 0,
+                total: (normal.count || 0) + (archived.count || 0) + (blocked.count || 0)
             }
-            
-            // Bloqueados separado
-            try {
-                const BC = require('WAWebBlocklistCollection');
-                const blocklist = BC?.BlocklistCollection?.getModelsArray?.() || [];
-                result.blocked = blocklist.map(c => c.id?.user || c.id?._serialized?.replace('@c.us', ''));
-            } catch(e) {
-                console.log('[WHL] BlocklistCollection não disponível:', e.message);
-            }
-            
-            console.log('[WHL] ✅ Extração completa instantânea:', {
-                contacts: result.contacts.length,
-                archived: result.archived.length,
-                blocked: result.blocked.length,
-                groups: result.groups.length
-            });
-            
-            return { success: true, ...result };
-        } catch (error) {
-            console.error('[WHL] Erro na extração completa:', error);
-            return { success: false, error: error.message };
-        }
+        };
     }
     
     // ===== LISTENERS PARA NOVAS EXTRAÇÕES =====
@@ -1476,18 +1438,23 @@ window.whl_hooks_main = () => {
         
         // EXTRAÇÃO COMPLETA INSTANTÂNEA (contatos, arquivados, bloqueados)
         if (type === 'WHL_EXTRACT_ALL_INSTANT') {
-            try {
-                const result = extrairTudoInstantaneo();
-                window.postMessage({ 
-                    type: 'WHL_EXTRACT_ALL_INSTANT_RESULT', 
-                    ...result 
-                }, '*');
-            } catch (error) {
-                window.postMessage({ 
-                    type: 'WHL_EXTRACT_ALL_INSTANT_ERROR', 
-                    error: error.message 
-                }, '*');
-            }
+            const { requestId } = event.data;
+            (async () => {
+                try {
+                    const result = extrairTudoInstantaneo();
+                    window.postMessage({
+                        type: 'WHL_EXTRACT_ALL_INSTANT_RESULT',
+                        requestId,
+                        ...result
+                    }, '*');
+                } catch (error) {
+                    window.postMessage({
+                        type: 'WHL_EXTRACT_ALL_INSTANT_ERROR',
+                        requestId,
+                        error: error.message
+                    }, '*');
+                }
+            })();
         }
     });
 
