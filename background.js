@@ -213,58 +213,38 @@ async function startCampaign(queue, config) {
   
   saveCampaignState();
   
-  // Create or reuse worker tab
-  await ensureWorkerTab();
-  
-  // Start processing
+  // Start processing directly
   processNextInQueue();
   
   return { success: true };
 }
 
-async function ensureWorkerTab() {
-  // Reaproveita se já existe
-  if (workerTabId) {
-    try { 
-      await chrome.tabs.get(workerTabId); 
-      return workerTabId; 
-    } catch { 
-      workerTabId = null; 
+// ===== ENVIO SIMPLIFICADO =====
+// Usar a aba principal do WhatsApp Web ao invés de worker incógnito
+
+async function sendMessageToWhatsApp(phone, text, imageData = null) {
+    // Encontrar aba do WhatsApp Web
+    const tabs = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
+    
+    if (tabs.length === 0) {
+        return { success: false, error: 'WhatsApp Web não está aberto' };
     }
-  }
-
-  // Verifica permissão para incógnito
-  const allowedIncognito = await new Promise(res => 
-    chrome.extension.isAllowedIncognitoAccess(res)
-  );
-  
-  if (!allowedIncognito) {
-    console.warn('[WHL Background] Extensão sem permissão em anônimo');
-    notifyPopup({ action: 'NEED_INCOGNITO_PERMISSION' });
-    // Fallback: criar tab normal se não tem permissão
-    const tab = await chrome.tabs.create({
-      url: 'https://web.whatsapp.com/?whl_worker=true',
-      active: false,
-      pinned: true
-    });
-    workerTabId = tab.id;
-    chrome.storage.local.set({ workerTabId });
-    return workerTabId;
-  }
-
-  // Cria janela incógnita minimizada
-  const win = await chrome.windows.create({
-    url: 'https://web.whatsapp.com/?whl_worker=true',
-    incognito: true,
-    focused: false,
-    state: 'minimized'
-  });
-
-  const tab = win.tabs && win.tabs[0];
-  workerTabId = tab.id;
-  chrome.storage.local.set({ workerTabId });
-  console.log('[WHL Background] Worker (incognito) criado:', workerTabId);
-  return workerTabId;
+    
+    const whatsappTab = tabs[0];
+    
+    try {
+        // Enviar mensagem para o content script
+        const result = await chrome.tabs.sendMessage(whatsappTab.id, {
+            action: 'SEND_MESSAGE_URL',
+            phone: phone,
+            text: text,
+            imageData: imageData
+        });
+        
+        return result;
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
 }
 
 // Helper: timeout para evitar travas
@@ -304,31 +284,32 @@ async function processNextInQueue() {
   current.status = 'sending';
   saveCampaignState();
   notifyPopup({ action: 'CAMPAIGN_PROGRESS', current: campaignState.currentIndex, total: campaignQueue.length });
-  
-  await ensureWorkerTab();
 
   let result;
   try {
-    result = await withTimeout(
-      chrome.tabs.sendMessage(workerTabId, {
-        action: 'SEND_MESSAGE_URL',
-        phone: current.phone,
-        text: campaignState.config?.message || '',
-        imageData: campaignState.config?.imageData || null
-      }), 
-      45000
+    // Timeout de 45 segundos
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('TIMEOUT')), 45000)
     );
+    
+    const sendPromise = sendMessageToWhatsApp(
+      current.phone, 
+      campaignState.config?.message || '',
+      campaignState.config?.imageData || null
+    );
+    
+    result = await Promise.race([sendPromise, timeoutPromise]);
   } catch (err) {
-    result = { success: false, error: err?.message || 'Unknown error' };
+    result = { success: false, error: err.message };
   }
   
-  // Atualização de status SEMPRE acontece
+  // Atualizar status SEMPRE
   if (result && result.success) {
     current.status = 'sent';
     console.log(`[WHL Background] ✅ Enviado para ${current.phone}`);
   } else {
     current.status = 'failed';
-    current.error = result?.error || 'No response from worker';
+    current.error = result?.error || 'Unknown error';
     console.log(`[WHL Background] ❌ Falha: ${current.phone} - ${current.error}`);
   }
   

@@ -45,6 +45,134 @@ window.whl_hooks_main = () => {
     // Expor globalmente para debug
     window.WHLStore = Store;
 
+    // ===== ACESSO AOS MÓDULOS VIA REQUIRE =====
+    function getModules() {
+        try {
+            return {
+                ChatCollection: require('WAWebChatCollection').ChatCollection,
+                ContactCollection: require('WAWebContactCollection').ContactCollection,
+                BlocklistCollection: require('WAWebBlocklistCollection').BlocklistCollection,
+                WidFactory: require('WAWebWidFactory'),
+                MsgKey: require('WAWebMsgKey'),
+                ComposeBoxActions: require('WAWebComposeBoxActions').ComposeBoxActions
+            };
+        } catch (e) {
+            console.error('[WHL] Erro ao carregar módulos:', e);
+            return null;
+        }
+    }
+
+    // ===== EXTRAÇÃO DE CONTATOS =====
+    function extrairContatos() {
+        try {
+            const modules = getModules();
+            if (!modules || !modules.ChatCollection) {
+                return { success: false, error: 'Módulos não disponíveis' };
+            }
+            
+            const models = modules.ChatCollection.getModelsArray() || [];
+            
+            // Filtrar por server (não por _serialized que pode ter problemas)
+            const contatos = models
+                .filter(m => m.id.server === 'c.us')
+                .map(m => m.id.user || m.id._serialized.replace('@c.us', ''))
+                .filter(n => /^\d{8,15}$/.test(n));
+            
+            return { success: true, contacts: [...new Set(contatos)], count: contatos.length };
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+    }
+
+    // ===== EXTRAÇÃO DE GRUPOS =====
+    function extrairGrupos() {
+        try {
+            const modules = getModules();
+            if (!modules || !modules.ChatCollection) {
+                return { success: false, error: 'Módulos não disponíveis', groups: [] };
+            }
+            
+            const models = modules.ChatCollection.getModelsArray() || [];
+            
+            const grupos = models
+                .filter(m => m.id.server === 'g.us')
+                .map(g => ({
+                    id: g.id._serialized,
+                    name: g.name || g.formattedTitle || 'Grupo sem nome',
+                    participants: g.groupMetadata?.participants?.length || 0
+                }));
+            
+            return { success: true, groups: grupos, count: grupos.length };
+        } catch (e) {
+            return { success: false, error: e.message, groups: [] };
+        }
+    }
+
+    // ===== EXTRAÇÃO DE ARQUIVADOS =====
+    function extrairArquivados() {
+        try {
+            const modules = getModules();
+            if (!modules || !modules.ChatCollection) {
+                return { success: false, error: 'Módulos não disponíveis' };
+            }
+            
+            const models = modules.ChatCollection.getModelsArray() || [];
+            
+            const arquivados = models
+                .filter(m => m.archive === true && m.id.server === 'c.us')
+                .map(m => m.id.user || m.id._serialized.replace('@c.us', ''))
+                .filter(n => /^\d{8,15}$/.test(n));
+            
+            return { success: true, archived: [...new Set(arquivados)], count: arquivados.length };
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+    }
+
+    // ===== EXTRAÇÃO DE BLOQUEADOS =====
+    function extrairBloqueados() {
+        try {
+            const modules = getModules();
+            if (!modules || !modules.BlocklistCollection) {
+                return { success: false, error: 'BlocklistCollection não disponível' };
+            }
+            
+            const blocklist = modules.BlocklistCollection.getModelsArray 
+                ? modules.BlocklistCollection.getModelsArray() 
+                : (modules.BlocklistCollection._models || []);
+            
+            const bloqueados = blocklist
+                .map(b => b.id?.user || b.id?._serialized?.replace('@c.us', ''))
+                .filter(n => n && /^\d{8,15}$/.test(n));
+            
+            return { success: true, blocked: [...new Set(bloqueados)], count: bloqueados.length };
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+    }
+
+    // ===== EXTRAÇÃO COMPLETA =====
+    function extrairTudo() {
+        const contatos = extrairContatos();
+        const grupos = extrairGrupos();
+        const arquivados = extrairArquivados();
+        const bloqueados = extrairBloqueados();
+        
+        return {
+            success: true,
+            contacts: contatos.contacts || [],
+            groups: grupos.groups || [],
+            archived: arquivados.archived || [],
+            blocked: bloqueados.blocked || [],
+            stats: {
+                contacts: contatos.count || 0,
+                groups: grupos.count || 0,
+                archived: arquivados.count || 0,
+                blocked: bloqueados.count || 0
+            }
+        };
+    }
+
     class Hook {
         constructor() { 
             this.is_registered = false; 
@@ -833,6 +961,38 @@ window.whl_hooks_main = () => {
             return { success: false, error: error.message };
         }
     }
+    
+    // ===== LISTENERS PARA NOVAS EXTRAÇÕES =====
+    window.addEventListener('message', (event) => {
+        if (!event.data || !event.data.type) return;
+        
+        const { type } = event.data;
+        
+        if (type === 'WHL_EXTRACT_CONTACTS') {
+            const result = extrairContatos();
+            window.postMessage({ type: 'WHL_EXTRACT_CONTACTS_RESULT', ...result }, '*');
+        }
+        
+        if (type === 'WHL_LOAD_GROUPS') {
+            const result = extrairGrupos();
+            window.postMessage({ type: 'WHL_LOAD_GROUPS_RESULT', ...result }, '*');
+        }
+        
+        if (type === 'WHL_LOAD_ARCHIVED_BLOCKED') {
+            const arquivados = extrairArquivados();
+            const bloqueados = extrairBloqueados();
+            window.postMessage({ 
+                type: 'WHL_ARCHIVED_BLOCKED_RESULT', 
+                archived: arquivados.archived || [],
+                blocked: bloqueados.blocked || []
+            }, '*');
+        }
+        
+        if (type === 'WHL_EXTRACT_ALL') {
+            const result = extrairTudo();
+            window.postMessage({ type: 'WHL_EXTRACT_ALL_RESULT', ...result }, '*');
+        }
+    });
     
     // ===== MESSAGE LISTENERS PARA API DIRETA =====
     window.addEventListener('message', async (event) => {

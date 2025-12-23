@@ -10,6 +10,126 @@
     
     // ===== UTILITY FUNCTIONS =====
     
+    // ===== ENVIO VIA INPUT (SEM RELOAD) =====
+    async function sendMessageViaInput(text) {
+        // Encontrar input de mensagem
+        const input = document.querySelector('[data-testid="conversation-compose-box-input"]') ||
+                      document.querySelector('footer [contenteditable="true"]') ||
+                      document.querySelector('[contenteditable="true"][data-tab="10"]');
+        
+        if (!input) {
+            return { success: false, error: 'INPUT_NOT_FOUND' };
+        }
+        
+        try {
+            // Limpar e focar
+            input.innerHTML = '';
+            input.focus();
+            
+            // Inserir texto
+            document.execCommand('insertText', false, text);
+            input.dispatchEvent(new InputEvent('input', { bubbles: true, data: text }));
+            
+            // Aguardar um momento para o texto ser processado
+            await new Promise(r => setTimeout(r, 300));
+            
+            // Simular Enter para enviar
+            const enterEvent = new KeyboardEvent('keydown', {
+                key: 'Enter',
+                code: 'Enter',
+                keyCode: 13,
+                which: 13,
+                bubbles: true
+            });
+            input.dispatchEvent(enterEvent);
+            
+            // Aguardar envio processar
+            await new Promise(r => setTimeout(r, 1000));
+            
+            return { success: true };
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+    }
+
+    // ===== ABRIR CHAT VIA URL =====
+    async function openChatViaURL(phone) {
+        const url = `https://web.whatsapp.com/send?phone=${phone}`;
+        window.location.href = url;
+        
+        // Aguardar chat carregar
+        return new Promise((resolve) => {
+            let attempts = 0;
+            const maxAttempts = 60; // 30 segundos
+            
+            const check = () => {
+                attempts++;
+                
+                // Verificar se input está disponível
+                const input = document.querySelector('[data-testid="conversation-compose-box-input"]') ||
+                              document.querySelector('footer [contenteditable="true"]');
+                
+                if (input) {
+                    resolve({ success: true });
+                    return;
+                }
+                
+                // Verificar erros
+                const errorPopup = document.querySelector('[data-testid="popup"]');
+                if (errorPopup) {
+                    const text = errorPopup.textContent.toLowerCase();
+                    if (text.includes('inválido') || text.includes('invalid')) {
+                        resolve({ success: false, error: 'INVALID_NUMBER' });
+                        return;
+                    }
+                }
+                
+                if (attempts >= maxAttempts) {
+                    resolve({ success: false, error: 'TIMEOUT' });
+                    return;
+                }
+                
+                setTimeout(check, 500);
+            };
+            
+            setTimeout(check, 2000); // Aguardar página começar a carregar
+        });
+    }
+
+    // ===== HANDLER PRINCIPAL DE ENVIO =====
+    async function handleSendMessage(phone, text, imageData = null) {
+        console.log('[WHL Worker] Iniciando envio para:', phone);
+        
+        // Verificar se já está no chat correto
+        const currentUrl = window.location.href;
+        const isInCorrectChat = currentUrl.includes(phone) || 
+                                document.querySelector(`[data-id="${phone}@c.us"]`);
+        
+        if (!isInCorrectChat) {
+            // Abrir chat via URL
+            console.log('[WHL Worker] Abrindo chat via URL...');
+            const openResult = await openChatViaURL(phone);
+            
+            if (!openResult.success) {
+                return openResult;
+            }
+        }
+        
+        // Tentar enviar via Input
+        console.log('[WHL Worker] Enviando via Input + Enter...');
+        const sendResult = await sendMessageViaInput(text);
+        
+        if (sendResult.success) {
+            console.log('[WHL Worker] ✅ Mensagem enviada com sucesso!');
+        } else {
+            console.log('[WHL Worker] ❌ Falha no envio:', sendResult.error);
+        }
+        
+        return sendResult;
+    }
+    
+    // ===== UTILITY FUNCTIONS (LEGACY) =====
+    
     // Clica em botão por texto
     function clickByText(needles) {
       const lc = s => s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim();
@@ -178,64 +298,6 @@
                   document.querySelector('#pane-side'));
     }
     
-    async function handleSendMessage(phone, text, imageData = null) {
-        try {
-            console.log(`[WHL Worker] Iniciando envio para ${phone}...`);
-            
-            const sendUrl = `https://web.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`;
-            window.location.assign(sendUrl);
-
-            const opened = await waitForChatOpen(phone, 30000);
-            
-            if (!opened.success) {
-                console.log(`[WHL Worker] ❌ Falha ao abrir chat: ${opened.error}`);
-                return { success: false, error: opened.error || 'OPEN_CHAT_FAILED' };
-            }
-
-            // Encontrar composer
-            const composer = document.querySelector('[data-testid="conversation-compose-box-input"]')
-                || document.querySelector('[contenteditable="true"][data-tab="10"]')
-                || document.querySelector('footer [contenteditable="true"]');
-
-            if (!composer) {
-                return { success: false, error: 'COMPOSER_NOT_FOUND' };
-            }
-
-            // Focar e inserir texto
-            composer.focus();
-            document.execCommand('insertText', false, text);
-            composer.dispatchEvent(new InputEvent('input', { bubbles: true }));
-
-            // Se tem imagem, anexar primeiro
-            if (imageData) {
-                const imgResult = await attachImage(imageData);
-                if (!imgResult.success) {
-                    console.log(`[WHL Worker] ⚠️ Falha ao anexar imagem, enviando só texto`);
-                }
-            }
-
-            // Pressionar Enter para enviar
-            const enterEvent = new KeyboardEvent('keydown', { 
-                key: 'Enter', 
-                code: 'Enter', 
-                which: 13, 
-                keyCode: 13, 
-                bubbles: true 
-            });
-            composer.dispatchEvent(enterEvent);
-
-            // Aguardar envio processar
-            await new Promise(r => setTimeout(r, 1500));
-
-            console.log(`[WHL Worker] ✅ Enviado para ${phone}`);
-            return { success: true };
-            
-        } catch (err) {
-            console.error(`[WHL Worker] ❌ Exceção:`, err);
-            return { success: false, error: err.message || 'SEND_EXCEPTION' };
-        }
-    }
-    
     async function waitForChatOpen(phone, timeout = 30000) {
         const start = Date.now();
         
@@ -353,5 +415,15 @@
             tryClick();
         });
     }
+    
+    // Listener para mensagens do background (quando rodando na aba principal)
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        if (request.action === 'SEND_MESSAGE_URL') {
+            handleSendMessage(request.phone, request.text, request.imageData)
+                .then(result => sendResponse(result))
+                .catch(error => sendResponse({ success: false, error: error.message }));
+            return true; // Indica resposta assíncrona
+        }
+    });
     
 })();
