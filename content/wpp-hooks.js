@@ -27,6 +27,14 @@ window.whl_hooks_main = () => {
         CHAT_STORE: 'WAWebChatCollection',
         CONTACT_STORE: 'WAWebContactCollection',
         GROUP_METADATA: 'WAWebGroupMetadata',
+        // Novos módulos para envio direto
+        OPEN_CHAT: 'useWAWebSetModelValue',
+        WID_FACTORY: 'WAWebWidFactory',
+        CHAT_COLLECTION: 'WAWebChatCollection',
+        // Módulos de mídia
+        MEDIA_PREP: 'WAWebMediaPrep',
+        MEDIA_UPLOAD: 'WAWebMediaUpload',
+        MSG_MODELS: 'WAWebMsgModel',
     };
 
     let MODULES = {};
@@ -179,6 +187,12 @@ window.whl_hooks_main = () => {
             CHAT_STORE: tryRequireModule(WA_MODULES.CHAT_STORE),
             CONTACT_STORE: tryRequireModule(WA_MODULES.CONTACT_STORE),
             GROUP_METADATA: tryRequireModule(WA_MODULES.GROUP_METADATA),
+            // Novos módulos
+            WID_FACTORY: tryRequireModule(WA_MODULES.WID_FACTORY),
+            CHAT_COLLECTION: tryRequireModule(WA_MODULES.CHAT_COLLECTION),
+            MEDIA_PREP: tryRequireModule(WA_MODULES.MEDIA_PREP),
+            MEDIA_UPLOAD: tryRequireModule(WA_MODULES.MEDIA_UPLOAD),
+            MSG_MODELS: tryRequireModule(WA_MODULES.MSG_MODELS),
         };
         
         console.log('[WHL Hooks] Modules initialized:', {
@@ -187,7 +201,12 @@ window.whl_hooks_main = () => {
             QUERY_GROUP: !!MODULES.QUERY_GROUP,
             CHAT_STORE: !!MODULES.CHAT_STORE,
             CONTACT_STORE: !!MODULES.CONTACT_STORE,
-            GROUP_METADATA: !!MODULES.GROUP_METADATA
+            GROUP_METADATA: !!MODULES.GROUP_METADATA,
+            WID_FACTORY: !!MODULES.WID_FACTORY,
+            CHAT_COLLECTION: !!MODULES.CHAT_COLLECTION,
+            MEDIA_PREP: !!MODULES.MEDIA_PREP,
+            MEDIA_UPLOAD: !!MODULES.MEDIA_UPLOAD,
+            MSG_MODELS: !!MODULES.MSG_MODELS
         });
     };
 
@@ -233,6 +252,302 @@ window.whl_hooks_main = () => {
 
     // Iniciar após delay para garantir que WhatsApp Web carregou
     setTimeout(load_and_start, 1000);
+    
+    // ===== FUNÇÕES DE ENVIO DIRETO (API) =====
+    
+    /**
+     * Abre chat sem reload da página
+     * @param {string} phoneNumber - Número no formato internacional (ex: 5511999998888)
+     * @returns {Promise<boolean>} - true se chat foi aberto com sucesso
+     */
+    async function openChatDirect(phoneNumber) {
+        try {
+            if (!MODULES.WID_FACTORY || !MODULES.CHAT_COLLECTION) {
+                console.warn('[WHL Hooks] Módulos necessários não disponíveis para openChatDirect');
+                return false;
+            }
+            
+            const wid = MODULES.WID_FACTORY.createWid(phoneNumber + '@c.us');
+            const chat = await MODULES.CHAT_COLLECTION.find(wid);
+            
+            if (chat) {
+                // Abrir chat usando API interna
+                if (MODULES.CHAT_COLLECTION.setActive) {
+                    await MODULES.CHAT_COLLECTION.setActive(chat);
+                }
+                return true;
+            }
+            return false;
+        } catch (error) {
+            console.error('[WHL Hooks] Erro ao abrir chat:', error);
+            return false;
+        }
+    }
+    
+    /**
+     * Envia mensagem de texto diretamente via API
+     * @param {string} phoneNumber - Número no formato internacional
+     * @param {string} text - Texto da mensagem
+     * @returns {Promise<boolean>} - true se mensagem foi enviada
+     */
+    async function sendMessageDirect(phoneNumber, text) {
+        try {
+            if (!MODULES.WID_FACTORY || !MODULES.CHAT_COLLECTION) {
+                console.warn('[WHL Hooks] Módulos necessários não disponíveis para sendMessageDirect');
+                return false;
+            }
+            
+            const wid = MODULES.WID_FACTORY.createWid(phoneNumber + '@c.us');
+            let chat = await MODULES.CHAT_COLLECTION.find(wid);
+            
+            if (!chat) {
+                // Criar novo chat se não existir
+                console.log('[WHL Hooks] Chat não encontrado, criando novo...');
+                chat = await MODULES.CHAT_COLLECTION.add(wid);
+            }
+            
+            if (chat && chat.sendMessage) {
+                await chat.sendMessage(text);
+                console.log('[WHL Hooks] ✅ Mensagem enviada via API para', phoneNumber);
+                return true;
+            }
+            
+            return false;
+        } catch (error) {
+            console.error('[WHL Hooks] Erro ao enviar mensagem:', error);
+            return false;
+        }
+    }
+    
+    /**
+     * Envia imagem diretamente via API
+     * @param {string} phoneNumber - Número no formato internacional
+     * @param {string} imageDataUrl - Data URL da imagem (base64)
+     * @param {string} caption - Legenda da imagem (opcional)
+     * @returns {Promise<boolean>} - true se imagem foi enviada
+     */
+    async function sendImageDirect(phoneNumber, imageDataUrl, caption = '') {
+        try {
+            if (!MODULES.WID_FACTORY || !MODULES.CHAT_COLLECTION) {
+                console.warn('[WHL Hooks] Módulos necessários não disponíveis para sendImageDirect');
+                return false;
+            }
+            
+            const wid = MODULES.WID_FACTORY.createWid(phoneNumber + '@c.us');
+            let chat = await MODULES.CHAT_COLLECTION.find(wid);
+            
+            if (!chat) {
+                console.log('[WHL Hooks] Chat não encontrado para envio de imagem');
+                return false;
+            }
+            
+            // Converter data URL para blob
+            const response = await fetch(imageDataUrl);
+            const blob = await response.blob();
+            const file = new File([blob], 'image.jpg', { type: blob.type || 'image/jpeg' });
+            
+            // Preparar mídia usando API interna
+            if (MODULES.MEDIA_PREP && MODULES.MEDIA_PREP.prepareMedia) {
+                const mediaData = await MODULES.MEDIA_PREP.prepareMedia(file);
+                
+                // Enviar com caption
+                await chat.sendMessage(mediaData, { caption });
+                console.log('[WHL Hooks] ✅ Imagem enviada via API para', phoneNumber);
+                return true;
+            } else {
+                // Fallback: tentar envio simples
+                console.log('[WHL Hooks] MEDIA_PREP não disponível, usando fallback');
+                return false;
+            }
+        } catch (error) {
+            console.error('[WHL Hooks] Erro ao enviar imagem:', error);
+            return false;
+        }
+    }
+    
+    /**
+     * Envia mensagem com indicador de digitação
+     * @param {string} phoneNumber - Número no formato internacional
+     * @param {string} text - Texto da mensagem
+     * @param {number} typingDuration - Duração do indicador em ms
+     * @returns {Promise<boolean>} - true se mensagem foi enviada
+     */
+    async function sendWithTypingIndicator(phoneNumber, text, typingDuration = 2000) {
+        try {
+            if (!MODULES.WID_FACTORY || !MODULES.CHAT_COLLECTION) {
+                console.warn('[WHL Hooks] Módulos necessários não disponíveis');
+                return false;
+            }
+            
+            const wid = MODULES.WID_FACTORY.createWid(phoneNumber + '@c.us');
+            let chat = await MODULES.CHAT_COLLECTION.find(wid);
+            
+            if (!chat) {
+                return false;
+            }
+            
+            // Mostrar "digitando..." para o destinatário
+            if (chat.presence) {
+                await chat.presence.subscribe();
+                await chat.presence.update('composing');
+            }
+            
+            // Aguardar tempo simulado (baseado no tamanho da mensagem)
+            const delay = Math.min(typingDuration, text.length * 50);
+            await new Promise(r => setTimeout(r, delay));
+            
+            // Enviar mensagem
+            if (chat.sendMessage) {
+                await chat.sendMessage(text);
+            }
+            
+            // Parar indicador
+            if (chat.presence) {
+                await chat.presence.update('available');
+            }
+            
+            console.log('[WHL Hooks] ✅ Mensagem enviada com indicador de digitação');
+            return true;
+        } catch (error) {
+            console.error('[WHL Hooks] Erro ao enviar com typing indicator:', error);
+            return false;
+        }
+    }
+    
+    /**
+     * Extrai todos os contatos diretamente via API
+     * @returns {Object} - Objeto com arrays de contatos (normal, archived, blocked, groups)
+     */
+    function extractAllContactsDirect() {
+        const result = {
+            normal: [],
+            archived: [],
+            blocked: [],
+            groups: []
+        };
+        
+        try {
+            const chats = MODULES.CHAT_COLLECTION?.models || 
+                         MODULES.CHAT_COLLECTION?.getModelsArray?.() || 
+                         MODULES.CHAT_STORE?.models || 
+                         MODULES.CHAT_STORE?.getModelsArray?.() || 
+                         [];
+            
+            chats.forEach(chat => {
+                const id = chat.id?._serialized;
+                if (!id) return;
+                
+                if (id.endsWith('@g.us')) {
+                    // Grupo
+                    result.groups.push({
+                        id,
+                        name: chat.formattedTitle || chat.name || 'Grupo sem nome',
+                        participants: chat.groupMetadata?.participants?.length || 0
+                    });
+                } else if (id.endsWith('@c.us')) {
+                    // Contato individual
+                    const phone = id.replace('@c.us', '');
+                    if (chat.archive) {
+                        result.archived.push(phone);
+                    } else {
+                        result.normal.push(phone);
+                    }
+                }
+            });
+            
+            // Bloqueados (se disponível)
+            if (MODULES.CONTACT_STORE?.models) {
+                MODULES.CONTACT_STORE.models.forEach(contact => {
+                    if (contact.isBlocked) {
+                        const id = contact.id?._serialized;
+                        if (id?.endsWith('@c.us')) {
+                            result.blocked.push(id.replace('@c.us', ''));
+                        }
+                    }
+                });
+            }
+            
+            console.log('[WHL Hooks] ✅ Extração direta concluída:', {
+                normal: result.normal.length,
+                archived: result.archived.length,
+                blocked: result.blocked.length,
+                groups: result.groups.length
+            });
+        } catch (error) {
+            console.error('[WHL Hooks] Erro ao extrair contatos:', error);
+        }
+        
+        return result;
+    }
+    
+    // ===== MESSAGE LISTENERS PARA API DIRETA =====
+    window.addEventListener('message', async (event) => {
+        if (!event.data || !event.data.type) return;
+        
+        const { type } = event.data;
+        
+        // ENVIAR MENSAGEM DE TEXTO DIRETAMENTE
+        if (type === 'WHL_SEND_MESSAGE_DIRECT') {
+            const { phone, message, useTyping } = event.data;
+            try {
+                let success;
+                if (useTyping) {
+                    success = await sendWithTypingIndicator(phone, message);
+                } else {
+                    success = await sendMessageDirect(phone, message);
+                }
+                
+                window.postMessage({ 
+                    type: 'WHL_SEND_MESSAGE_RESULT', 
+                    success, 
+                    phone 
+                }, '*');
+            } catch (error) {
+                window.postMessage({ 
+                    type: 'WHL_SEND_MESSAGE_RESULT', 
+                    success: false, 
+                    phone, 
+                    error: error.message 
+                }, '*');
+            }
+        }
+        
+        // ENVIAR IMAGEM DIRETAMENTE
+        if (type === 'WHL_SEND_IMAGE_DIRECT') {
+            const { phone, imageData, caption } = event.data;
+            try {
+                const success = await sendImageDirect(phone, imageData, caption);
+                window.postMessage({ 
+                    type: 'WHL_SEND_IMAGE_RESULT', 
+                    success, 
+                    phone 
+                }, '*');
+            } catch (error) {
+                window.postMessage({ 
+                    type: 'WHL_SEND_IMAGE_RESULT', 
+                    success: false, 
+                    phone, 
+                    error: error.message 
+                }, '*');
+            }
+        }
+        
+        // EXTRAIR TODOS OS CONTATOS DIRETAMENTE
+        if (type === 'WHL_EXTRACT_ALL_DIRECT') {
+            try {
+                const result = extractAllContactsDirect();
+                window.postMessage({ 
+                    type: 'WHL_EXTRACT_ALL_RESULT', 
+                    ...result 
+                }, '*');
+            } catch (error) {
+                window.postMessage({ 
+                    type: 'WHL_EXTRACT_ALL_ERROR', 
+                    error: error.message 
+                }, '*');
+            }
+        }
+    });
     
     // ===== MESSAGE LISTENERS PARA GRUPOS =====
     window.addEventListener('message', async (event) => {

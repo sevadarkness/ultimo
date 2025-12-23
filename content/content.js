@@ -2221,6 +2221,222 @@
   }
 
   // ===== NEW DOM-BASED CAMPAIGN PROCESSING =====
+  
+  // ===== DIRECT API CAMPAIGN PROCESSING (NO RELOAD) =====
+  
+  /**
+   * Processa campanha usando API direta (sem reload)
+   * Envia mensagens via postMessage para wpp-hooks.js
+   */
+  async function processCampaignStepDirect() {
+    const st = await getState();
+    
+    if (!st.isRunning || st.isPaused) {
+      console.log('[WHL] Campanha parada ou pausada');
+      return;
+    }
+    
+    if (st.index >= st.queue.length) {
+      console.log('[WHL] 🎉 Campanha finalizada!');
+      st.isRunning = false;
+      await setState(st);
+      await render();
+      return;
+    }
+    
+    const cur = st.queue[st.index];
+    
+    // Pular números inválidos
+    if (cur && cur.valid === false) {
+      console.log('[WHL] ⚠️ Número inválido, pulando:', cur.phone);
+      cur.status = 'failed';
+      cur.errorReason = 'Número inválido';
+      st.index++;
+      st.stats.failed++;
+      st.stats.pending--;
+      await setState(st);
+      await render();
+      scheduleCampaignStepDirect();
+      return;
+    }
+    
+    // Pular se não existe
+    if (!cur) {
+      st.index++;
+      await setState(st);
+      scheduleCampaignStepDirect();
+      return;
+    }
+    
+    // Pular números já processados
+    if (cur.status === 'sent') {
+      st.index++;
+      await setState(st);
+      scheduleCampaignStepDirect();
+      return;
+    }
+    
+    // Se já falhou e não é para retry, pular
+    if (cur.status === 'failed' && !cur.retryPending) {
+      st.index++;
+      await setState(st);
+      scheduleCampaignStepDirect();
+      return;
+    }
+    
+    console.log(`[WHL] 📨 Enviando via API direta: ${st.index + 1}/${st.queue.length} - ${cur.phone}`);
+    cur.status = 'opened';
+    await setState(st);
+    await render();
+    
+    // Enviar via API direta usando postMessage
+    if (st.imageData) {
+      // Enviar imagem com legenda
+      console.log('[WHL] 📸 Enviando imagem via API...');
+      window.postMessage({
+        type: 'WHL_SEND_IMAGE_DIRECT',
+        phone: cur.phone,
+        imageData: st.imageData,
+        caption: st.message || ''
+      }, '*');
+    } else {
+      // Enviar mensagem de texto
+      console.log('[WHL] 💬 Enviando texto via API...');
+      window.postMessage({
+        type: 'WHL_SEND_MESSAGE_DIRECT',
+        phone: cur.phone,
+        message: st.message,
+        useTyping: st.typingEffect !== false
+      }, '*');
+    }
+    
+    // Nota: O resultado será recebido via listener abaixo
+    // e continuará a campanha automaticamente
+  }
+  
+  function scheduleCampaignStepDirect() {
+    if (campaignInterval) clearTimeout(campaignInterval);
+    campaignInterval = setTimeout(() => {
+      processCampaignStepDirect();
+    }, 100);
+  }
+  
+  // Listener para resultados de envio direto
+  window.addEventListener('message', async (e) => {
+    if (!e.data || !e.data.type) return;
+    
+    const { type } = e.data;
+    
+    // Resultado de envio de mensagem ou imagem
+    if (type === 'WHL_SEND_MESSAGE_RESULT' || type === 'WHL_SEND_IMAGE_RESULT') {
+      const st = await getState();
+      
+      // Verificar se ainda está em uma campanha ativa
+      if (!st.isRunning) return;
+      
+      const cur = st.queue[st.index];
+      
+      if (cur && cur.phone === e.data.phone) {
+        if (e.data.success) {
+          // Sucesso!
+          console.log('[WHL] ✅ Mensagem enviada com sucesso via API para', e.data.phone);
+          cur.status = 'sent';
+          cur.retries = cur.retries || 0;
+          st.stats.sent++;
+          st.stats.pending--;
+          st.index++;
+        } else {
+          // Falha - verificar retry
+          console.log('[WHL] ❌ Falha ao enviar via API para', e.data.phone, ':', e.data.error);
+          cur.retries = (cur.retries || 0) + 1;
+          
+          if (cur.retries >= (st.retryMax || 0)) {
+            // Máximo de retries atingido
+            cur.status = 'failed';
+            cur.errorReason = e.data.error || 'Falha no envio via API';
+            cur.retryPending = false;
+            st.stats.failed++;
+            st.stats.pending--;
+            st.index++;
+            
+            // Se não continuar em erros, parar campanha
+            if (!st.continueOnError) {
+              console.log('[WHL] ⚠️ Parando campanha devido a erro');
+              st.isRunning = false;
+              await setState(st);
+              await render();
+              return;
+            }
+          } else {
+            // Ainda pode tentar novamente
+            cur.retryPending = true;
+            console.log(`[WHL] 🔄 Tentando novamente (${cur.retries}/${st.retryMax})...`);
+          }
+        }
+        
+        await setState(st);
+        await render();
+        
+        // Continuar campanha após delay
+        if (st.isRunning && !st.isPaused && st.index < st.queue.length) {
+          const delay = getRandomDelay(st.delayMin, st.delayMax);
+          console.log(`[WHL] ⏳ Aguardando ${(delay/1000).toFixed(1)}s antes do próximo envio...`);
+          setTimeout(() => processCampaignStepDirect(), delay);
+        } else if (st.index >= st.queue.length) {
+          // Campanha finalizada
+          st.isRunning = false;
+          await setState(st);
+          await render();
+          console.log('[WHL] 🎉 Campanha finalizada!');
+        }
+      }
+    }
+    
+    // Resultado de extração direta
+    if (type === 'WHL_EXTRACT_ALL_RESULT') {
+      console.log('[WHL] ✅ Extração via API concluída:', e.data);
+      
+      // Atualizar campos de extração
+      const normalBox = document.getElementById('whlExtractedNumbers');
+      const archivedBox = document.getElementById('whlArchivedNumbers');
+      const blockedBox = document.getElementById('whlBlockedNumbers');
+      
+      if (normalBox && e.data.normal) {
+        normalBox.value = e.data.normal.join('\n');
+      }
+      if (archivedBox && e.data.archived) {
+        archivedBox.value = e.data.archived.join('\n');
+      }
+      if (blockedBox && e.data.blocked) {
+        blockedBox.value = e.data.blocked.join('\n');
+      }
+      
+      // Atualizar contadores
+      const normalCount = document.getElementById('whlNormalCount');
+      const archivedCount = document.getElementById('whlArchivedCount');
+      const blockedCount = document.getElementById('whlBlockedCount');
+      
+      if (normalCount) normalCount.textContent = e.data.normal?.length || 0;
+      if (archivedCount) archivedCount.textContent = e.data.archived?.length || 0;
+      if (blockedCount) blockedCount.textContent = e.data.blocked?.length || 0;
+      
+      const statusEl = document.getElementById('whlExtractStatus');
+      if (statusEl) {
+        const total = (e.data.normal?.length || 0) + 
+                      (e.data.archived?.length || 0) + 
+                      (e.data.blocked?.length || 0);
+        statusEl.textContent = `✅ ${total} contatos extraídos via API direta (instantâneo)`;
+      }
+    }
+    
+    if (type === 'WHL_EXTRACT_ALL_ERROR') {
+      console.error('[WHL] ❌ Erro na extração via API:', e.data.error);
+      const statusEl = document.getElementById('whlExtractStatus');
+      if (statusEl) {
+        statusEl.textContent = `❌ Erro: ${e.data.error}`;
+      }
+    }
+  });
 
   // Loop da campanha via URL (substituindo modo DOM)
   async function processCampaignStepViaDom() {
@@ -2318,10 +2534,19 @@
     await setState(st);
     await render();
 
-    console.log('[WHL] 🚀 Campanha iniciada (modo URL)');
+    console.log('[WHL] 🚀 Campanha iniciada');
     
-    // Usar modo URL (com reload de página)
-    processCampaignStepViaDom();
+    // NOVO: Tentar usar API direta primeiro (mais rápido, sem reload)
+    // Se falhar, usar modo URL como fallback
+    const useDirectAPI = true; // Flag para habilitar/desabilitar API direta
+    
+    if (useDirectAPI) {
+      console.log('[WHL] 📡 Usando API direta (WPP Boladão) - SEM RELOAD!');
+      processCampaignStepDirect();
+    } else {
+      console.log('[WHL] 🔗 Usando modo URL (com reload)');
+      processCampaignStepViaDom();
+    }
   }
 
   async function pauseCampaign() {
@@ -2337,7 +2562,13 @@
       
       // Continuar processamento de onde parou
       if (st.isRunning) {
-        scheduleCampaignStepViaDom();
+        // Usar o mesmo modo que estava sendo usado
+        const useDirectAPI = true; // Mesma flag da startCampaign
+        if (useDirectAPI) {
+          scheduleCampaignStepDirect();
+        } else {
+          scheduleCampaignStepViaDom();
+        }
       }
     } else {
       // Pausar
