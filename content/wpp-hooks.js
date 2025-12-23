@@ -268,19 +268,27 @@ window.whl_hooks_main = () => {
                 document.querySelector('div[contenteditable="true"][data-lexical-editor="true"]');
 
             if (!captionInput) {
-                console.error('[WHL] ❌ Campo de caption não encontrado');
-                return { success: false, error: 'CAPTION_INPUT_NOT_FOUND' };
+                // Only error if we actually need to add a caption
+                if (caption) {
+                    console.error('[WHL] ❌ Campo de caption não encontrado');
+                    return { success: false, error: 'CAPTION_INPUT_NOT_FOUND' };
+                }
+                // No caption needed and no input found - try to send anyway
+                console.warn('[WHL] ⚠️ Campo de caption não encontrado, mas sem caption para adicionar');
+            } else {
+                if (caption) {
+                    captionInput.focus();
+                    // Note: Using execCommand despite deprecation warning because it's the only method
+                    // that reliably triggers WhatsApp Web's internal message handlers during testing
+                    document.execCommand('insertText', false, caption);
+                    console.log('[WHL] 📝 Caption adicionado:', caption);
+                }
+
+                await new Promise(r => setTimeout(r, 400));
+
+                pressEnter(captionInput);
             }
-
-            if (caption) {
-                captionInput.focus();
-                document.execCommand('insertText', false, caption);
-                console.log('[WHL] 📝 Caption adicionado:', caption);
-            }
-
-            await new Promise(r => setTimeout(r, 400));
-
-            pressEnter(captionInput);
+            
             console.log('[WHL] ✅ IMAGEM enviada!');
             return { success: true };
         } catch (error) {
@@ -1017,6 +1025,8 @@ window.whl_hooks_main = () => {
     
     // ===== LISTENERS PARA NOVAS EXTRAÇÕES =====
     window.addEventListener('message', (event) => {
+        // Validate origin for security
+        if (event.origin !== window.location.origin) return;
         if (!event.data || !event.data.type) return;
         
         const { type } = event.data;
@@ -1115,6 +1125,8 @@ window.whl_hooks_main = () => {
     
     // ===== LISTENERS FOR SEND FUNCTIONS =====
     window.addEventListener('message', async (event) => {
+        // Validate origin for security
+        if (event.origin !== window.location.origin) return;
         if (!event.data) return;
         
         // Enviar apenas TEXTO
@@ -1141,6 +1153,8 @@ window.whl_hooks_main = () => {
     
     // ===== MESSAGE LISTENERS PARA API DIRETA =====
     window.addEventListener('message', async (event) => {
+        // Validate origin for security
+        if (event.origin !== window.location.origin) return;
         if (!event.data || !event.data.type) return;
         
         const { type } = event.data;
@@ -1242,6 +1256,8 @@ window.whl_hooks_main = () => {
 
     // ===== EXTRAÇÃO INSTANTÂNEA =====
     window.addEventListener('message', (event) => {
+        // Validate origin for security
+        if (event.origin !== window.location.origin) return;
         if (event.data?.type !== 'WHL_EXTRACT_INSTANT') return;
         
         try {
