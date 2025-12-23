@@ -473,7 +473,7 @@
 
       /* ===== QUEUE TABLE CONTAINER ===== */
       #whlPanel .whl-queue-container {
-        max-height: 450px;
+        max-height: 600px !important; /* Aumentado de 450px */
         overflow-y: auto;
         border: 1px solid rgba(255,255,255,.10);
         border-radius: 12px;
@@ -485,9 +485,31 @@
         background: rgba(255,255,255,.03);
       }
 
+      /* Linhas da tabela com destaque melhor */
+      #whlPanel tbody tr {
+        transition: background 0.2s ease;
+      }
+
+      #whlPanel tbody tr:hover {
+        background: rgba(111,0,255,.15);
+      }
+
       #whlPanel tbody tr.current {
-        background: rgba(111,0,255,.20);
+        background: rgba(111,0,255,.25);
         border-left: 3px solid rgba(111,0,255,.85);
+      }
+
+      /* Status badges com cores mais visíveis */
+      #whlPanel .pill.sent {
+        background: rgba(0,200,100,.20);
+        border: 1px solid rgba(0,200,100,.40);
+        color: #4ade80;
+      }
+
+      #whlPanel .pill.failed {
+        background: rgba(255,80,80,.20);
+        border: 1px solid rgba(255,80,80,.40);
+        color: #f87171;
       }
 
 
@@ -620,34 +642,13 @@
       <!-- Tabs no topo do painel -->
       <div class="whl-tabs">
         <button class="whl-tab active" data-tab="principal">📱 Principal</button>
+        <button class="whl-tab" data-tab="extrator">📥 Extrator</button>
         <button class="whl-tab" data-tab="config">⚙️ Configurações</button>
       </div>
 
       <!-- Conteúdo da Aba Principal -->
       <div class="whl-tab-content active" id="whl-tab-principal">
         
-        <div class="card" id="whlExtractCard">
-          <div class="title" style="font-size:13px">Extrair contatos</div>
-          <div class="muted">Coleta números disponíveis no WhatsApp Web e lista aqui (1 por linha).</div>
-
-          <div class="row" style="margin-top:10px">
-            <button class="success" style="flex:1" id="whlExtractContacts">📥 Extrair contatos</button>
-            <button style="width:150px" id="whlCopyExtracted">🔁 Copiar → Números</button>
-          </div>
-
-          <div id="whlExtractProgress" style="display:none;margin-top:10px">
-            <div class="progress-bar">
-              <div class="progress-fill" id="whlExtractProgressFill" style="width:0%"></div>
-            </div>
-            <div class="tiny" style="margin-top:6px;text-align:center" id="whlExtractProgressText">0%</div>
-          </div>
-
-          <textarea id="whlExtractedNumbers" placeholder="Clique em 'Extrair contatos'…" style="margin-top:10px;min-height:140px"></textarea>
-          <div class="tiny" id="whlExtractStatus" style="margin-top:6px;opacity:.8"></div>
-          
-          <button class="primary" style="width:100%;margin-top:8px" id="whlExportExtractedCsv">📥 Extrair CSV</button>
-        </div>
-
         <div class="card">
           <div class="title" style="font-size:13px">Números (um por linha)</div>
           <div class="muted">Cole sua lista aqui. Ex: 5511999998888</div>
@@ -745,6 +746,31 @@
           <div class="tiny" id="whlStatus" style="margin-top:8px"></div>
         </div>
 
+      </div>
+
+      <!-- NOVA Aba Extrator -->
+      <div class="whl-tab-content" id="whl-tab-extrator">
+        <div class="card">
+          <div class="title" style="font-size:13px">📥 Extrair Contatos</div>
+          <div class="muted">Coleta números disponíveis no WhatsApp Web.</div>
+          
+          <div class="row" style="margin-top:10px">
+            <button class="success" style="flex:1" id="whlExtractContacts">📥 Extrair contatos</button>
+            <button style="width:150px" id="whlCopyExtracted">🔁 Copiar → Números</button>
+          </div>
+          
+          <div id="whlExtractProgress" style="display:none;margin-top:10px">
+            <div class="progress-bar">
+              <div class="progress-fill" id="whlExtractProgressFill" style="width:0%"></div>
+            </div>
+            <div class="tiny" style="margin-top:6px;text-align:center" id="whlExtractProgressText">0%</div>
+          </div>
+          
+          <textarea id="whlExtractedNumbers" placeholder="Clique em 'Extrair contatos'…" style="margin-top:10px;min-height:300px"></textarea>
+          <div class="tiny" id="whlExtractStatus" style="margin-top:6px;opacity:.8"></div>
+          
+          <button class="primary" style="width:100%;margin-top:8px" id="whlExportExtractedCsv">📥 Exportar CSV</button>
+        </div>
       </div>
 
       <!-- Conteúdo da Aba Configurações -->
@@ -2209,15 +2235,68 @@
     st.numbersText = document.getElementById('whlNumbers').value || '';
     st.message = document.getElementById('whlMsg').value || '';
 
-    const nums = (st.numbersText||'').split(/\r?\n/).map(n => whlSanitize(n)).filter(n => n.length >= 1);
-    st.queue = nums.map(n => ({ phone: n, status: whlIsValidPhone(n) ? 'pending' : 'failed', valid: whlIsValidPhone(n), retries: 0 }));
+    // Extrair números
+    const rawNums = (st.numbersText||'').split(/\r?\n/).map(n => whlSanitize(n)).filter(n => n.length >= 1);
+    
+    // MELHORIA: Remover duplicatas usando Set
+    // Também normaliza para evitar que 5521... e 21... sejam considerados diferentes
+    const uniqueNums = [];
+    const seen = new Set();
+    
+    for (const num of rawNums) {
+      // Normalizar: adicionar 55 se for número brasileiro sem código
+      let normalized = num;
+      if (num.length === 10 || num.length === 11) {
+        normalized = '55' + num;
+      }
+      
+      // Se já vimos este número (ou sua versão normalizada), pular
+      if (seen.has(normalized)) {
+        console.log('[WHL] Número duplicado removido:', num);
+        continue;
+      }
+      
+      // Também verificar a versão sem 55
+      const without55 = normalized.startsWith('55') ? normalized.substring(2) : normalized;
+      if (seen.has(without55)) {
+        console.log('[WHL] Número duplicado removido (variante):', num);
+        continue;
+      }
+      
+      seen.add(normalized);
+      seen.add(without55);
+      uniqueNums.push(normalized); // Usar versão normalizada (com 55)
+    }
+    
+    // Criar fila apenas com números únicos
+    st.queue = uniqueNums.map(n => ({ 
+      phone: n, 
+      status: whlIsValidPhone(n) ? 'pending' : 'failed', 
+      valid: whlIsValidPhone(n), 
+      retries: 0 
+    }));
+    
     st.index = 0;
     
+    // Mostrar quantos duplicados foram removidos
+    const duplicatesRemoved = rawNums.length - uniqueNums.length;
+    if (duplicatesRemoved > 0) {
+      console.log(`[WHL] ${duplicatesRemoved} número(s) duplicado(s) removido(s)`);
+    }
+    
     // Reset stats
-    st.stats = { sent: 0, failed: 0, pending: nums.length };
+    st.stats = { sent: 0, failed: 0, pending: uniqueNums.length };
     
     await setState(st);
     await render();
+    
+    // Feedback visual se houve remoção de duplicatas
+    if (duplicatesRemoved > 0) {
+      const hintEl = document.getElementById('whlHint');
+      if (hintEl) {
+        hintEl.textContent = `✅ ${uniqueNums.length} números únicos (${duplicatesRemoved} duplicata(s) removida(s))`;
+      }
+    }
   }
 
   async function skip() {
