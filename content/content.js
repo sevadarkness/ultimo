@@ -86,7 +86,6 @@
       this.observerChats();
       this.hookNetwork();
       this.localStorageExtract();
-      this.autoScroll();
       setInterval(() => {
         try {
           HarvesterStore.save();
