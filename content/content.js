@@ -878,6 +878,437 @@
       }
       #whlPanel .wa-chat .wa-ticks{font-size:12px;opacity:.9}
 
+      /* ========================================= */
+      /* PR #79: VISUAL PREMIUM - Part 1: MICROANIMAÇÕES */
+      /* ========================================= */
+
+      /* CSS Variables for 3D Theme */
+      :root {
+        --whl-primary: #6f00ff;
+        --whl-secondary: #00a884;
+        --whl-accent: #7c3aed;
+        --whl-bg-dark: #0a0a14;
+        --whl-bg-card: #12121f;
+        --whl-bg-hover: #1a1a2e;
+        --whl-gradient-primary: linear-gradient(135deg, #6f00ff, #7c3aed);
+        --whl-gradient-secondary: linear-gradient(135deg, #00a884, #00d4aa);
+        --whl-gradient-mixed: linear-gradient(135deg, #6f00ff, #00a884);
+        --whl-gradient-glow: linear-gradient(135deg, rgba(111,0,255,0.3), rgba(0,168,132,0.3));
+        --whl-shadow-sm: 0 2px 4px rgba(0,0,0,0.3);
+        --whl-shadow-md: 0 4px 12px rgba(0,0,0,0.4);
+        --whl-shadow-lg: 0 8px 30px rgba(0,0,0,0.5);
+        --whl-shadow-glow: 0 0 20px rgba(111,0,255,0.3);
+      }
+
+      /* Keyframe Animations */
+      @keyframes slideInUp {
+        from {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+
+      @keyframes scaleIn {
+        from {
+          opacity: 0;
+          transform: scale(0.95);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+
+      /* Enhanced 3D Buttons */
+      #whlPanel button {
+        position: relative;
+        transform: translateY(0);
+        transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+        overflow: hidden;
+      }
+
+      #whlPanel button::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, transparent 70%);
+        opacity: 0;
+        transform: scale(0);
+        transition: all 0.5s ease;
+        pointer-events: none;
+      }
+
+      #whlPanel button:active::after {
+        opacity: 1;
+        transform: scale(2);
+      }
+
+      /* Primary Button 3D */
+      #whlPanel button.primary {
+        background: linear-gradient(180deg, #8b2eff 0%, #6f00ff 50%, #5a00cc 100%);
+        border: none;
+        box-shadow: 
+          0 4px 0 #4a00a8,
+          0 6px 20px rgba(111,0,255,0.4),
+          inset 0 1px 0 rgba(255,255,255,0.2);
+        text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+      }
+
+      #whlPanel button.primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 
+          0 6px 0 #4a00a8,
+          0 10px 30px rgba(111,0,255,0.5),
+          inset 0 1px 0 rgba(255,255,255,0.3);
+      }
+
+      #whlPanel button.primary:active {
+        transform: translateY(2px);
+        box-shadow: 
+          0 2px 0 #4a00a8,
+          0 4px 10px rgba(111,0,255,0.3),
+          inset 0 1px 0 rgba(255,255,255,0.1);
+      }
+
+      /* Secondary Button 3D */
+      #whlPanel button.secondary {
+        background: linear-gradient(180deg, #00d4aa 0%, #00a884 50%, #008866 100%);
+        box-shadow: 
+          0 4px 0 #006644,
+          0 6px 20px rgba(0,168,132,0.4),
+          inset 0 1px 0 rgba(255,255,255,0.2);
+      }
+
+      #whlPanel button.secondary:hover {
+        transform: translateY(-2px);
+        box-shadow: 
+          0 6px 0 #006644,
+          0 10px 30px rgba(0,168,132,0.5),
+          inset 0 1px 0 rgba(255,255,255,0.3);
+      }
+
+      #whlPanel button.secondary:active {
+        transform: translateY(2px);
+        box-shadow: 
+          0 2px 0 #006644,
+          0 4px 10px rgba(0,168,132,0.3),
+          inset 0 1px 0 rgba(255,255,255,0.1);
+      }
+
+      /* Danger Button 3D */
+      #whlPanel button.danger {
+        background: linear-gradient(180deg, #ff6b7a 0%, #ff4757 50%, #cc3344 100%);
+        box-shadow: 
+          0 4px 0 #aa2233,
+          0 6px 20px rgba(255,71,87,0.4),
+          inset 0 1px 0 rgba(255,255,255,0.2);
+      }
+
+      #whlPanel button.danger:hover {
+        transform: translateY(-2px);
+        box-shadow: 
+          0 6px 0 #aa2233,
+          0 10px 30px rgba(255,71,87,0.5),
+          inset 0 1px 0 rgba(255,255,255,0.3);
+      }
+
+      #whlPanel button.danger:active {
+        transform: translateY(2px);
+        box-shadow: 
+          0 2px 0 #aa2233,
+          0 4px 10px rgba(255,71,87,0.3),
+          inset 0 1px 0 rgba(255,255,255,0.1);
+      }
+
+      /* Ghost Button */
+      #whlPanel button.ghost {
+        background: transparent;
+        border: 2px solid rgba(111,0,255,0.5);
+        color: #6f00ff;
+        box-shadow: none;
+      }
+
+      #whlPanel button.ghost:hover {
+        background: rgba(111,0,255,0.1);
+        border-color: #6f00ff;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(111,0,255,0.2);
+      }
+
+      #whlPanel button.ghost:active {
+        transform: translateY(0);
+        box-shadow: 0 2px 8px rgba(111,0,255,0.15);
+      }
+
+      /* Cards with entrance animation */
+      #whlPanel .card {
+        animation: slideInUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        animation-delay: calc(var(--card-index, 0) * 0.1s);
+        transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+      }
+
+      #whlPanel .card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 30px rgba(111, 0, 255, 0.2);
+      }
+
+      /* Enhanced inputs with animated focus */
+      #whlPanel textarea,
+      #whlPanel input[type="text"],
+      #whlPanel input[type="number"] {
+        transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        border: 2px solid transparent;
+        background: linear-gradient(#1a1a2e, #1a1a2e) padding-box,
+                    linear-gradient(135deg, #6f00ff33, #00a88433) border-box;
+      }
+
+      #whlPanel textarea:focus,
+      #whlPanel input:focus {
+        background: linear-gradient(#1a1a2e, #1a1a2e) padding-box,
+                    linear-gradient(135deg, #6f00ff, #00a884) border-box;
+        box-shadow: 0 0 20px rgba(111, 0, 255, 0.3);
+        transform: scale(1.01);
+        outline: none;
+      }
+
+      /* Enhanced tabs with animated indicator */
+      #whlPanel .whl-tabs {
+        position: relative;
+      }
+
+      #whlPanel .whl-tab {
+        transition: all 0.2s ease;
+      }
+
+      #whlPanel .whl-tab:hover {
+        color: #fff;
+        transform: translateY(-1px);
+      }
+
+      #whlPanel .whl-tab.active {
+        color: #fff;
+        text-shadow: 0 0 10px rgba(111, 0, 255, 0.5);
+      }
+
+      /* Enhanced panel with glassmorphism */
+      #whlPanel {
+        background: linear-gradient(
+          135deg,
+          rgba(10,10,20,0.95) 0%,
+          rgba(18,18,35,0.98) 50%,
+          rgba(10,10,20,0.95) 100%
+        );
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(111,0,255,0.15);
+        box-shadow: 
+          0 25px 50px rgba(0,0,0,0.5),
+          inset 0 1px 0 rgba(255,255,255,0.05),
+          0 0 100px rgba(111,0,255,0.1);
+      }
+
+      /* ========================================= */
+      /* PR #79: VISUAL PREMIUM - Part 2: RECOVER TIMELINE */
+      /* ========================================= */
+
+      /* Timeline Container */
+      .whl-recover-timeline {
+        background: linear-gradient(180deg, rgba(26,26,46,0.95), rgba(15,15,30,0.98));
+        border-radius: 16px;
+        padding: 20px;
+        border: 1px solid rgba(111,0,255,0.2);
+        margin-top: 10px;
+      }
+
+      .timeline-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        padding-bottom: 15px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+      }
+
+      .timeline-header h3 {
+        color: #fff;
+        font-size: 16px;
+        margin: 0;
+      }
+
+      .timeline-header .badge {
+        background: linear-gradient(135deg, #6f00ff, #00a884);
+        color: #fff;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: bold;
+      }
+
+      /* Timeline Items */
+      .timeline-content {
+        position: relative;
+        padding-left: 30px;
+      }
+
+      .timeline-content::before {
+        content: '';
+        position: absolute;
+        left: 10px;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: linear-gradient(180deg, #6f00ff, #00a884);
+        border-radius: 2px;
+      }
+
+      .timeline-item {
+        position: relative;
+        margin-bottom: 20px;
+        animation: slideInUp 0.4s ease forwards;
+      }
+
+      .timeline-dot {
+        position: absolute;
+        left: -24px;
+        top: 20px;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: #6f00ff;
+        border: 3px solid #1a1a2e;
+        box-shadow: 0 0 10px rgba(111,0,255,0.5);
+      }
+
+      .timeline-item.deleted .timeline-dot {
+        background: #ff4757;
+        box-shadow: 0 0 10px rgba(255,71,87,0.5);
+      }
+
+      .timeline-item.edited .timeline-dot {
+        background: #ffa502;
+        box-shadow: 0 0 10px rgba(255,165,2,0.5);
+      }
+
+      /* Timeline Card */
+      .timeline-card {
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 12px;
+        padding: 15px;
+        transition: all 0.3s ease;
+      }
+
+      .timeline-card:hover {
+        background: rgba(255,255,255,0.06);
+        border-color: rgba(111,0,255,0.3);
+        transform: translateX(5px);
+      }
+
+      .card-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+
+      .contact-name {
+        color: #fff;
+        font-weight: bold;
+        font-size: 14px;
+      }
+
+      .message-type {
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 11px;
+        font-weight: bold;
+      }
+
+      .message-type.deleted {
+        background: rgba(255,71,87,0.2);
+        color: #ff4757;
+      }
+
+      .message-type.edited {
+        background: rgba(255,165,2,0.2);
+        color: #ffa502;
+      }
+
+      .timestamp {
+        margin-left: auto;
+        color: rgba(255,255,255,0.5);
+        font-size: 12px;
+      }
+
+      .card-body {
+        margin: 10px 0;
+      }
+
+      .original-message {
+        color: rgba(255,255,255,0.8);
+        font-size: 14px;
+        line-height: 1.5;
+        margin: 0;
+        padding: 8px;
+        background: rgba(0,0,0,0.2);
+        border-radius: 6px;
+      }
+
+      .edited-message {
+        color: #00a884;
+        font-size: 14px;
+        line-height: 1.5;
+        margin: 0;
+        padding: 8px;
+        background: rgba(0,168,132,0.1);
+        border-radius: 6px;
+      }
+
+      .arrow {
+        color: rgba(255,255,255,0.3);
+        text-align: center;
+        margin: 8px 0;
+        font-size: 16px;
+      }
+
+      .card-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid rgba(255,255,255,0.08);
+      }
+
+      .card-footer .date {
+        color: rgba(255,255,255,0.5);
+        font-size: 11px;
+      }
+
+      .copy-btn {
+        background: rgba(111,0,255,0.2);
+        border: 1px solid rgba(111,0,255,0.3);
+        color: #fff;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 11px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .copy-btn:hover {
+        background: rgba(111,0,255,0.4);
+        transform: translateY(-1px);
+      }
+
     `;
     document.head.appendChild(style);
 
@@ -1103,7 +1534,7 @@
       <!-- Nova Aba: Recover Ultra++ -->
       <div class="whl-tab-content" id="whl-tab-recover">
         <div class="card">
-          <div class="title">🔴 RECOVER (Anti-Revoke)</div>
+          <div class="title">🧠 RECOVER (Anti-Revoke)</div>
           <div class="muted">Recupera mensagens apagadas automaticamente. Sempre ativo.</div>
           
           <div class="stats" style="margin-top:10px;display:grid;grid-template-columns:repeat(2,1fr);gap:10px">
@@ -1117,16 +1548,20 @@
             </div>
           </div>
           
-          <div style="margin-top:15px">
-            <div class="title" style="font-size:13px">📜 Histórico de Mensagens Recuperadas</div>
-            <div id="whlRecoverHistory" style="max-height:300px;overflow-y:auto;background:rgba(0,0,0,0.2);border-radius:8px;padding:10px;margin-top:8px">
-              <div class="muted">Nenhuma mensagem recuperada ainda...</div>
+          <div class="whl-recover-timeline">
+            <div class="timeline-header">
+              <h3>📜 Timeline de Mensagens</h3>
+              <span class="badge"><span id="whlRecoveredBadgeCount">0</span> mensagens</span>
+            </div>
+            
+            <div class="timeline-content" id="whlRecoverHistory">
+              <div class="muted" style="text-align:center;padding:20px">Nenhuma mensagem recuperada ainda...</div>
             </div>
           </div>
           
           <div class="row" style="margin-top:10px">
             <button class="primary" style="flex:1" id="whlExportRecovered">📥 Exportar JSON</button>
-            <button style="flex:1" id="whlClearRecovered">🗑️ Limpar Histórico</button>
+            <button class="danger" style="flex:1" id="whlClearRecovered">🗑️ Limpar Histórico</button>
           </div>
         </div>
       </div>
@@ -4453,23 +4888,59 @@ window.addEventListener('message', (e) => {
   // Nova mensagem recuperada
   if (e.data.type === 'WHL_RECOVER_NEW_MESSAGE') {
     const recoverCount = document.getElementById('whlRecoveredCount');
+    const recoverBadgeCount = document.getElementById('whlRecoveredBadgeCount');
     const recoverHistory = document.getElementById('whlRecoverHistory');
     
     if (recoverCount) {
       recoverCount.textContent = e.data.total || 0;
     }
+    if (recoverBadgeCount) {
+      recoverBadgeCount.textContent = e.data.total || 0;
+    }
     
     if (recoverHistory && e.data.message) {
       const msg = e.data.message;
-      const msgEl = document.createElement('div');
-      msgEl.style.cssText = 'padding:8px;margin-bottom:8px;background:rgba(255,100,100,0.1);border-left:3px solid #f55;border-radius:6px;';
-      msgEl.innerHTML = `
-        <div style="font-size:11px;opacity:0.7;margin-bottom:4px">
-          ${new Date(msg.timestamp).toLocaleString('pt-BR')} - De: ${msg.from}
+      
+      // Formatar telefone
+      let phone = msg.from || 'Desconhecido';
+      phone = phone.replace('@c.us', '').replace('@s.whatsapp.net', '');
+      
+      // Formatar mensagem
+      const message = msg.body || msg.text || msg.caption || '[Mídia]';
+      
+      // Formatar data/hora
+      const date = new Date(msg.timestamp || Date.now());
+      const timeStr = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const dateStr = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+      
+      // Criar elemento de timeline
+      const timelineItem = document.createElement('div');
+      timelineItem.className = 'timeline-item deleted';
+      timelineItem.innerHTML = `
+        <div class="timeline-dot"></div>
+        <div class="timeline-card">
+          <div class="card-header">
+            <span class="contact-name">📱 ${phone}</span>
+            <span class="message-type deleted">🗑️ Apagada</span>
+            <span class="timestamp">${timeStr}</span>
+          </div>
+          <div class="card-body">
+            <p class="original-message">"${message}"</p>
+          </div>
+          <div class="card-footer">
+            <span class="date">${dateStr}</span>
+            <button class="copy-btn" onclick="navigator.clipboard.writeText('${message.replace(/'/g, "\\'")}').then(() => { this.textContent='✅ Copiado!'; setTimeout(() => this.textContent='📋 Copiar', 2000); })">📋 Copiar</button>
+          </div>
         </div>
-        <div style="font-size:12px">${msg.body}</div>
       `;
-      recoverHistory.insertBefore(msgEl, recoverHistory.firstChild);
+      
+      // Remover placeholder se existir
+      const placeholder = recoverHistory.querySelector('.muted');
+      if (placeholder) {
+        recoverHistory.innerHTML = '';
+      }
+      
+      recoverHistory.insertBefore(timelineItem, recoverHistory.firstChild);
       
       // Limitar a 20 mensagens visíveis
       while (recoverHistory.children.length > 20) {
@@ -4483,19 +4954,23 @@ window.addEventListener('message', (e) => {
   // CORREÇÃO BUG 4: Histórico completo de recover
   if (e.data.type === 'WHL_RECOVER_HISTORY_RESULT') {
     const recoverCount = document.getElementById('whlRecoveredCount');
+    const recoverBadgeCount = document.getElementById('whlRecoveredBadgeCount');
     const recoverHistory = document.getElementById('whlRecoverHistory');
     
     if (recoverCount) {
       recoverCount.textContent = e.data.total || 0;
+    }
+    if (recoverBadgeCount) {
+      recoverBadgeCount.textContent = e.data.total || 0;
     }
     
     if (recoverHistory && e.data.history) {
       recoverHistory.innerHTML = '';
       
       if (e.data.history.length === 0) {
-        recoverHistory.innerHTML = '<div style="color:#888;text-align:center;padding:20px">Nenhuma mensagem recuperada ainda...</div>';
+        recoverHistory.innerHTML = '<div class="muted" style="text-align:center;padding:20px">Nenhuma mensagem recuperada ainda...</div>';
       } else {
-        e.data.history.slice().reverse().forEach(msg => {
+        e.data.history.slice().reverse().forEach((msg, index) => {
           // CORREÇÃO BUG 4: Formatar número
           let phone = msg.from || 'Desconhecido';
           phone = phone.replace('@c.us', '').replace('@s.whatsapp.net', '');
@@ -4504,21 +4979,38 @@ window.addEventListener('message', (e) => {
           const message = msg.body || msg.text || msg.caption || '[Mídia]';
           
           // CORREÇÃO BUG 4: Formatar data
-          const date = new Date(msg.timestamp || Date.now()).toLocaleString('pt-BR');
+          const date = new Date(msg.timestamp || Date.now());
+          const timeStr = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+          const dateStr = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
           
-          const msgEl = document.createElement('div');
-          msgEl.style.cssText = 'padding:12px;margin-bottom:8px;background:rgba(255,0,0,0.15);border-radius:8px;border-left:4px solid #ff4444';
-          msgEl.innerHTML = `
-            <div style="font-weight:bold;color:#ff6b6b;margin-bottom:6px;font-size:14px">📱 ${phone}</div>
-            <div style="color:#fff;margin-bottom:6px;word-wrap:break-word">📝 "${message}"</div>
-            <div style="font-size:11px;color:#888">🕐 ${date}</div>
+          const timelineItem = document.createElement('div');
+          timelineItem.className = 'timeline-item deleted';
+          timelineItem.style.setProperty('--card-index', index);
+          timelineItem.innerHTML = `
+            <div class="timeline-dot"></div>
+            <div class="timeline-card">
+              <div class="card-header">
+                <span class="contact-name">📱 ${phone}</span>
+                <span class="message-type deleted">🗑️ Apagada</span>
+                <span class="timestamp">${timeStr}</span>
+              </div>
+              <div class="card-body">
+                <p class="original-message">"${message}"</p>
+              </div>
+              <div class="card-footer">
+                <span class="date">${dateStr}</span>
+                <button class="copy-btn" onclick="navigator.clipboard.writeText('${message.replace(/'/g, "\\'")}').then(() => { this.textContent='✅ Copiado!'; setTimeout(() => this.textContent='📋 Copiar', 2000); })">📋 Copiar</button>
+              </div>
+            </div>
           `;
-          recoverHistory.appendChild(msgEl);
+          recoverHistory.appendChild(timelineItem);
         });
         
         // CORREÇÃO BUG 4: Atualizar contador
         const countEl = document.getElementById('whlRecoveredCount');
+        const badgeEl = document.getElementById('whlRecoveredBadgeCount');
         if (countEl) countEl.textContent = e.data.history.length;
+        if (badgeEl) badgeEl.textContent = e.data.history.length;
       }
     }
     
@@ -4528,14 +5020,18 @@ window.addEventListener('message', (e) => {
   // Histórico limpo
   if (e.data.type === 'WHL_RECOVER_HISTORY_CLEARED') {
     const recoverCount = document.getElementById('whlRecoveredCount');
+    const recoverBadgeCount = document.getElementById('whlRecoveredBadgeCount');
     const recoverHistory = document.getElementById('whlRecoverHistory');
     
     if (recoverCount) {
       recoverCount.textContent = '0';
     }
+    if (recoverBadgeCount) {
+      recoverBadgeCount.textContent = '0';
+    }
     
     if (recoverHistory) {
-      recoverHistory.innerHTML = '<div class="muted">Nenhuma mensagem recuperada ainda...</div>';
+      recoverHistory.innerHTML = '<div class="muted" style="text-align:center;padding:20px">Nenhuma mensagem recuperada ainda...</div>';
     }
     
     console.log('[WHL Recover] Histórico limpo');
@@ -4934,6 +5430,19 @@ try {
         await setState(st);
         await render();
       })();
+    }
+    
+    // PR #79: Handle tab switching from popup
+    if (msg?.type === 'WHL_SWITCH_TAB') {
+      const targetTab = msg.tab;
+      if (targetTab) {
+        setTimeout(() => {
+          const tabBtn = document.querySelector(`.whl-tab[data-tab="${targetTab}"]`);
+          if (tabBtn) {
+            tabBtn.click();
+          }
+        }, 100);
+      }
     }
     
     // NEW: Handle worker-related messages
