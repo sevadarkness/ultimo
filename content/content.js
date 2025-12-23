@@ -1481,10 +1481,34 @@
       
       console.log('[WHL] ✅ Digitação humanizada concluída');
     } else {
-      // DIGITAÇÃO RÁPIDA - usar execCommand
+      // DIGITAÇÃO RÁPIDA - processar linha por linha para preservar \n
       console.log('[WHL] ⚡ Digitação rápida...');
-      document.execCommand('insertText', false, text);
-      msgInput.dispatchEvent(new Event('input', { bubbles: true }));
+      
+      // Dividir texto em linhas e processar cada uma
+      const lines = text.split('\n');
+      
+      for (let i = 0; i < lines.length; i++) {
+        if (i > 0) {
+          // Inserir quebra de linha com Shift+Enter
+          const shiftEnterEvent = new KeyboardEvent('keydown', {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            which: 13,
+            shiftKey: true,
+            bubbles: true,
+            cancelable: true
+          });
+          msgInput.dispatchEvent(shiftEnterEvent);
+          await new Promise(r => setTimeout(r, 50));
+        }
+        
+        // Inserir linha de texto
+        if (lines[i]) {
+          document.execCommand('insertText', false, lines[i]);
+          msgInput.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }
     }
     
     await new Promise(r => setTimeout(r, 300));
@@ -2370,8 +2394,28 @@
       input.innerHTML = '';
       input.focus();
       
-      // Inserir texto (usando execCommand que é o método testado)
-      document.execCommand('insertText', false, text);
+      // Inserir texto preservando quebras de linha
+      // IMPORTANTE: Processar linha por linha para preservar \n
+      const lines = text.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        if (i > 0) {
+          // Inserir quebra de linha com Shift+Enter
+          input.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            which: 13,
+            shiftKey: true,
+            bubbles: true,
+            cancelable: true
+          }));
+          await new Promise(r => setTimeout(r, 50));
+        }
+        
+        if (lines[i]) {
+          document.execCommand('insertText', false, lines[i]);
+        }
+      }
       input.dispatchEvent(new InputEvent('input', { bubbles: true }));
       
       // Aguardar texto ser processado
@@ -4630,13 +4674,47 @@ try {
 
           if (useTypingEffect) {
             for (const ch of cap) {
-              document.execCommand('insertText', false, ch);
-              capBox.dispatchEvent(new Event('input', { bubbles: true }));
-              await new Promise(r => setTimeout(r, 18));
+              // Handle newlines with Shift+Enter
+              if (ch === '\n') {
+                capBox.dispatchEvent(new KeyboardEvent('keydown', {
+                  key: 'Enter',
+                  code: 'Enter',
+                  keyCode: 13,
+                  which: 13,
+                  shiftKey: true,
+                  bubbles: true,
+                  cancelable: true
+                }));
+                await new Promise(r => setTimeout(r, 30));
+              } else {
+                document.execCommand('insertText', false, ch);
+                capBox.dispatchEvent(new Event('input', { bubbles: true }));
+                await new Promise(r => setTimeout(r, 18));
+              }
             }
           } else {
-            document.execCommand('insertText', false, cap);
-            capBox.dispatchEvent(new Event('input', { bubbles: true }));
+            // Fast mode - process line by line to preserve \n
+            const lines = cap.split('\n');
+            for (let i = 0; i < lines.length; i++) {
+              if (i > 0) {
+                // Insert line break with Shift+Enter
+                capBox.dispatchEvent(new KeyboardEvent('keydown', {
+                  key: 'Enter',
+                  code: 'Enter',
+                  keyCode: 13,
+                  which: 13,
+                  shiftKey: true,
+                  bubbles: true,
+                  cancelable: true
+                }));
+                await new Promise(r => setTimeout(r, 50));
+              }
+              
+              if (lines[i]) {
+                document.execCommand('insertText', false, lines[i]);
+                capBox.dispatchEvent(new Event('input', { bubbles: true }));
+              }
+            }
           }
 
           captionApplied = true;
@@ -4809,9 +4887,30 @@ try {
           captionBox.focus();
           await new Promise(r => setTimeout(r, 200));
           captionBox.textContent = '';
-          document.execCommand('insertText', false, captionText);
+          
+          // IMPORTANTE: Preservar quebras de linha (\n) dividindo em linhas
+          const lines = captionText.split('\n');
+          for (let i = 0; i < lines.length; i++) {
+            if (i > 0) {
+              // Inserir quebra de linha com Shift+Enter
+              captionBox.dispatchEvent(new KeyboardEvent('keydown', {
+                key: 'Enter',
+                code: 'Enter',
+                keyCode: 13,
+                which: 13,
+                shiftKey: true,
+                bubbles: true,
+                cancelable: true
+              }));
+              await new Promise(r => setTimeout(r, 50));
+            }
+            
+            if (lines[i]) {
+              document.execCommand('insertText', false, lines[i]);
+            }
+          }
           captionBox.dispatchEvent(new Event('input', { bubbles: true }));
-          console.log('[WHL] ✅ Legenda digitada');
+          console.log('[WHL] ✅ Legenda digitada (com quebras preservadas)');
           await new Promise(r => setTimeout(r, 500));
         } else {
           console.log('[WHL] ⚠️ Campo de legenda não encontrado');
@@ -5130,12 +5229,31 @@ try {
           captionBox.dispatchEvent(new Event('input', { bubbles: true }));
           await new Promise(r => setTimeout(r, 100));
           
-          // Digitar texto usando execCommand + eventos
-          document.execCommand('insertText', false, messageText);
+          // IMPORTANTE: Preservar quebras de linha (\n) dividindo em linhas
+          const lines = messageText.split('\n');
+          for (let i = 0; i < lines.length; i++) {
+            if (i > 0) {
+              // Inserir quebra de linha com Shift+Enter
+              captionBox.dispatchEvent(new KeyboardEvent('keydown', {
+                key: 'Enter',
+                code: 'Enter',
+                keyCode: 13,
+                which: 13,
+                shiftKey: true,
+                bubbles: true,
+                cancelable: true
+              }));
+              await new Promise(r => setTimeout(r, 50));
+            }
+            
+            if (lines[i]) {
+              document.execCommand('insertText', false, lines[i]);
+            }
+          }
           captionBox.dispatchEvent(new Event('input', { bubbles: true }));
           captionBox.dispatchEvent(new Event('change', { bubbles: true }));
           
-          console.log('[WHL] ✅ Legenda digitada no preview');
+          console.log('[WHL] ✅ Legenda digitada no preview (com quebras preservadas)');
           await new Promise(r => setTimeout(r, 500));
         } else {
           console.log('[WHL] ℹ️ Campo de legenda não encontrado (texto será enviado separadamente)');
