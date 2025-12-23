@@ -28,15 +28,19 @@
 
   // Injetar wpp-hooks.js no contexto da página
   function injectWppHooks() {
-    const script = document.createElement('script');
-    script.src = chrome.runtime.getURL('content/wpp-hooks.js');
-    script.onload = () => {
-      console.log('[WHL] WPP Hooks injetados');
-    };
-    script.onerror = () => {
-      console.error('[WHL] Erro ao injetar WPP Hooks');
-    };
-    (document.head || document.documentElement).appendChild(script);
+    try {
+      const script = document.createElement('script');
+      script.src = chrome.runtime.getURL('content/wpp-hooks.js');
+      script.onload = () => {
+        console.log('[WHL] WPP Hooks injetados');
+      };
+      script.onerror = () => {
+        console.error('[WHL] Erro ao injetar WPP Hooks');
+      };
+      (document.head || document.documentElement).appendChild(script);
+    } catch (e) {
+      console.error('[WHL] Erro ao obter URL de wpp-hooks:', e);
+    }
   }
   
   // Injetar os hooks imediatamente
@@ -93,6 +97,12 @@
     },
     save() {
       try {
+        // Verificar se contexto da extensão ainda é válido
+        if (!chrome?.runtime?.id) {
+          console.warn('[WHL] Contexto de extensão inválido, não é possível salvar');
+          return;
+        }
+        
         chrome.storage.local.set({
           contacts: Array.from(this._phones.keys()),
           valid: Array.from(this._valid),
@@ -367,6 +377,19 @@
   async function setState(next) {
     await chrome.storage.local.set({ [KEY]: next });
     return next;
+  }
+
+  // Helper function to safely get extension resource URL
+  function safeGetResourceURL(path, fallback = '📱') {
+    try {
+      if (chrome?.runtime?.id) {
+        return chrome.runtime.getURL(path);
+      }
+      return fallback;
+    } catch (e) {
+      console.warn('[WHL] Não foi possível obter URL do recurso:', path, e);
+      return fallback;
+    }
   }
 
   function ensurePanel() {
@@ -688,11 +711,12 @@
 
     panel = document.createElement('div');
     panel.id = 'whlPanel';
+    const iconURL = safeGetResourceURL('icons/48.png', '');
     panel.innerHTML = `
       <div class="topbar">
         <div>
           <div class="title" style="display:flex;align-items:center;gap:8px">
-            <img src="${chrome.runtime.getURL('icons/48.png')}" alt="WhatsHybrid Lite" class="whl-logo" />
+            ${iconURL ? `<img src="${iconURL}" alt="WhatsHybrid Lite" class="whl-logo" />` : '📱'}
             <span>WhatsHybrid Lite</span>
             <span class="status-badge stopped" id="whlStatusBadge">Parado</span>
           </div>
@@ -5206,6 +5230,11 @@ try {
   try {
     if (window.__WHL_EXTRACTOR_LOADER__) return;
     window.__WHL_EXTRACTOR_LOADER__ = true;
+
+    if (!chrome?.runtime?.id) {
+      console.warn('[WHL] Contexto de extensão inválido, não é possível carregar extrator');
+      return;
+    }
 
     const s = document.createElement('script');
     s.src = chrome.runtime.getURL('content/extractor.contacts.js');

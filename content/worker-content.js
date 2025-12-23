@@ -56,46 +56,8 @@
 
     // ===== ABRIR CHAT VIA URL =====
     async function openChatViaURL(phone) {
-        const url = `https://web.whatsapp.com/send?phone=${phone}`;
-        window.location.href = url;
-        
-        // Aguardar chat carregar
-        return new Promise((resolve) => {
-            let attempts = 0;
-            const maxAttempts = 60; // 30 segundos
-            
-            const check = () => {
-                attempts++;
-                
-                // Verificar se input está disponível
-                const input = document.querySelector('[data-testid="conversation-compose-box-input"]') ||
-                              document.querySelector('footer [contenteditable="true"]');
-                
-                if (input) {
-                    resolve({ success: true });
-                    return;
-                }
-                
-                // Verificar erros
-                const errorPopup = document.querySelector('[data-testid="popup"]');
-                if (errorPopup) {
-                    const text = errorPopup.textContent.toLowerCase();
-                    if (text.includes('inválido') || text.includes('invalid')) {
-                        resolve({ success: false, error: 'INVALID_NUMBER' });
-                        return;
-                    }
-                }
-                
-                if (attempts >= maxAttempts) {
-                    resolve({ success: false, error: 'TIMEOUT' });
-                    return;
-                }
-                
-                setTimeout(check, 500);
-            };
-            
-            setTimeout(check, 2000); // Aguardar página começar a carregar
-        });
+        console.warn('[WHL Worker] openChatViaURL: window.location.href navigation disabled - use API method instead');
+        return { success: false, error: 'URL_NAVIGATION_DISABLED' };
     }
 
     // ===== HANDLER PRINCIPAL DE ENVIO =====
