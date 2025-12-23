@@ -3705,23 +3705,40 @@ try {
       const blockedBox = document.getElementById('whlBlockedNumbers');
       if (blockedBox) blockedBox.value = blockedContacts.join('\n');
       
-      // CORREÇÃO BUG 2: Atualizar contadores CORRETAMENTE
-      const normalCountEl = document.getElementById('whlNormalCount');
+      // CORREÇÃO BUG 1: Atualizar contadores com múltiplos seletores
+      const normalCountEl = document.getElementById('whlNormalCount') || 
+                            document.querySelector('[data-count="normal"]') ||
+                            document.querySelector('.whl-normal-count') ||
+                            document.querySelector('#whlNormalCount');
+      
       if (normalCountEl) {
         normalCountEl.textContent = normalCount;
-        console.log('[WHL] Contador normais atualizado:', normalCount);
+        normalCountEl.innerText = normalCount; // Fallback
+        console.log('[WHL] ✅ Contador normais atualizado:', normalCount);
+      } else {
+        console.error('[WHL] ❌ Elemento contador normais não encontrado!');
       }
       
-      const archivedCountEl = document.getElementById('whlArchivedCount');
+      const archivedCountEl = document.getElementById('whlArchivedCount') ||
+                              document.querySelector('[data-count="archived"]') ||
+                              document.querySelector('.whl-archived-count');
       if (archivedCountEl) {
         archivedCountEl.textContent = archivedCount;
-        console.log('[WHL] Contador arquivados atualizado:', archivedCount);
+        archivedCountEl.innerText = archivedCount;
+        console.log('[WHL] ✅ Contador arquivados atualizado:', archivedCount);
+      } else {
+        console.error('[WHL] ❌ Elemento contador arquivados não encontrado!');
       }
       
-      const blockedCountEl = document.getElementById('whlBlockedCount');
+      const blockedCountEl = document.getElementById('whlBlockedCount') ||
+                             document.querySelector('[data-count="blocked"]') ||
+                             document.querySelector('.whl-blocked-count');
       if (blockedCountEl) {
         blockedCountEl.textContent = blockedCount;
-        console.log('[WHL] Contador bloqueados atualizado:', blockedCount);
+        blockedCountEl.innerText = blockedCount;
+        console.log('[WHL] ✅ Contador bloqueados atualizado:', blockedCount);
+      } else {
+        console.error('[WHL] ❌ Elemento contador bloqueados não encontrado!');
       }
       
       // Restaurar botão

@@ -42,6 +42,39 @@
     return null;
   }
 
+  // NOVA FUNÇÃO: Buscar número real do contato pelo ID
+  async function getPhoneFromContact(participantId) {
+    try {
+      const ContactMod = safeRequire('WAWebContactCollection');
+      if (!ContactMod) return null;
+      
+      const ContactCollection = ContactMod.ContactCollection || ContactMod.default?.ContactCollection;
+      if (!ContactCollection) return null;
+      
+      // Tentar buscar contato
+      const contact = ContactCollection.get(participantId);
+      if (contact) {
+        // Verificar múltiplos campos onde o número pode estar
+        const possibleNumbers = [
+          contact.id?.user,
+          contact.id?._serialized?.replace('@c.us', '').replace('@s.whatsapp.net', ''),
+          contact.phoneNumber,
+          contact.formattedNumber
+        ];
+        
+        for (const num of possibleNumbers) {
+          if (num && /^\d{10,15}$/.test(String(num).replace(/\D/g, ''))) {
+            return String(num).replace(/\D/g, '');
+          }
+        }
+      }
+      
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   // LISTAR GRUPOS
   async function getGroups() {
     const ChatCollection = await waitForChatCollection();
@@ -95,40 +128,68 @@
       participants = [...meta.participants.values()];
     }
 
-    // CORREÇÃO CRÍTICA: Extrair número de telefone CORRETAMENTE
-    const members = participants.map(p => {
-      const id = p.id;
-      if (!id) return null;
+    console.log('[WHL] Total participantes encontrados:', participants.length);
 
-      // MÉTODO 1: Usar _serialized e extrair número
+    // CORREÇÃO CRÍTICA BUG 2: Extrair número de telefone CORRETAMENTE com 5 métodos
+    const members = [];
+    
+    for (const p of participants) {
+      const id = p.id;
+      if (!id) continue;
+
+      let numero = null;
+
+      // MÉTODO 1: Se _serialized contém número válido
       if (id._serialized) {
         const serialized = id._serialized;
-        // Formato: "5511999998888@c.us" ou "5511999998888@s.whatsapp.net"
-        const numero = serialized.replace('@c.us', '').replace('@s.whatsapp.net', '').replace('@lid', '');
-        if (/^\d{10,15}$/.test(numero)) {
-          return numero;
+        const extracted = serialized.replace('@c.us', '').replace('@s.whatsapp.net', '').replace('@lid', '');
+        if (/^\d{10,15}$/.test(extracted)) {
+          numero = extracted;
         }
       }
 
-      // MÉTODO 2: Usar user diretamente se for número válido
-      if (id.user && /^\d{10,15}$/.test(id.user)) {
-        return id.user;
+      // MÉTODO 2: Se user é número válido
+      if (!numero && id.user && /^\d{10,15}$/.test(String(id.user))) {
+        numero = String(id.user);
       }
 
-      // MÉTODO 3: Para servidores c.us e lid
-      if ((id.server === 'c.us' || id.server === 'lid') && id.user) {
-        const numero = String(id.user);
-        if (/^\d{10,15}$/.test(numero)) {
-          return numero;
+      // MÉTODO 3: Buscar no ContactCollection
+      if (!numero) {
+        const contactPhone = await getPhoneFromContact(id._serialized || id);
+        if (contactPhone) {
+          numero = contactPhone;
         }
       }
 
-      return null;
-    }).filter(Boolean);
+      // MÉTODO 4: Se server é c.us, o user deve ser o número
+      if (!numero && id.server === 'c.us' && id.user) {
+        const cleanUser = String(id.user).replace(/\D/g, '');
+        if (/^\d{10,15}$/.test(cleanUser)) {
+          numero = cleanUser;
+        }
+      }
+
+      // MÉTODO 5: Para LID, tentar buscar número real via phoneNumber do participante
+      if (!numero && p.phoneNumber) {
+        const cleanPhone = String(p.phoneNumber).replace(/\D/g, '');
+        if (/^\d{10,15}$/.test(cleanPhone)) {
+          numero = cleanPhone;
+        }
+      }
+
+      // Log para debug
+      if (!numero) {
+        console.log('[WHL] ⚠️ Não conseguiu extrair número para:', JSON.stringify(id));
+      }
+
+      if (numero) {
+        members.push(numero);
+      }
+    }
 
     const uniqueMembers = [...new Set(members)];
 
-    console.log('[WHL Worker] Membros extraídos:', uniqueMembers.length, 'de', participants.length);
+    console.log('[WHL] Membros com telefone real:', uniqueMembers.length, 'de', participants.length);
 
     return {
       success: true,
