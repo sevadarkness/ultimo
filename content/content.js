@@ -443,6 +443,31 @@
       #whlPanel input,#whlPanel textarea{width:100%;margin-top:6px;padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.12);
         background:rgba(255,255,255,.06);color:#fff;outline:none;box-sizing:border-box;max-width:100%}
       #whlPanel textarea{min-height:84px;resize:vertical}
+      
+      /* CORREÇÃO ISSUE 04: Garantir contraste nas caixas de extração */
+      #whlPanel #whlExtractedNumbers,
+      #whlPanel #whlArchivedNumbers,
+      #whlPanel #whlBlockedNumbers,
+      #whlPanel #whlGroupMembersNumbers {
+        background: rgba(0, 0, 0, 0.4) !important;
+        color: #fff !important;
+        border: 1px solid rgba(255, 255, 255, 0.3) !important;
+      }
+      
+      /* Garantir que labels e contadores sejam visíveis */
+      #whlPanel .muted,
+      #whlNormalCount,
+      #whlArchivedCount,
+      #whlBlockedCount {
+        color: #fff !important;
+      }
+      
+      #whlNormalCount,
+      #whlArchivedCount,
+      #whlBlockedCount {
+        font-weight: bold;
+      }
+      
       #whlPanel button{margin-top:8px;padding:10px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.12);
         background:rgba(255,255,255,.06);color:#fff;font-weight:900;cursor:pointer;box-sizing:border-box}
       #whlPanel button.primary{background:linear-gradient(180deg, rgba(111,0,255,.95), rgba(78,0,190,.95));
@@ -960,27 +985,18 @@
       <!-- Nova Aba: Recover Ultra++ -->
       <div class="whl-tab-content" id="whl-tab-recover">
         <div class="card">
-          <div class="title">🔄 RECOVER ULTRA++ (Anti-Revoke)</div>
-          <div class="muted">Recupera mensagens apagadas (texto, imagem, áudio, vídeo).</div>
+          <div class="title">🔴 RECOVER (Anti-Revoke)</div>
+          <div class="muted">Recupera mensagens apagadas automaticamente. Sempre ativo.</div>
           
-          <div class="stats" style="margin-top:10px;display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+          <div class="stats" style="margin-top:10px;display:grid;grid-template-columns:repeat(2,1fr);gap:10px">
+            <div class="stat-item" style="text-align:center">
+              <div class="muted" style="font-size:11px">Mensagens Recuperadas</div>
+              <span class="stat-value" id="whlRecoveredCount" style="font-size:16px">0</span>
+            </div>
             <div class="stat-item" style="text-align:center">
               <div class="muted" style="font-size:11px">Status</div>
-              <span class="stat-value" id="whlRecoverStatus" style="font-size:13px">🟢 Ativo</span>
+              <span class="stat-value" id="whlRecoverStatus" style="font-size:13px;color:#4ade80">🟢 Ativo</span>
             </div>
-            <div class="stat-item" style="text-align:center">
-              <div class="muted" style="font-size:11px">Mensagens Salvas</div>
-              <span class="stat-value" id="whlRecoverCount" style="font-size:13px">0</span>
-            </div>
-            <div class="stat-item" style="text-align:center">
-              <div class="muted" style="font-size:11px">Recuperadas</div>
-              <span class="stat-value" id="whlRecoveredCount" style="font-size:13px">0</span>
-            </div>
-          </div>
-          
-          <div class="row" style="margin-top:10px">
-            <button class="success" style="flex:1" id="whlRecoverEnable">✅ Ativar</button>
-            <button class="danger" style="flex:1" id="whlRecoverDisable">❌ Desativar</button>
           </div>
           
           <div style="margin-top:15px">
@@ -2833,35 +2849,25 @@
       const cur = st.queue[st.index];
       if (!cur) return;
       
+      // CORREÇÃO ISSUE 01: Sempre avançar quando API retornou sucesso
+      // Confiar na API mesmo sem confirmação visual
       if (e.data.confirmed) {
-        // ✅ Confirmado visualmente - avançar para próximo
-        console.log('[WHL] ✅ Confirmação visual OK! Avançando para próximo...');
+        console.log('[WHL] ✅ Confirmação visual OK!');
         cur.status = 'sent';
-        cur.confirmedAt = Date.now();
-        st.stats.sent++;
-        st.stats.pending--;
-        st.index++;
       } else {
-        // ⚠️ Não confirmado - tentar novamente ou marcar como falha
-        console.warn('[WHL] ⚠️ Sem confirmação visual:', e.data.reason);
-        cur.retries = (cur.retries || 0) + 1;
-        
-        if (cur.retries >= (st.retryMax || 0)) {
-          cur.status = 'failed';
-          cur.errorReason = 'Sem confirmação visual após ' + cur.retries + ' tentativas';
-          st.stats.failed++;
-          st.stats.pending--;
-          st.index++;
-        } else {
-          cur.status = 'pending_retry';
-          console.log(`[WHL] 🔄 Tentando novamente (${cur.retries}/${st.retryMax})...`);
-        }
+        // FALLBACK: Mesmo sem confirmação, marcar como enviado se API retornou sucesso
+        console.warn('[WHL] ⚠️ Sem confirmação visual, mas API retornou sucesso. Avançando...');
+        cur.status = 'sent'; // Confiar na API
       }
+      
+      st.stats.sent++;
+      st.stats.pending--;
+      st.index++;
       
       await setState(st);
       await render();
       
-      // Continuar campanha
+      // Continuar para próximo
       if (st.isRunning && !st.isPaused && st.index < st.queue.length) {
         const delay = getRandomDelay(st.delayMin, st.delayMax);
         console.log(`[WHL] ⏳ Aguardando ${(delay/1000).toFixed(1)}s antes do próximo envio...`);
@@ -3566,29 +3572,39 @@ try {
     
     // Handler para extração instantânea
     if (e.data.type === 'WHL_EXTRACT_ALL_INSTANT_RESULT') {
-      const { normal, archived, blocked, stats } = e.data;
+      // CORREÇÃO ISSUE 03: Usar os arrays diretamente, não stats
+      const normalContacts = e.data.normal || [];
+      const archivedContacts = e.data.archived || [];
+      const blockedContacts = e.data.blocked || [];
+      
+      // Calcular contagens dos arrays
+      const normalCount = normalContacts.length;
+      const archivedCount = archivedContacts.length;
+      const blockedCount = blockedContacts.length;
+      const totalCount = normalCount + archivedCount + blockedCount;
       
       // Preencher caixas de texto
       const normalBox = document.getElementById('whlExtractedNumbers');
-      if (normalBox) normalBox.value = (normal || []).join('\n');
+      if (normalBox) normalBox.value = normalContacts.join('\n');
       
       const archivedBox = document.getElementById('whlArchivedNumbers');
-      if (archivedBox) archivedBox.value = (archived || []).join('\n');
+      if (archivedBox) archivedBox.value = archivedContacts.join('\n');
       
       const blockedBox = document.getElementById('whlBlockedNumbers');
-      if (blockedBox) blockedBox.value = (blocked || []).join('\n');
+      if (blockedBox) blockedBox.value = blockedContacts.join('\n');
       
-      // Atualizar contadores
-      const normalCount = document.getElementById('whlNormalCount');
-      if (normalCount) normalCount.textContent = stats?.normal || 0;
+      // CORREÇÃO: Atualizar contadores usando length dos arrays
+      const normalCountEl = document.getElementById('whlNormalCount');
+      if (normalCountEl) normalCountEl.textContent = normalCount;
       
-      const archivedCount = document.getElementById('whlArchivedCount');
-      if (archivedCount) archivedCount.textContent = stats?.archived || 0;
+      const archivedCountEl = document.getElementById('whlArchivedCount');
+      if (archivedCountEl) archivedCountEl.textContent = archivedCount;
       
-      const blockedCount = document.getElementById('whlBlockedCount');
-      if (blockedCount) blockedCount.textContent = stats?.blocked || 0;
+      const blockedCountEl = document.getElementById('whlBlockedCount');
+      if (blockedCountEl) blockedCountEl.textContent = blockedCount;
       
       // Restaurar botão
+      const btnExtract = document.getElementById('whlExtractContacts');
       if (btnExtract) {
         btnExtract.disabled = false;
         btnExtract.textContent = '📥 Extrair contatos';
@@ -3597,11 +3613,11 @@ try {
       // Status final
       const statusEl = document.getElementById('whlExtractStatus');
       if (statusEl) {
-        statusEl.textContent = `✅ Extração finalizada! Total: ${stats?.total || 0} números`;
+        statusEl.textContent = `✅ Extração finalizada! Total: ${totalCount} números`;
       }
       
-      // Alert de confirmação
-      alert(`✅ Extração instantânea concluída!\n\n📱 Contatos: ${stats?.normal || 0}\n📁 Arquivados: ${stats?.archived || 0}\n🚫 Bloqueados: ${stats?.blocked || 0}\n\n📊 Total: ${stats?.total || 0}`);
+      // CORREÇÃO: Alert com valores dos arrays, não stats
+      alert(`✅ Extração instantânea concluída!\n\n📱 Contatos: ${normalCount}\n📁 Arquivados: ${archivedCount}\n🚫 Bloqueados: ${blockedCount}\n\n📊 Total: ${totalCount}`);
     }
     
     // Handler para erro na extração
@@ -3817,19 +3833,21 @@ try {
 
   if (btnExtractGroupMembers && groupsList && groupMembersBox) {
     btnExtractGroupMembers.addEventListener('click', () => {
+      // CORREÇÃO ISSUE 02: Usar o grupo SELECIONADO no dropdown/lista
       const selectedGroupId = groupsList.value;
       if (!selectedGroupId) {
-        alert('⚠️ Importante: Abra a conversa do grupo antes de extrair os membros!');
+        alert('❌ Selecione um grupo primeiro!');
         return;
       }
 
       btnExtractGroupMembers.disabled = true;
       btnExtractGroupMembers.textContent = '⏳ Extraindo...';
 
-      // ATUALIZADO: Usar método DOM testado e validado
+      // CORREÇÃO: Usar o ID do grupo selecionado, NÃO o chat aberto
       const requestId = Date.now().toString();
       window.postMessage({ 
-        type: 'WHL_EXTRACT_GROUP_CONTACTS_DOM', 
+        type: 'WHL_EXTRACT_GROUP_MEMBERS_BY_ID', 
+        groupId: selectedGroupId,
         requestId: requestId 
       }, '*');
     });
@@ -4141,7 +4159,8 @@ window.addEventListener('message', (e) => {
       } else {
         e.data.history.slice().reverse().forEach(msg => {
           const phone = msg.from?.replace('@c.us', '') || 'Desconhecido';
-          const message = msg.body || '[Mídia]';
+          // CORREÇÃO ISSUE 05: Garantir que body é exibido
+          const message = msg.body || msg.text || msg.caption || '[Mídia sem texto]';
           const date = new Date(msg.timestamp).toLocaleString('pt-BR', {
             day: '2-digit',
             month: '2-digit',
@@ -4151,11 +4170,11 @@ window.addEventListener('message', (e) => {
           });
           
           const msgEl = document.createElement('div');
-          msgEl.style.cssText = 'padding:10px;margin-bottom:8px;background:rgba(255,255,255,0.05);border-radius:8px;border-left:3px solid #f00';
+          msgEl.style.cssText = 'padding:12px;margin-bottom:8px;background:rgba(255,0,0,0.1);border-radius:8px;border-left:3px solid #ff4444';
           msgEl.innerHTML = `
-            <div style="font-weight:bold;color:#ff6b6b">📱 Número: ${phone}</div>
-            <div style="margin-top:4px">📝 Mensagem apagada: "${message}"</div>
-            <div style="margin-top:4px;font-size:11px;opacity:0.7">🕐 ${date}</div>
+            <div style="font-weight:bold;color:#ff6b6b;margin-bottom:4px">📱 ${phone}</div>
+            <div style="color:#fff;margin-bottom:4px">📝 "${message}"</div>
+            <div style="font-size:11px;color:#888">🕐 ${date}</div>
           `;
           recoverHistory.appendChild(msgEl);
         });
@@ -4186,33 +4205,17 @@ window.addEventListener('message', (e) => {
 // Note: With the new WPP Boladão hooks approach, recovery is always active
 // The hooks intercept messages at the protocol level automatically
 try {
-  const btnRecoverEnable = document.getElementById('whlRecoverEnable');
-  const btnRecoverDisable = document.getElementById('whlRecoverDisable');
   const btnExportRecovered = document.getElementById('whlExportRecovered');
   const btnClearRecovered = document.getElementById('whlClearRecovered');
   
   // Update status to show it's always active
   const recoverStatus = document.getElementById('whlRecoverStatus');
   if (recoverStatus) {
-    recoverStatus.textContent = '🟢 Sempre Ativo';
+    recoverStatus.textContent = '🟢 Ativo';
   }
   
   // Load recover history on init
   window.postMessage({ type: 'WHL_GET_RECOVER_HISTORY' }, '*');
-
-  if (btnRecoverEnable) {
-    btnRecoverEnable.addEventListener('click', () => {
-      alert('✅ Recover Ultra++ está sempre ativo com a nova implementação WPP Boladão!\n\nMensagens apagadas e editadas são interceptadas automaticamente.');
-      // Atualizar histórico
-      window.postMessage({ type: 'WHL_GET_RECOVER_HISTORY' }, '*');
-    });
-  }
-
-  if (btnRecoverDisable) {
-    btnRecoverDisable.addEventListener('click', () => {
-      alert('ℹ️ Recover Ultra++ usa hooks no nível do protocolo e não pode ser desativado.\n\nPara desativar, desabilite ou remova a extensão.');
-    });
-  }
 
   if (btnExportRecovered) {
     btnExportRecovered.addEventListener('click', () => {
