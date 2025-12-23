@@ -179,6 +179,13 @@ window.whl_hooks_main = () => {
     // FUNÇÕES DE ENVIO - TESTADAS E VALIDADAS
     // ============================================
 
+    // Timeouts para envio de mensagens (em milissegundos)
+    const TIMEOUTS = {
+        IMAGE_PASTE_WAIT: 2500,    // Tempo para modal de imagem aparecer após paste
+        CAPTION_INPUT_WAIT: 400,   // Tempo para campo de caption processar texto
+        MESSAGE_SEND_DELAY: 1200   // Delay entre envio de texto e imagem
+    };
+
     /**
      * Envia mensagem de TEXTO para qualquer número via API interna do WhatsApp
      * NÃO CAUSA RELOAD!
@@ -260,7 +267,7 @@ window.whl_hooks_main = () => {
             input.focus();
             input.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
 
-            await new Promise(r => setTimeout(r, 2500));
+            await new Promise(r => setTimeout(r, TIMEOUTS.IMAGE_PASTE_WAIT));
 
             var captionInput =
                 document.querySelector('[data-testid="media-caption-input-container"] [contenteditable="true"]') ||
@@ -284,7 +291,7 @@ window.whl_hooks_main = () => {
                     console.log('[WHL] 📝 Caption adicionado:', caption);
                 }
 
-                await new Promise(r => setTimeout(r, 400));
+                await new Promise(r => setTimeout(r, TIMEOUTS.CAPTION_INPUT_WAIT));
 
                 pressEnter(captionInput);
             }
@@ -308,7 +315,7 @@ window.whl_hooks_main = () => {
         // Enviar texto se houver
         if (texto) {
             results.texto = await enviarMensagemAPI(phone, texto);
-            await new Promise(r => setTimeout(r, 1200));
+            await new Promise(r => setTimeout(r, TIMEOUTS.MESSAGE_SEND_DELAY));
         }
         
         // Enviar imagem se houver
