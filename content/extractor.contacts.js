@@ -1,611 +1,541 @@
 /**
- * WhatsHybrid – EXTRATOR HÍBRIDO (SAFE + ELITE) COM MELHORIAS v2
+ * WhatsHybrid – EXTRATOR TURBO v3
+ * MODO AGRESSIVO - Extração MÁXIMA de contatos
+ * 
+ * Mudanças do TURBO:
+ * - SEM validação de DDD (aceita qualquer número 8-15 dígitos)
+ * - SEM score mínimo (coleta TODOS os números encontrados)
+ * - MAIS scroll (100+ iterações)
+ * - MAIS fontes (IndexedDB, sessionStorage, todos localStorage, DOM completo)
+ * - Retorna TODOS os números (usuário filtra depois se quiser)
+ * 
+ * Comunicação via window.postMessage
  */
 
 (function () {
-  if (window.__WHL_EXTRACTOR_HYBRID_LOADED__) return;
-  window.__WHL_EXTRACTOR_HYBRID_LOADED__ = true;
+  if (window.__WHL_EXTRACTOR_TURBO_LOADED__) return;
+  window.__WHL_EXTRACTOR_TURBO_LOADED__ = true;
 
-  // ===== DDDs BRASILEIROS VÁLIDOS =====
-  const VALID_DDDS = new Set([
-    11, 12, 13, 14, 15, 16, 17, 18, 19, // SP
-    21, 22, 24, 27, 28, // RJ/ES
-    31, 32, 33, 34, 35, 37, 38, // MG
-    41, 42, 43, 44, 45, 46, // PR
-    47, 48, 49, // SC
-    51, 53, 54, 55, // RS
-    61, 62, 63, 64, 65, 66, 67, 68, 69, // DF/GO/TO/MT/MS/AC/RO
-    71, 73, 74, 75, 77, 79, // BA/SE
-    81, 82, 83, 84, 85, 86, 87, 88, 89, // PE/AL/PB/RN/CE/PI
-    91, 92, 93, 94, 95, 96, 97, 98, 99 // PA/AM/RR/AP/MA
-  ]);
+  console.log('[WHL] 🚀 EXTRATOR TURBO v3 iniciando...');
 
-  function hasBrazilianDDD(num) {
-    if (!num) return false;
-    let n = num;
-    // If it starts with 55 and has proper length for Brazilian number, strip country code
-    if (n.startsWith('55') && (n.length === 12 || n.length === 13)) {
-      n = n.substring(2);
-    }
-    // Check if we have a valid 10 or 11 digit Brazilian number
-    if (n.length === 10 || n.length === 11) {
-      const ddd = parseInt(n.substring(0, 2), 10);
-      return VALID_DDDS.has(ddd);
-    }
-    return false;
-  }
-
-  function normalizePhone(num) {
-    if (!num) return '';
-    // If already has 55 prefix and valid length, keep as-is
-    if (num.startsWith('55') && (num.length === 12 || num.length === 13)) {
-      return num;
-    }
-    // If it's a 10 or 11 digit number without country code, add 55
-    // NOTE: This assumes Brazilian context. Non-Brazilian numbers should be filtered by hasBrazilianDDD()
-    if (num.length === 10 || num.length === 11) {
-      return '55' + num;
-    }
-    return num;
-  }
-
-  // ===== USAR HARVESTER STORE COMPARTILHADO COM MELHORIAS =====
-  let HarvesterStore = window.HarvesterStore;
-
-  if (!HarvesterStore) {
-    console.warn('[WHL] HarvesterStore ainda não disponível, criando local com melhorias v2...');
+  // ===== CONFIGURAÇÃO TURBO =====
+  const TURBO_CONFIG = {
+    // Scroll agressivo
+    maxScrolls: 150,           // Antes era 25, agora 150
+    scrollDelay: 400,          // Mais rápido (antes 1100ms)
+    scrollIncrement: 0.85,     // Scroll maior por vez
+    stabilityCount: 10,        // Mais tentativas antes de parar
     
-    // Criar HarvesterStore local como fallback com melhorias v2
-    HarvesterStore = {
-      _phones: new Map(),
-      _valid: new Set(),
-      _meta: {},
-      PATTERNS: {
-        BR_MOBILE: /\b(?:\+?55)?\s?\(?[1-9][0-9]\)?\s?9[0-9]{4}-?[0-9]{4}\b/g,
-        BR_LAND: /\b(?:\+?55)?\s?\(?[1-9][0-9]\)?\s?[2-8][0-9]{3}-?[0-9]{4}\b/g,
-        RAW: /\b\d{8,15}\b/g
-      },
-      ORIGINS: {
-        DOM: 'dom',
-        STORE: 'store',
-        GROUP: 'group',
-        WS: 'websocket',
-        NET: 'network',
-        LS: 'local_storage'
-      },
-      // Score mínimo aumentado para 5 (reduz falsos positivos)
-      MIN_SCORE: 5,
+    // Extração agressiva
+    minDigits: 8,              // Mínimo de dígitos
+    maxDigits: 15,             // Máximo de dígitos
+    
+    // Debug
+    debug: true
+  };
+
+  // ===== ARMAZENAMENTO SIMPLES =====
+  const PhoneStore = {
+    _all: new Set(),      // TODOS os números encontrados
+    _sources: new Map(),  // número -> Set de fontes
+    
+    add(num, source = 'unknown') {
+      if (!num) return null;
       
-      processPhone(num, origin, meta = {}) {
-        if (!num) return null;
-        let n = num.replace(/\D/g, '');
-        if (n.length < 8 || n.length > 15) return null;
-        
-        // Normalização de números
-        n = normalizePhone(n);
-        
-        // Validação de DDD brasileiro
-        if (!hasBrazilianDDD(n)) {
-          console.log('[WHL] Número rejeitado (DDD inválido):', n);
-          return null;
-        }
-        
-        if (!this._phones.has(n)) this._phones.set(n, {origens: new Set(), conf: 0, meta: {}});
-        let item = this._phones.get(n);
-        item.origens.add(origin);
-        Object.assign(item.meta, meta);
-        this._meta[n] = {...item.meta};
-        item.conf = this.calcScore(item);
-        
-        // Adicionar aos válidos se atingir score mínimo
-        if (item.conf >= this.MIN_SCORE) {
-          this._valid.add(n);
-        }
-        return n;
-      },
+      // Limpar número (só dígitos)
+      let n = String(num).replace(/\D/g, '');
       
-      // Sistema de score inteligente com pesos configuráveis
-      calcScore(item) {
-        let score = 1; // Score base
-        
-        // +2 pontos para cada origem adicional
-        if (item.origens.size > 1) score += (item.origens.size - 1) * 2;
-        
-        // +3 pontos se veio do Store (fonte confiável)
-        if (item.origens.has(this.ORIGINS.STORE)) score += 3;
-        
-        // +1 ponto se veio de grupo
-        if (item.origens.has(this.ORIGINS.GROUP)) score += 1;
-        
-        // +2 pontos se tem nome
-        if (item.meta?.nome) score += 2;
-        
-        // +1 ponto se é de grupo
-        if (item.meta?.isGroup) score += 1;
-        
-        // +2 pontos se está ativo
-        if (item.meta?.isActive) score += 2;
-        
-        return Math.min(score, 100);
-      },
-      
-      stats() {
-        const or = {};
-        Object.values(this.ORIGINS).forEach(o => or[o] = 0);
-        this._phones.forEach(item => { item.origens.forEach(o => or[o]++); });
-        return or;
-      },
-      
-      save() {
-        try {
-          // Usar localStorage ao invés de chrome.storage (não disponível em page scripts)
-          localStorage.setItem('whl_contacts', JSON.stringify(Array.from(this._phones.keys())));
-          localStorage.setItem('whl_valid', JSON.stringify(Array.from(this._valid)));
-          localStorage.setItem('whl_meta', JSON.stringify(this._meta));
-        } catch (e) {
-          console.error('[WHL] Erro ao salvar:', e);
-        }
-      },
-      
-      clear() {
-        this._phones.clear();
-        this._valid.clear();
-        this._meta = {};
-        try {
-          localStorage.removeItem('whl_contacts');
-          localStorage.removeItem('whl_valid');
-          localStorage.removeItem('whl_meta');
-          localStorage.removeItem('wa_extracted_numbers');
-        } catch (e) {
-          console.error('[WHL] Erro ao limpar:', e);
-        }
+      // Validar tamanho básico
+      if (n.length < TURBO_CONFIG.minDigits || n.length > TURBO_CONFIG.maxDigits) {
+        return null;
       }
-    };
-    
-    // Expor para window
-    window.HarvesterStore = HarvesterStore;
-  }
-
-  // ===== WA EXTRACTOR - Extração multi-fonte =====
-  const WAExtractor = {
-    async start() {
-      console.log('[WHL] 🚀 Iniciando WAExtractor v2...');
-      await this.waitLoad();
-      this.observerChats();
-      this.hookNetwork();
-      this.localStorageExtract();
-      this.autoScroll();
       
-      // Salvar periodicamente
-      setInterval(() => {
-        try {
-          HarvesterStore.save();
-        } catch(e) {
-          console.error('[WHL] Erro ao salvar periodicamente:', e);
-        }
-      }, 12000);
+      // Adicionar aos encontrados
+      this._all.add(n);
+      
+      // Registrar fonte
+      if (!this._sources.has(n)) {
+        this._sources.set(n, new Set());
+      }
+      this._sources.get(n).add(source);
+      
+      return n;
     },
     
-    async waitLoad() {
-      return new Promise(ok => {
-        function loop() {
-          if (document.querySelector('#pane-side') || window.Store) {
-            ok();
-          } else {
-            setTimeout(loop, 600);
-          }
-        }
-        loop();
+    getAll() {
+      return Array.from(this._all).sort();
+    },
+    
+    getStats() {
+      const sources = {};
+      this._sources.forEach((srcs, num) => {
+        srcs.forEach(s => {
+          sources[s] = (sources[s] || 0) + 1;
+        });
       });
+      return { total: this._all.size, sources };
     },
     
-    fromStore() {
-      if (!window.Store) return;
-      
-      try {
-        // Extrair chats
-        let chats = window.Store.Chat?.models || [];
-        chats.forEach(chat => {
-          let id = chat.id._serialized || chat.id;
-          if (typeof id === 'string') {
-            if (id.endsWith('@c.us')) {
-              let fone = id.replace('@c.us', '');
-              HarvesterStore.processPhone(fone, HarvesterStore.ORIGINS.STORE, {
-                nome: chat.name,
-                isActive: true
-              });
-            }
-            if (id.endsWith('@g.us')) {
-              this.fromGroup(chat);
-            }
-          }
-        });
-        
-        // Extrair contatos
-        let contacts = window.Store.Contact?.models || [];
-        contacts.forEach(c => {
-          let id = c.id._serialized || c.id;
-          if (typeof id === 'string' && id.endsWith('@c.us')) {
-            HarvesterStore.processPhone(id.replace('@c.us',''), HarvesterStore.ORIGINS.STORE, {
-              nome: c.name
-            });
-          }
-        });
-        
-        console.log('[WHL] Store extraído com sucesso');
-      } catch(e) {
-        console.log('[WHL] Erro ao extrair do Store:', e);
-      }
-    },
-    
-    fromGroup(chat) {
-      try {
-        let members = chat.groupMetadata?.participants || [];
-        members.forEach(m => {
-          let id = m.id._serialized || m.id;
-          if (typeof id === 'string' && id.endsWith('@c.us')) {
-            HarvesterStore.processPhone(id.replace('@c.us',''), HarvesterStore.ORIGINS.GROUP, {
-              isGroup: true
-            });
-          }
-        });
-      } catch(e) {
-        console.log('[WHL] Erro ao extrair grupo:', e);
-      }
-    },
-    
-    observerChats() {
-      let pane = document.querySelector('#pane-side');
-      if (!pane) return;
-      
-      const obs = new MutationObserver(muts => {
-        muts.forEach(m => m.addedNodes.forEach(n => {
-          if (n.nodeType === 1) this.extractElement(n);
-        }));
-      });
-      
-      obs.observe(pane, {childList:true, subtree:true});
-      this.extractElement(pane);
-      console.log('[WHL] Observer de chats iniciado');
-    },
-    
-    extractElement(el) {
-      try {
-        if (el.textContent) {
-          this.findPhones(el.textContent, HarvesterStore.ORIGINS.DOM);
-        }
-        
-        const spans = el.querySelectorAll?.('span,div');
-        if (spans) {
-          spans.forEach(e => this.findPhones(e.textContent, HarvesterStore.ORIGINS.DOM));
-        }
-      } catch(e) {}
-    },
-    
-    findPhones(text, origin) {
-      if (!text) return;
-      
-      // Aplicar todos os padrões
-      let res = [...text.matchAll(HarvesterStore.PATTERNS.BR_MOBILE)]
-        .concat([...text.matchAll(HarvesterStore.PATTERNS.BR_LAND)])
-        .concat([...text.matchAll(HarvesterStore.PATTERNS.RAW)]);
-      
-      res.forEach(m => HarvesterStore.processPhone(m[0], origin));
-    },
-    
-    hookNetwork() {
-      // Hook fetch
-      let f0 = window.fetch;
-      window.fetch = async function(...a) {
-        let r = await f0.apply(this, a);
-        try {
-          let data = await r.clone().text().catch(() => null);
-          if (data) WAExtractor.findPhones(data, HarvesterStore.ORIGINS.NET);
-        } catch(e) {}
-        return r;
-      };
-      
-      // Hook XMLHttpRequest
-      let oOpen = XMLHttpRequest.prototype.open;
-      XMLHttpRequest.prototype.open = function(...a) {
-        this._wa_url = a[1];
-        return oOpen.apply(this, a);
-      };
-      
-      let oSend = XMLHttpRequest.prototype.send;
-      XMLHttpRequest.prototype.send = function(...a) {
-        this.addEventListener('load', function() {
-          if (this._wa_url?.includes('whatsapp.com')) {
-            WAExtractor.findPhones(this.responseText, HarvesterStore.ORIGINS.NET);
-          }
-        });
-        return oSend.apply(this, a);
-      };
-      
-      // Hook WebSocket
-      let WSOld = window.WebSocket;
-      window.WebSocket = function(...args) {
-        let ws = new WSOld(...args);
-        ws.addEventListener('message', e => {
-          WAExtractor.findPhones(e.data, HarvesterStore.ORIGINS.WS);
-        });
-        return ws;
-      };
-      
-      console.log('[WHL] Network hooks instalados');
-    },
-    
-    localStorageExtract() {
-      try {
-        Object.keys(localStorage).forEach(k => {
-          if (k.includes('chat') || k.includes('contact') || k.includes('wa')) {
-            let v = localStorage.getItem(k);
-            if (v) this.findPhones(v, HarvesterStore.ORIGINS.LS);
-          }
-        });
-        console.log('[WHL] localStorage extraído');
-      } catch(e) {
-        console.log('[WHL] Erro ao extrair localStorage:', e);
-      }
-    },
-    
-    async autoScroll() {
-      let pane = document.querySelector('#pane-side');
-      if (!pane) return;
-      
-      console.log('[WHL] Iniciando auto-scroll...');
-      for (let i = 0; i < 25; i++) {
-        pane.scrollTop = pane.scrollHeight;
-        await new Promise(ok => setTimeout(ok, 600 + Math.random() * 600));
-        this.extractElement(pane);
-      }
-      console.log('[WHL] Auto-scroll concluído');
+    clear() {
+      this._all.clear();
+      this._sources.clear();
     }
   };
 
-  // ===== COMPATIBILIDADE COM SISTEMA ANTIGO =====
-  function normalize(s) {
-    return String(s || '').replace(/\D/g, '');
-  }
+  // Expor para debug
+  window.PhoneStore = PhoneStore;
 
-  function findChatList() {
-    const pane = document.querySelector('#pane-side');
-    if (!pane) return null;
+  // ===== PADRÕES DE EXTRAÇÃO =====
+  const PATTERNS = {
+    // Padrão WhatsApp (mais confiável)
+    WHATSAPP_ID: /(\d{8,15})@[cgs]\.us/g,
+    
+    // Números brasileiros formatados
+    BR_FORMATTED: /(?:\+?55)?[\s\-\.]?\(?(\d{2})\)?[\s\-\.]?(\d{4,5})[\s\-\.]?(\d{4})/g,
+    
+    // Números genéricos (8-15 dígitos)
+    RAW_NUMBERS: /\b(\d{8,15})\b/g,
+    
+    // Links WhatsApp
+    WA_LINKS: /wa\.me\/(\d{8,15})/g,
+    SEND_LINKS: /phone=(\d{8,15})/g
+  };
 
-    const all = [pane, ...pane.querySelectorAll('*')];
-    const cands = all.filter(el => {
-      try {
-        return el.scrollHeight > el.clientHeight + 5 &&
-               (el.querySelector('[role="row"]') || el.querySelector('[role="listitem"]'));
-      } catch (e) { return false; }
-    });
-
-    cands.sort((a,b)=> (b.scrollHeight-b.clientHeight)-(a.scrollHeight-a.clientHeight));
-    return cands[0] || null;
-  }
-
-  function extractNumbers(text) {
-    if (!text) return [];
-    const str = String(text);
-    const numbers = new Set();
-
-    const normalized = normalize(str);
-    const matches = normalized.match(/\d{8,15}/g);
-    if (matches) {
-      matches.forEach(num => numbers.add(num));
-    }
-
-    const whatsappPattern = /(\d{8,15})@c\.us/g;
+  // ===== FUNÇÕES DE EXTRAÇÃO =====
+  
+  function extractFromText(text, source) {
+    if (!text || typeof text !== 'string') return 0;
+    let count = 0;
+    
+    // Padrão WhatsApp ID (PRIORIDADE MÁXIMA)
     let match;
-    while ((match = whatsappPattern.exec(str)) !== null) {
-      numbers.add(match[1]);
+    const waIdRe = new RegExp(PATTERNS.WHATSAPP_ID.source, 'g');
+    while ((match = waIdRe.exec(text)) !== null) {
+      if (PhoneStore.add(match[1], source + '_waid')) count++;
     }
-
-    return Array.from(numbers);
+    
+    // Links wa.me
+    const waMeRe = new RegExp(PATTERNS.WA_LINKS.source, 'g');
+    while ((match = waMeRe.exec(text)) !== null) {
+      if (PhoneStore.add(match[1], source + '_wame')) count++;
+    }
+    
+    // Links phone=
+    const phoneRe = new RegExp(PATTERNS.SEND_LINKS.source, 'g');
+    while ((match = phoneRe.exec(text)) !== null) {
+      if (PhoneStore.add(match[1], source + '_phone')) count++;
+    }
+    
+    // Números raw (genéricos)
+    const rawRe = new RegExp(PATTERNS.RAW_NUMBERS.source, 'g');
+    while ((match = rawRe.exec(text)) !== null) {
+      if (PhoneStore.add(match[1], source + '_raw')) count++;
+    }
+    
+    return count;
   }
 
-  function collectDeepFrom(el, sourceName = 'dom') {
-    if (!el) return [];
-    const numbers = new Set();
-    const store = window.HarvesterStore || HarvesterStore;
-    if (!store) return [];
-
+  function extractFromElement(el, source) {
+    if (!el) return 0;
+    let count = 0;
+    
+    // Atributos importantes
     const attrs = [
-      'data-id',
-      'data-jid',
-      'data-testid',
-      'id',
-      'href',
-      'title',
-      'aria-label',
-      'alt'
+      'data-id', 'data-jid', 'data-testid',
+      'href', 'title', 'aria-label',
+      'data-link', 'data-phone', 'data-contact',
+      'id', 'name', 'value', 'placeholder'
     ];
-
+    
     attrs.forEach(attr => {
-      const value = el.getAttribute(attr);
-      if (value) {
-        extractNumbers(value).forEach(n => {
-          numbers.add(n);
-          store.processPhone(n, sourceName);
-        });
+      try {
+        const val = el.getAttribute?.(attr);
+        if (val) count += extractFromText(val, source + '_attr_' + attr);
+      } catch {}
+    });
+    
+    // Texto do elemento
+    try {
+      if (el.textContent) {
+        count += extractFromText(el.textContent, source + '_text');
       }
-    });
-
-    if (el.textContent) {
-      extractNumbers(el.textContent).forEach(n => {
-        numbers.add(n);
-        store.processPhone(n, sourceName);
-      });
-    }
-
-    const children = el.querySelectorAll('*');
-    children.forEach(child => {
-      attrs.forEach(attr => {
-        const value = child.getAttribute(attr);
-        if (value) {
-          extractNumbers(value).forEach(n => {
-            numbers.add(n);
-            store.processPhone(n, sourceName);
-          });
-        }
-      });
-    });
-
-    return Array.from(numbers);
+    } catch {}
+    
+    // Valor (para inputs)
+    try {
+      if (el.value) {
+        count += extractFromText(el.value, source + '_value');
+      }
+    } catch {}
+    
+    return count;
   }
 
-  function findAllSources() {
-    const sources = [];
-
+  function extractFromDOM(source = 'dom') {
+    let count = 0;
+    
+    // 1. Elementos com data-id (FONTE PRINCIPAL)
+    document.querySelectorAll('[data-id]').forEach(el => {
+      count += extractFromElement(el, source + '_dataid');
+    });
+    
+    // 2. Elementos com data-jid
+    document.querySelectorAll('[data-jid]').forEach(el => {
+      count += extractFromElement(el, source + '_datajid');
+    });
+    
+    // 3. Células de chat
+    document.querySelectorAll('[data-testid*="cell"], [data-testid*="chat"], [data-testid*="contact"]').forEach(el => {
+      count += extractFromElement(el, source + '_cell');
+    });
+    
+    // 4. Linhas e itens de lista
+    document.querySelectorAll('[role="row"], [role="listitem"], [role="gridcell"]').forEach(el => {
+      count += extractFromElement(el, source + '_row');
+    });
+    
+    // 5. Links
+    document.querySelectorAll('a[href]').forEach(el => {
+      count += extractFromElement(el, source + '_link');
+    });
+    
+    // 6. Spans com título
+    document.querySelectorAll('span[title], div[title]').forEach(el => {
+      count += extractFromElement(el, source + '_title');
+    });
+    
+    // 7. Elementos com aria-label
+    document.querySelectorAll('[aria-label]').forEach(el => {
+      count += extractFromElement(el, source + '_aria');
+    });
+    
+    // 8. TURBO: Varrer TODOS os elementos do pane-side
     const pane = document.querySelector('#pane-side');
-    if (pane) sources.push(pane);
-
-    document.querySelectorAll('[data-id]').forEach(el => sources.push(el));
-    document.querySelectorAll('[data-testid*="cell"]').forEach(el => sources.push(el));
-    document.querySelectorAll('[data-testid*="contact"]').forEach(el => sources.push(el));
-    document.querySelectorAll('a[href*="phone"]').forEach(el => sources.push(el));
-    document.querySelectorAll('a[href*="@c.us"]').forEach(el => sources.push(el));
-    document.querySelectorAll('span[title]').forEach(el => sources.push(el));
-    document.querySelectorAll('[aria-label]').forEach(el => sources.push(el));
-
-    return sources;
+    if (pane) {
+      pane.querySelectorAll('*').forEach(el => {
+        count += extractFromElement(el, source + '_pane');
+      });
+    }
+    
+    // 9. TURBO: Varrer body inteiro (agressivo)
+    document.querySelectorAll('div, span, p, a, button, input, textarea').forEach(el => {
+      count += extractFromElement(el, source + '_body');
+    });
+    
+    return count;
   }
 
-  async function extractAll() {
-    console.log('[WHL] 🚀 Iniciando extração completa com sistema Harvester v2...');
+  function extractFromStorage(source = 'storage') {
+    let count = 0;
     
-    // Garantir que HarvesterStore está disponível
-    const store = window.HarvesterStore || HarvesterStore;
-    if (!store) {
-      console.error('[WHL] HarvesterStore não disponível!');
-      window.postMessage({ type:'WHL_EXTRACT_ERROR', error: 'HarvesterStore não disponível' }, '*');
-      return [];
+    // localStorage - TUDO
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        const value = localStorage.getItem(key);
+        if (value) {
+          count += extractFromText(key, source + '_ls_key');
+          count += extractFromText(value, source + '_ls_val');
+        }
+      }
+      console.log('[WHL] localStorage extraído:', count);
+    } catch (e) {
+      console.log('[WHL] Erro localStorage:', e);
     }
     
-    // Limpar store anterior
-    store.clear();
-    
-    // Fase 1: Iniciar WAExtractor (Store, Observer, Network hooks, etc)
-    window.postMessage({ 
-      type: 'WHL_EXTRACT_PROGRESS', 
-      progress: 10,
-      count: store._valid.size
-    }, '*');
-    
-    await WAExtractor.start();
-    
-    // Fase 2: Extração DOM tradicional com scroll
-    window.postMessage({ 
-      type: 'WHL_EXTRACT_PROGRESS', 
-      progress: 30,
-      count: store._valid.size
-    }, '*');
-    
-    const list = findChatList();
-    if (!list) {
-      console.log('[WHL] ⚠️ Lista de chats não encontrada, usando apenas extração do Store');
-    } else {
-      list.scrollTop = 0;
-      await new Promise(r => setTimeout(r, 800));
-
-      let lastTop = -1, stable = 0;
-      let scrollCount = 0;
-      const scrollHeight = list.scrollHeight || 10000;
-      const clientHeight = list.clientHeight || 100;
-      const estimatedScrolls = Math.ceil(scrollHeight / (clientHeight * 0.7)) || 50;
-      const maxScrolls = Math.min(estimatedScrolls, 100);
-      
-      while (stable < 7 && scrollCount < maxScrolls) {
-        const items = list.querySelectorAll('[role="row"], [role="listitem"]');
-        items.forEach(item => {
-          collectDeepFrom(item, 'scroll');
-        });
-
-        findAllSources().forEach(source => {
-          collectDeepFrom(source, 'sources');
-        });
-
-        scrollCount++;
-        const progress = Math.min(70, 30 + Math.round((scrollCount / maxScrolls) * 40));
-        window.postMessage({ 
-          type: 'WHL_EXTRACT_PROGRESS', 
-          progress: progress,
-          count: store._valid.size
-        }, '*');
-
-        const increment = Math.floor(list.clientHeight * 0.7);
-        const next = Math.min(list.scrollTop + increment, list.scrollHeight);
-        list.scrollTop = next;
-        list.dispatchEvent(new Event('scroll', {bubbles:true}));
-        
-        await new Promise(r => setTimeout(r, 1100));
-
-        if (list.scrollTop === lastTop) {
-          stable++;
-        } else {
-          stable = 0;
+    // sessionStorage - TUDO
+    try {
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const key = sessionStorage.key(i);
+        const value = sessionStorage.getItem(key);
+        if (value) {
+          count += extractFromText(key, source + '_ss_key');
+          count += extractFromText(value, source + '_ss_val');
         }
-        lastTop = list.scrollTop;
+      }
+      console.log('[WHL] sessionStorage extraído');
+    } catch (e) {}
+    
+    return count;
+  }
+
+  async function extractFromIndexedDB(source = 'idb') {
+    let count = 0;
+    
+    try {
+      const databases = await indexedDB.databases?.() || [];
+      
+      for (const dbInfo of databases) {
+        try {
+          const db = await new Promise((resolve, reject) => {
+            const req = indexedDB.open(dbInfo.name);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+          });
+          
+          const storeNames = Array.from(db.objectStoreNames);
+          
+          for (const storeName of storeNames) {
+            try {
+              const tx = db.transaction(storeName, 'readonly');
+              const store = tx.objectStore(storeName);
+              
+              const allData = await new Promise((resolve, reject) => {
+                const req = store.getAll();
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+              });
+              
+              if (Array.isArray(allData)) {
+                allData.forEach(item => {
+                  const str = JSON.stringify(item);
+                  count += extractFromText(str, source + '_' + storeName);
+                });
+              }
+            } catch {}
+          }
+          
+          db.close();
+        } catch {}
       }
       
-      // Coleta final
-      list.scrollTop = 0;
-      await new Promise(r => setTimeout(r, 1000));
-
-      const items = list.querySelectorAll('[role="row"], [role="listitem"]');
-      items.forEach(item => {
-        collectDeepFrom(item, 'final');
-      });
-
-      findAllSources().forEach(source => {
-        collectDeepFrom(source, 'final');
-      });
+      console.log('[WHL] IndexedDB extraído:', count);
+    } catch (e) {
+      console.log('[WHL] Erro IndexedDB:', e);
     }
+    
+    return count;
+  }
 
-    // Fase 3: Aguardar hooks de rede coletarem mais dados
-    window.postMessage({ 
-      type: 'WHL_EXTRACT_PROGRESS', 
-      progress: 80,
-      count: store._valid.size
+  // ===== SCROLL TURBO =====
+  
+  async function turboScroll() {
+    const pane = document.querySelector('#pane-side');
+    if (!pane) {
+      console.log('[WHL] ⚠️ #pane-side não encontrado');
+      return;
+    }
+    
+    console.log('[WHL] 📜 Iniciando TURBO scroll...');
+    
+    // Ir para o topo
+    pane.scrollTop = 0;
+    await new Promise(r => setTimeout(r, 500));
+    
+    let lastTop = -1;
+    let stable = 0;
+    let scrollCount = 0;
+    
+    while (stable < TURBO_CONFIG.stabilityCount && scrollCount < TURBO_CONFIG.maxScrolls) {
+      // Extrair durante scroll
+      extractFromDOM('scroll_' + scrollCount);
+      
+      // Scroll
+      const increment = Math.floor(pane.clientHeight * TURBO_CONFIG.scrollIncrement);
+      pane.scrollTop = Math.min(pane.scrollTop + increment, pane.scrollHeight);
+      pane.dispatchEvent(new Event('scroll', { bubbles: true }));
+      
+      scrollCount++;
+      
+      // Progresso
+      const progress = Math.min(80, 10 + Math.round((scrollCount / TURBO_CONFIG.maxScrolls) * 70));
+      window.postMessage({
+        type: 'WHL_EXTRACT_PROGRESS',
+        progress,
+        count: PhoneStore._all.size
+      }, '*');
+      
+      await new Promise(r => setTimeout(r, TURBO_CONFIG.scrollDelay));
+      
+      // Verificar estabilidade
+      if (Math.abs(pane.scrollTop - lastTop) < 5) {
+        stable++;
+      } else {
+        stable = 0;
+      }
+      lastTop = pane.scrollTop;
+      
+      if (scrollCount % 20 === 0) {
+        console.log(`[WHL] Scroll ${scrollCount}/${TURBO_CONFIG.maxScrolls}, encontrados: ${PhoneStore._all.size}`);
+      }
+    }
+    
+    // Voltar ao topo
+    pane.scrollTop = 0;
+    await new Promise(r => setTimeout(r, 500));
+    
+    // Extração final
+    extractFromDOM('scroll_final');
+    
+    console.log(`[WHL] ✅ TURBO scroll concluído: ${scrollCount} scrolls, ${PhoneStore._all.size} números`);
+  }
+
+  // ===== HOOKS DE REDE =====
+  
+  function installNetworkHooks() {
+    // Hook fetch
+    const originalFetch = window.fetch;
+    window.fetch = async function(...args) {
+      const response = await originalFetch.apply(this, args);
+      try {
+        const clone = response.clone();
+        const text = await clone.text().catch(() => '');
+        extractFromText(text, 'fetch');
+      } catch {}
+      return response;
+    };
+    
+    // Hook XHR
+    const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSend = XMLHttpRequest.prototype.send;
+    
+    XMLHttpRequest.prototype.open = function(...args) {
+      this._url = args[1];
+      return originalOpen.apply(this, args);
+    };
+    
+    XMLHttpRequest.prototype.send = function(...args) {
+      this.addEventListener('load', function() {
+        try {
+          if (this.responseText) {
+            extractFromText(this.responseText, 'xhr');
+          }
+        } catch {}
+      });
+      return originalSend.apply(this, args);
+    };
+    
+    // Hook WebSocket
+    const OriginalWebSocket = window.WebSocket;
+    window.WebSocket = function(...args) {
+      const ws = new OriginalWebSocket(...args);
+      ws.addEventListener('message', function(e) {
+        try {
+          if (e.data && typeof e.data === 'string') {
+            extractFromText(e.data, 'ws');
+          }
+        } catch {}
+      });
+      return ws;
+    };
+    window.WebSocket.prototype = OriginalWebSocket.prototype;
+    
+    console.log('[WHL] 🔌 Network hooks instalados');
+  }
+
+  // ===== FUNÇÃO PRINCIPAL =====
+  
+  async function extractAllTurbo() {
+    console.log('[WHL] 🚀🚀🚀 EXTRAÇÃO TURBO INICIADA 🚀🚀🚀');
+    
+    // Limpar
+    PhoneStore.clear();
+    
+    window.postMessage({
+      type: 'WHL_EXTRACT_PROGRESS',
+      progress: 5,
+      count: 0
     }, '*');
     
+    // Instalar hooks de rede
+    installNetworkHooks();
+    
+    // Fase 1: DOM inicial
+    console.log('[WHL] 📱 Fase 1: Extração DOM inicial...');
+    extractFromDOM('initial');
+    
+    window.postMessage({
+      type: 'WHL_EXTRACT_PROGRESS',
+      progress: 10,
+      count: PhoneStore._all.size
+    }, '*');
+    
+    // Fase 2: Storage
+    console.log('[WHL] 💾 Fase 2: Extração de Storage...');
+    extractFromStorage('storage');
+    
+    // Fase 3: IndexedDB
+    console.log('[WHL] 🗄️ Fase 3: Extração IndexedDB...');
+    await extractFromIndexedDB('idb');
+    
+    window.postMessage({
+      type: 'WHL_EXTRACT_PROGRESS',
+      progress: 15,
+      count: PhoneStore._all.size
+    }, '*');
+    
+    // Fase 4: TURBO Scroll
+    console.log('[WHL] 📜 Fase 4: TURBO Scroll...');
+    await turboScroll();
+    
+    // Fase 5: Extração final
+    console.log('[WHL] 🔍 Fase 5: Extração final...');
+    extractFromDOM('final');
+    extractFromStorage('final_storage');
+    
+    // Aguardar hooks de rede
+    console.log('[WHL] ⏳ Aguardando dados de rede...');
     await new Promise(r => setTimeout(r, 3000));
     
-    // Retornar apenas números validados (com score >= MIN_SCORE)
-    const validNumbers = Array.from(store._valid).sort();
-
-    window.postMessage({ 
-      type: 'WHL_EXTRACT_PROGRESS', 
+    // Extração pós-rede
+    extractFromDOM('post_network');
+    
+    window.postMessage({
+      type: 'WHL_EXTRACT_PROGRESS',
       progress: 100,
-      count: validNumbers.length
+      count: PhoneStore._all.size
     }, '*');
-
-    // Estatísticas
-    const stats = store.stats();
-    console.log('[WHL] ✅ Extração concluída v2:', {
-      total: store._phones.size,
-      validos: validNumbers.length,
-      stats: stats,
-      minScore: store.MIN_SCORE
-    });
     
-    // Salvar
-    store.save();
+    // Resultados
+    const numbers = PhoneStore.getAll();
+    const stats = PhoneStore.getStats();
     
-    return validNumbers;
+    console.log('[WHL] ✅✅✅ EXTRAÇÃO TURBO CONCLUÍDA ✅✅✅');
+    console.log('[WHL] Total de números:', numbers.length);
+    console.log('[WHL] Estatísticas:', stats);
+    
+    // Salvar no localStorage
+    try {
+      localStorage.setItem('whl_turbo_numbers', JSON.stringify(numbers));
+      localStorage.setItem('whl_turbo_stats', JSON.stringify(stats));
+    } catch {}
+    
+    return numbers;
   }
 
   // ===== LISTENER DE MENSAGENS =====
+  
   window.addEventListener('message', async (ev) => {
-    if (!ev || !ev.data || ev.data.type !== 'WHL_EXTRACT_CONTACTS') return;
-    try {
-      const nums = await extractAll();
-      window.postMessage({ type:'WHL_EXTRACT_RESULT', numbers: nums }, '*');
-    } catch (e) {
-      console.log('[WHL] Erro na extração:', e);
-      window.postMessage({ type:'WHL_EXTRACT_ERROR', error: String(e) }, '*');
+    if (!ev?.data?.type) return;
+    
+    if (ev.data.type === 'WHL_EXTRACT_CONTACTS') {
+      try {
+        const numbers = await extractAllTurbo();
+        window.postMessage({ 
+          type: 'WHL_EXTRACT_RESULT', 
+          numbers: numbers 
+        }, '*');
+      } catch (e) {
+        console.error('[WHL] Erro na extração TURBO:', e);
+        window.postMessage({ 
+          type: 'WHL_EXTRACT_ERROR', 
+          error: String(e) 
+        }, '*');
+      }
     }
   });
 
-  console.log('[WHL] 🚀 Extractor Híbrido v2 com DDD validation carregado');
+  // ===== EXPOR PARA DEBUG =====
+  window.__WHL_TURBO__ = {
+    extract: extractAllTurbo,
+    store: PhoneStore,
+    config: TURBO_CONFIG,
+    extractDOM: extractFromDOM,
+    extractStorage: extractFromStorage,
+    extractIDB: extractFromIndexedDB
+  };
+
+  console.log('[WHL] ✅ EXTRATOR TURBO v3 carregado!');
+  console.log('[WHL] Config:', TURBO_CONFIG);
+  console.log('[WHL] Debug: window.__WHL_TURBO__');
 })();
