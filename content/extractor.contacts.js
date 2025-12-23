@@ -1,10 +1,41 @@
 /**
- * WhatsHybrid – EXTRATOR HÍBRIDO (SAFE + ELITE) COM MELHORIAS v2
+ * WhatsHybrid – EXTRATOR TURBO v4 com FILTRO INTELIGENTE
+ * 
+ * ESTRATÉGIA:
+ * 1. Coleta AGRESSIVA (máximo de números possível)
+ * 2. Filtro INTELIGENTE (só retorna números confiáveis)
+ * 
+ * NÍVEIS DE CONFIANÇA:
+ * - ALTA (100%): @c.us, data-id, data-jid → SEMPRE inclui
+ * - MÉDIA (80%): wa.me/, phone=, título → Inclui se DDD válido
+ * - BAIXA (30%): Texto raw → Só inclui se aparecer 2+ vezes E DDD válido
+ * 
+ * Comunicação via window.postMessage
  */
 
 (function () {
-  if (window.__WHL_EXTRACTOR_HYBRID_LOADED__) return;
-  window.__WHL_EXTRACTOR_HYBRID_LOADED__ = true;
+  if (window.__WHL_EXTRACTOR_TURBO_V4__) return;
+  window.__WHL_EXTRACTOR_TURBO_V4__ = true;
+
+  console.log('[WHL] 🚀 EXTRATOR TURBO v4 com Filtro Inteligente iniciando...');
+
+  // ===== CONFIGURAÇÃO =====
+  const CONFIG = {
+    // Scroll
+    maxScrolls: 150,
+    scrollDelay: 400,
+    scrollIncrement: 0.85,
+    stabilityCount: 10,
+    
+    // Números
+    minDigits: 10,  // Mínimo para telefone brasileiro (DDD + número)
+    maxDigits: 15,  // Máximo (código país + DDD + número)
+    
+    // Filtro
+    minOccurrencesForRaw: 2,  // Números raw precisam aparecer 2+ vezes
+    
+    debug: true
+  };
 
   // ===== DDDs BRASILEIROS VÁLIDOS =====
   const VALID_DDDS = new Set([
@@ -17,595 +48,524 @@
     61, 62, 63, 64, 65, 66, 67, 68, 69, // DF/GO/TO/MT/MS/AC/RO
     71, 73, 74, 75, 77, 79, // BA/SE
     81, 82, 83, 84, 85, 86, 87, 88, 89, // PE/AL/PB/RN/CE/PI
-    91, 92, 93, 94, 95, 96, 97, 98, 99 // PA/AM/RR/AP/MA
+    91, 92, 93, 94, 95, 96, 97, 98, 99  // PA/AM/RR/AP/MA
   ]);
 
-  function hasBrazilianDDD(num) {
-    if (!num) return false;
-    let n = num;
-    // If it starts with 55 and has proper length for Brazilian number, strip country code
-    if (n.startsWith('55') && (n.length === 12 || n.length === 13)) {
-      n = n.substring(2);
-    }
-    // Check if we have a valid 10 or 11 digit Brazilian number
-    if (n.length === 10 || n.length === 11) {
-      const ddd = parseInt(n.substring(0, 2), 10);
-      return VALID_DDDS.has(ddd);
-    }
-    return false;
-  }
+  // ===== NÍVEIS DE CONFIANÇA =====
+  const CONFIDENCE = {
+    HIGH: 'high',     // @c.us, data-id, data-jid
+    MEDIUM: 'medium', // wa.me, phone=, title
+    LOW: 'low'        // raw text
+  };
 
-  function normalizePhone(num) {
-    if (!num) return '';
-    // If already has 55 prefix and valid length, keep as-is
-    if (num.startsWith('55') && (num.length === 12 || num.length === 13)) {
-      return num;
-    }
-    // If it's a 10 or 11 digit number without country code, add 55
-    // NOTE: This assumes Brazilian context. Non-Brazilian numbers should be filtered by hasBrazilianDDD()
-    if (num.length === 10 || num.length === 11) {
-      return '55' + num;
-    }
-    return num;
-  }
-
-  // ===== USAR HARVESTER STORE COMPARTILHADO COM MELHORIAS =====
-  let HarvesterStore = window.HarvesterStore;
-
-  if (!HarvesterStore) {
-    console.warn('[WHL] HarvesterStore ainda não disponível, criando local com melhorias v2...');
+  // ===== ARMAZENAMENTO =====
+  const PhoneStore = {
+    _phones: new Map(), // número -> { sources: Set, confidence: string, occurrences: number }
     
-    // Criar HarvesterStore local como fallback com melhorias v2
-    HarvesterStore = {
-      _phones: new Map(),
-      _valid: new Set(),
-      _meta: {},
-      PATTERNS: {
-        BR_MOBILE: /\b(?:\+?55)?\s?\(?[1-9][0-9]\)?\s?9[0-9]{4}-?[0-9]{4}\b/g,
-        BR_LAND: /\b(?:\+?55)?\s?\(?[1-9][0-9]\)?\s?[2-8][0-9]{3}-?[0-9]{4}\b/g,
-        RAW: /\b\d{8,15}\b/g
-      },
-      ORIGINS: {
-        DOM: 'dom',
-        STORE: 'store',
-        GROUP: 'group',
-        WS: 'websocket',
-        NET: 'network',
-        LS: 'local_storage'
-      },
-      // Score mínimo aumentado para 5 (reduz falsos positivos)
-      MIN_SCORE: 5,
+    add(num, source, confidence = CONFIDENCE.LOW) {
+      if (!num) return null;
       
-      processPhone(num, origin, meta = {}) {
-        if (!num) return null;
-        let n = num.replace(/\D/g, '');
-        if (n.length < 8 || n.length > 15) return null;
-        
-        // Normalização de números
-        n = normalizePhone(n);
-        
-        // Validação de DDD brasileiro
-        if (!hasBrazilianDDD(n)) {
-          console.log('[WHL] Número rejeitado (DDD inválido):', n);
-          return null;
-        }
-        
-        if (!this._phones.has(n)) this._phones.set(n, {origens: new Set(), conf: 0, meta: {}});
-        let item = this._phones.get(n);
-        item.origens.add(origin);
-        Object.assign(item.meta, meta);
-        this._meta[n] = {...item.meta};
-        item.conf = this.calcScore(item);
-        
-        // Adicionar aos válidos se atingir score mínimo
-        if (item.conf >= this.MIN_SCORE) {
-          this._valid.add(n);
-        }
-        return n;
-      },
+      // Limpar e normalizar
+      let n = String(num).replace(/\D/g, '');
       
-      // Sistema de score inteligente com pesos configuráveis
-      calcScore(item) {
-        let score = 1; // Score base
-        
-        // +2 pontos para cada origem adicional
-        if (item.origens.size > 1) score += (item.origens.size - 1) * 2;
-        
-        // +3 pontos se veio do Store (fonte confiável)
-        if (item.origens.has(this.ORIGINS.STORE)) score += 3;
-        
-        // +1 ponto se veio de grupo
-        if (item.origens.has(this.ORIGINS.GROUP)) score += 1;
-        
-        // +2 pontos se tem nome
-        if (item.meta?.nome) score += 2;
-        
-        // +1 ponto se é de grupo
-        if (item.meta?.isGroup) score += 1;
-        
-        // +2 pontos se está ativo
-        if (item.meta?.isActive) score += 2;
-        
-        return Math.min(score, 100);
-      },
-      
-      stats() {
-        const or = {};
-        Object.values(this.ORIGINS).forEach(o => or[o] = 0);
-        this._phones.forEach(item => { item.origens.forEach(o => or[o]++); });
-        return or;
-      },
-      
-      save() {
-        try {
-          // Usar localStorage ao invés de chrome.storage (não disponível em page scripts)
-          localStorage.setItem('whl_contacts', JSON.stringify(Array.from(this._phones.keys())));
-          localStorage.setItem('whl_valid', JSON.stringify(Array.from(this._valid)));
-          localStorage.setItem('whl_meta', JSON.stringify(this._meta));
-        } catch (e) {
-          console.error('[WHL] Erro ao salvar:', e);
-        }
-      },
-      
-      clear() {
-        this._phones.clear();
-        this._valid.clear();
-        this._meta = {};
-        try {
-          localStorage.removeItem('whl_contacts');
-          localStorage.removeItem('whl_valid');
-          localStorage.removeItem('whl_meta');
-          localStorage.removeItem('wa_extracted_numbers');
-        } catch (e) {
-          console.error('[WHL] Erro ao limpar:', e);
-        }
+      // Validar tamanho
+      if (n.length < CONFIG.minDigits || n.length > CONFIG.maxDigits) {
+        return null;
       }
-    };
-    
-    // Expor para window
-    window.HarvesterStore = HarvesterStore;
-  }
-
-  // ===== WA EXTRACTOR - Extração multi-fonte =====
-  const WAExtractor = {
-    async start() {
-      console.log('[WHL] 🚀 Iniciando WAExtractor v2...');
-      await this.waitLoad();
-      this.observerChats();
-      this.hookNetwork();
-      this.localStorageExtract();
-      this.autoScroll();
       
-      // Salvar periodicamente
-      setInterval(() => {
-        try {
-          HarvesterStore.save();
-        } catch(e) {
-          console.error('[WHL] Erro ao salvar periodicamente:', e);
-        }
-      }, 12000);
-    },
-    
-    async waitLoad() {
-      return new Promise(ok => {
-        function loop() {
-          if (document.querySelector('#pane-side') || window.Store) {
-            ok();
-          } else {
-            setTimeout(loop, 600);
-          }
-        }
-        loop();
-      });
-    },
-    
-    fromStore() {
-      if (!window.Store) return;
-      
-      try {
-        // Extrair chats
-        let chats = window.Store.Chat?.models || [];
-        chats.forEach(chat => {
-          let id = chat.id._serialized || chat.id;
-          if (typeof id === 'string') {
-            if (id.endsWith('@c.us')) {
-              let fone = id.replace('@c.us', '');
-              HarvesterStore.processPhone(fone, HarvesterStore.ORIGINS.STORE, {
-                nome: chat.name,
-                isActive: true
-              });
-            }
-            if (id.endsWith('@g.us')) {
-              this.fromGroup(chat);
-            }
-          }
-        });
-        
-        // Extrair contatos
-        let contacts = window.Store.Contact?.models || [];
-        contacts.forEach(c => {
-          let id = c.id._serialized || c.id;
-          if (typeof id === 'string' && id.endsWith('@c.us')) {
-            HarvesterStore.processPhone(id.replace('@c.us',''), HarvesterStore.ORIGINS.STORE, {
-              nome: c.name
-            });
-          }
-        });
-        
-        console.log('[WHL] Store extraído com sucesso');
-      } catch(e) {
-        console.log('[WHL] Erro ao extrair do Store:', e);
+      // Normalizar para formato brasileiro (adicionar 55 se necessário)
+      if (n.length === 10 || n.length === 11) {
+        n = '55' + n;
       }
-    },
-    
-    fromGroup(chat) {
-      try {
-        let members = chat.groupMetadata?.participants || [];
-        members.forEach(m => {
-          let id = m.id._serialized || m.id;
-          if (typeof id === 'string' && id.endsWith('@c.us')) {
-            HarvesterStore.processPhone(id.replace('@c.us',''), HarvesterStore.ORIGINS.GROUP, {
-              isGroup: true
-            });
-          }
-        });
-      } catch(e) {
-        console.log('[WHL] Erro ao extrair grupo:', e);
-      }
-    },
-    
-    observerChats() {
-      let pane = document.querySelector('#pane-side');
-      if (!pane) return;
       
-      const obs = new MutationObserver(muts => {
-        muts.forEach(m => m.addedNodes.forEach(n => {
-          if (n.nodeType === 1) this.extractElement(n);
-        }));
+      // Criar ou atualizar registro
+      if (!this._phones.has(n)) {
+        this._phones.set(n, {
+          sources: new Set(),
+          confidence: confidence,
+          occurrences: 0
+        });
+      }
+      
+      const record = this._phones.get(n);
+      record.sources.add(source);
+      record.occurrences++;
+      
+      // Upgrade de confiança (HIGH > MEDIUM > LOW)
+      if (confidence === CONFIDENCE.HIGH) {
+        record.confidence = CONFIDENCE.HIGH;
+      } else if (confidence === CONFIDENCE.MEDIUM && record.confidence === CONFIDENCE.LOW) {
+        record.confidence = CONFIDENCE.MEDIUM;
+      }
+      
+      return n;
+    },
+    
+    // Verifica se tem DDD brasileiro válido
+    hasValidDDD(num) {
+      let n = num;
+      if (n.startsWith('55') && n.length >= 12) {
+        n = n.substring(2);
+      }
+      if (n.length >= 10) {
+        const ddd = parseInt(n.substring(0, 2), 10);
+        return VALID_DDDS.has(ddd);
+      }
+      return false;
+    },
+    
+    // Retorna APENAS números filtrados (confiáveis)
+    getFiltered() {
+      const result = [];
+      
+      this._phones.forEach((record, num) => {
+        let include = false;
+        
+        // ALTA confiança: SEMPRE inclui
+        if (record.confidence === CONFIDENCE.HIGH) {
+          include = true;
+        }
+        // MÉDIA confiança: inclui se DDD válido
+        else if (record.confidence === CONFIDENCE.MEDIUM) {
+          include = this.hasValidDDD(num);
+        }
+        // BAIXA confiança: inclui se DDD válido E apareceu 2+ vezes
+        else if (record.confidence === CONFIDENCE.LOW) {
+          include = this.hasValidDDD(num) && record.occurrences >= CONFIG.minOccurrencesForRaw;
+        }
+        
+        if (include) {
+          result.push(num);
+        }
       });
       
-      obs.observe(pane, {childList:true, subtree:true});
-      this.extractElement(pane);
-      console.log('[WHL] Observer de chats iniciado');
+      // Ordenar e remover duplicatas
+      return [...new Set(result)].sort();
     },
     
-    extractElement(el) {
-      try {
-        if (el.textContent) {
-          this.findPhones(el.textContent, HarvesterStore.ORIGINS.DOM);
-        }
+    // Retorna TODOS os números (sem filtro)
+    getAll() {
+      return Array.from(this._phones.keys()).sort();
+    },
+    
+    getStats() {
+      let high = 0, medium = 0, low = 0, filtered = 0;
+      const sources = {};
+      
+      this._phones.forEach((record, num) => {
+        if (record.confidence === CONFIDENCE.HIGH) high++;
+        else if (record.confidence === CONFIDENCE.MEDIUM) medium++;
+        else low++;
         
-        const spans = el.querySelectorAll?.('span,div');
-        if (spans) {
-          spans.forEach(e => this.findPhones(e.textContent, HarvesterStore.ORIGINS.DOM));
-        }
-      } catch(e) {}
-    },
-    
-    findPhones(text, origin) {
-      if (!text) return;
-      
-      // Aplicar todos os padrões
-      let res = [...text.matchAll(HarvesterStore.PATTERNS.BR_MOBILE)]
-        .concat([...text.matchAll(HarvesterStore.PATTERNS.BR_LAND)])
-        .concat([...text.matchAll(HarvesterStore.PATTERNS.RAW)]);
-      
-      res.forEach(m => HarvesterStore.processPhone(m[0], origin));
-    },
-    
-    hookNetwork() {
-      // Hook fetch
-      let f0 = window.fetch;
-      window.fetch = async function(...a) {
-        let r = await f0.apply(this, a);
-        try {
-          let data = await r.clone().text().catch(() => null);
-          if (data) WAExtractor.findPhones(data, HarvesterStore.ORIGINS.NET);
-        } catch(e) {}
-        return r;
-      };
-      
-      // Hook XMLHttpRequest
-      let oOpen = XMLHttpRequest.prototype.open;
-      XMLHttpRequest.prototype.open = function(...a) {
-        this._wa_url = a[1];
-        return oOpen.apply(this, a);
-      };
-      
-      let oSend = XMLHttpRequest.prototype.send;
-      XMLHttpRequest.prototype.send = function(...a) {
-        this.addEventListener('load', function() {
-          if (this._wa_url?.includes('whatsapp.com')) {
-            WAExtractor.findPhones(this.responseText, HarvesterStore.ORIGINS.NET);
-          }
+        record.sources.forEach(s => {
+          const key = s.split('_')[0];
+          sources[key] = (sources[key] || 0) + 1;
         });
-        return oSend.apply(this, a);
-      };
+      });
       
-      // Hook WebSocket
-      let WSOld = window.WebSocket;
-      window.WebSocket = function(...args) {
-        let ws = new WSOld(...args);
-        ws.addEventListener('message', e => {
-          WAExtractor.findPhones(e.data, HarvesterStore.ORIGINS.WS);
-        });
-        return ws;
-      };
+      filtered = this.getFiltered().length;
       
-      console.log('[WHL] Network hooks instalados');
+      return {
+        total: this._phones.size,
+        filtered,
+        high,
+        medium,
+        low,
+        sources
+      };
     },
     
-    localStorageExtract() {
-      try {
-        Object.keys(localStorage).forEach(k => {
-          if (k.includes('chat') || k.includes('contact') || k.includes('wa')) {
-            let v = localStorage.getItem(k);
-            if (v) this.findPhones(v, HarvesterStore.ORIGINS.LS);
-          }
-        });
-        console.log('[WHL] localStorage extraído');
-      } catch(e) {
-        console.log('[WHL] Erro ao extrair localStorage:', e);
-      }
-    },
-    
-    async autoScroll() {
-      let pane = document.querySelector('#pane-side');
-      if (!pane) return;
-      
-      console.log('[WHL] Iniciando auto-scroll...');
-      for (let i = 0; i < 25; i++) {
-        pane.scrollTop = pane.scrollHeight;
-        await new Promise(ok => setTimeout(ok, 600 + Math.random() * 600));
-        this.extractElement(pane);
-      }
-      console.log('[WHL] Auto-scroll concluído');
+    clear() {
+      this._phones.clear();
     }
   };
 
-  // ===== COMPATIBILIDADE COM SISTEMA ANTIGO =====
-  function normalize(s) {
-    return String(s || '').replace(/\D/g, '');
-  }
+  window.PhoneStore = PhoneStore;
 
-  function findChatList() {
-    const pane = document.querySelector('#pane-side');
-    if (!pane) return null;
-
-    const all = [pane, ...pane.querySelectorAll('*')];
-    const cands = all.filter(el => {
-      try {
-        return el.scrollHeight > el.clientHeight + 5 &&
-               (el.querySelector('[role="row"]') || el.querySelector('[role="listitem"]'));
-      } catch (e) { return false; }
-    });
-
-    cands.sort((a,b)=> (b.scrollHeight-b.clientHeight)-(a.scrollHeight-a.clientHeight));
-    return cands[0] || null;
-  }
-
-  function extractNumbers(text) {
-    if (!text) return [];
-    const str = String(text);
-    const numbers = new Set();
-
-    const normalized = normalize(str);
-    const matches = normalized.match(/\d{8,15}/g);
-    if (matches) {
-      matches.forEach(num => numbers.add(num));
-    }
-
-    const whatsappPattern = /(\d{8,15})@c\.us/g;
+  // ===== FUNÇÕES DE EXTRAÇÃO =====
+  
+  function extractFromText(text, source, defaultConfidence = CONFIDENCE.LOW) {
+    if (!text || typeof text !== 'string') return 0;
+    let count = 0;
+    
+    // Padrão @c.us (ALTA CONFIANÇA)
+    const waIdRe = /(\d{10,15})@c\.us/g;
     let match;
-    while ((match = whatsappPattern.exec(str)) !== null) {
-      numbers.add(match[1]);
+    while ((match = waIdRe.exec(text)) !== null) {
+      if (PhoneStore.add(match[1], source + '_cus', CONFIDENCE.HIGH)) count++;
     }
-
-    return Array.from(numbers);
-  }
-
-  function collectDeepFrom(el, sourceName = 'dom') {
-    if (!el) return [];
-    const numbers = new Set();
-    const store = window.HarvesterStore || HarvesterStore;
-    if (!store) return [];
-
-    const attrs = [
-      'data-id',
-      'data-jid',
-      'data-testid',
-      'id',
-      'href',
-      'title',
-      'aria-label',
-      'alt'
-    ];
-
-    attrs.forEach(attr => {
-      const value = el.getAttribute(attr);
-      if (value) {
-        extractNumbers(value).forEach(n => {
-          numbers.add(n);
-          store.processPhone(n, sourceName);
-        });
+    
+    // Padrão @g.us (grupos - ALTA CONFIANÇA)
+    const groupRe = /(\d{10,15})@g\.us/g;
+    while ((match = groupRe.exec(text)) !== null) {
+      if (PhoneStore.add(match[1], source + '_gus', CONFIDENCE.HIGH)) count++;
+    }
+    
+    // Links wa.me (MÉDIA CONFIANÇA)
+    const waMeRe = /wa\.me\/(\d{10,15})/g;
+    while ((match = waMeRe.exec(text)) !== null) {
+      if (PhoneStore.add(match[1], source + '_wame', CONFIDENCE.MEDIUM)) count++;
+    }
+    
+    // Links phone= (MÉDIA CONFIANÇA)
+    const phoneRe = /phone=(\d{10,15})/g;
+    while ((match = phoneRe.exec(text)) !== null) {
+      if (PhoneStore.add(match[1], source + '_phone', CONFIDENCE.MEDIUM)) count++;
+    }
+    
+    // Números raw - só se defaultConfidence não for LOW ou se parecer telefone formatado
+    if (defaultConfidence !== CONFIDENCE.LOW) {
+      const rawRe = /\b(\d{10,15})\b/g;
+      while ((match = rawRe.exec(text)) !== null) {
+        if (PhoneStore.add(match[1], source + '_raw', defaultConfidence)) count++;
       }
-    });
-
-    if (el.textContent) {
-      extractNumbers(el.textContent).forEach(n => {
-        numbers.add(n);
-        store.processPhone(n, sourceName);
-      });
-    }
-
-    const children = el.querySelectorAll('*');
-    children.forEach(child => {
-      attrs.forEach(attr => {
-        const value = child.getAttribute(attr);
-        if (value) {
-          extractNumbers(value).forEach(n => {
-            numbers.add(n);
-            store.processPhone(n, sourceName);
-          });
-        }
-      });
-    });
-
-    return Array.from(numbers);
-  }
-
-  function findAllSources() {
-    const sources = [];
-
-    const pane = document.querySelector('#pane-side');
-    if (pane) sources.push(pane);
-
-    document.querySelectorAll('[data-id]').forEach(el => sources.push(el));
-    document.querySelectorAll('[data-testid*="cell"]').forEach(el => sources.push(el));
-    document.querySelectorAll('[data-testid*="contact"]').forEach(el => sources.push(el));
-    document.querySelectorAll('a[href*="phone"]').forEach(el => sources.push(el));
-    document.querySelectorAll('a[href*="@c.us"]').forEach(el => sources.push(el));
-    document.querySelectorAll('span[title]').forEach(el => sources.push(el));
-    document.querySelectorAll('[aria-label]').forEach(el => sources.push(el));
-
-    return sources;
-  }
-
-  async function extractAll() {
-    console.log('[WHL] 🚀 Iniciando extração completa com sistema Harvester v2...');
-    
-    // Garantir que HarvesterStore está disponível
-    const store = window.HarvesterStore || HarvesterStore;
-    if (!store) {
-      console.error('[WHL] HarvesterStore não disponível!');
-      window.postMessage({ type:'WHL_EXTRACT_ERROR', error: 'HarvesterStore não disponível' }, '*');
-      return [];
-    }
-    
-    // Limpar store anterior
-    store.clear();
-    
-    // Fase 1: Iniciar WAExtractor (Store, Observer, Network hooks, etc)
-    window.postMessage({ 
-      type: 'WHL_EXTRACT_PROGRESS', 
-      progress: 10,
-      count: store._valid.size
-    }, '*');
-    
-    await WAExtractor.start();
-    
-    // Fase 2: Extração DOM tradicional com scroll
-    window.postMessage({ 
-      type: 'WHL_EXTRACT_PROGRESS', 
-      progress: 30,
-      count: store._valid.size
-    }, '*');
-    
-    const list = findChatList();
-    if (!list) {
-      console.log('[WHL] ⚠️ Lista de chats não encontrada, usando apenas extração do Store');
     } else {
-      list.scrollTop = 0;
-      await new Promise(r => setTimeout(r, 800));
-
-      let lastTop = -1, stable = 0;
-      let scrollCount = 0;
-      const scrollHeight = list.scrollHeight || 10000;
-      const clientHeight = list.clientHeight || 100;
-      const estimatedScrolls = Math.ceil(scrollHeight / (clientHeight * 0.7)) || 50;
-      const maxScrolls = Math.min(estimatedScrolls, 100);
-      
-      while (stable < 7 && scrollCount < maxScrolls) {
-        const items = list.querySelectorAll('[role="row"], [role="listitem"]');
-        items.forEach(item => {
-          collectDeepFrom(item, 'scroll');
-        });
-
-        findAllSources().forEach(source => {
-          collectDeepFrom(source, 'sources');
-        });
-
-        scrollCount++;
-        const progress = Math.min(70, 30 + Math.round((scrollCount / maxScrolls) * 40));
-        window.postMessage({ 
-          type: 'WHL_EXTRACT_PROGRESS', 
-          progress: progress,
-          count: store._valid.size
-        }, '*');
-
-        const increment = Math.floor(list.clientHeight * 0.7);
-        const next = Math.min(list.scrollTop + increment, list.scrollHeight);
-        list.scrollTop = next;
-        list.dispatchEvent(new Event('scroll', {bubbles:true}));
-        
-        await new Promise(r => setTimeout(r, 1100));
-
-        if (list.scrollTop === lastTop) {
-          stable++;
-        } else {
-          stable = 0;
-        }
-        lastTop = list.scrollTop;
+      // Para LOW, só extrair se parecer telefone formatado
+      const formattedRe = /(?:\+?55)?[\s\-\.]?\(?(\d{2})\)?[\s\-\.]?(\d{4,5})[\s\-\.]?(\d{4})/g;
+      while ((match = formattedRe.exec(text)) !== null) {
+        const num = match[1] + match[2] + match[3];
+        if (PhoneStore.add(num, source + '_formatted', CONFIDENCE.LOW)) count++;
       }
-      
-      // Coleta final
-      list.scrollTop = 0;
-      await new Promise(r => setTimeout(r, 1000));
+    }
+    
+    return count;
+  }
 
-      const items = list.querySelectorAll('[role="row"], [role="listitem"]');
-      items.forEach(item => {
-        collectDeepFrom(item, 'final');
-      });
+  function extractFromElement(el, source) {
+    if (!el) return 0;
+    let count = 0;
+    
+    // data-id e data-jid são ALTA CONFIANÇA
+    ['data-id', 'data-jid'].forEach(attr => {
+      try {
+        const val = el.getAttribute?.(attr);
+        if (val && (val.includes('@c.us') || val.includes('@g.us'))) {
+          count += extractFromText(val, source + '_' + attr, CONFIDENCE.HIGH);
+        }
+      } catch {}
+    });
+    
+    // href, title, aria-label são MÉDIA CONFIANÇA
+    ['href', 'title', 'aria-label'].forEach(attr => {
+      try {
+        const val = el.getAttribute?.(attr);
+        if (val) {
+          count += extractFromText(val, source + '_' + attr, CONFIDENCE.MEDIUM);
+        }
+      } catch {}
+    });
+    
+    // Outros atributos são BAIXA CONFIANÇA
+    ['data-testid', 'data-link', 'data-phone'].forEach(attr => {
+      try {
+        const val = el.getAttribute?.(attr);
+        if (val) {
+          count += extractFromText(val, source + '_' + attr, CONFIDENCE.LOW);
+        }
+      } catch {}
+    });
+    
+    return count;
+  }
 
-      findAllSources().forEach(source => {
-        collectDeepFrom(source, 'final');
+  function extractFromDOM(source = 'dom') {
+    let count = 0;
+    
+    // Elementos com data-id (ALTA CONFIANÇA)
+    document.querySelectorAll('[data-id*="@"]').forEach(el => {
+      count += extractFromElement(el, source + '_dataid');
+    });
+    
+    // Elementos com data-jid (ALTA CONFIANÇA)
+    document.querySelectorAll('[data-jid*="@"]').forEach(el => {
+      count += extractFromElement(el, source + '_datajid');
+    });
+    
+    // Células de chat
+    document.querySelectorAll('[data-testid*="cell"], [data-testid*="chat"], [data-testid*="contact"]').forEach(el => {
+      count += extractFromElement(el, source + '_cell');
+    });
+    
+    // Linhas e itens
+    document.querySelectorAll('[role="row"], [role="listitem"], [role="gridcell"]').forEach(el => {
+      count += extractFromElement(el, source + '_row');
+    });
+    
+    // Links
+    document.querySelectorAll('a[href*="wa.me"], a[href*="phone"]').forEach(el => {
+      count += extractFromElement(el, source + '_link');
+    });
+    
+    // Títulos
+    document.querySelectorAll('span[title], div[title]').forEach(el => {
+      count += extractFromElement(el, source + '_title');
+    });
+    
+    // pane-side
+    const pane = document.querySelector('#pane-side');
+    if (pane) {
+      pane.querySelectorAll('[data-id], [data-jid]').forEach(el => {
+        count += extractFromElement(el, source + '_pane');
       });
     }
-
-    // Fase 3: Aguardar hooks de rede coletarem mais dados
-    window.postMessage({ 
-      type: 'WHL_EXTRACT_PROGRESS', 
-      progress: 80,
-      count: store._valid.size
-    }, '*');
     
-    await new Promise(r => setTimeout(r, 3000));
+    return count;
+  }
+
+  function extractFromStorage(source = 'storage') {
+    let count = 0;
     
-    // Retornar apenas números validados (com score >= MIN_SCORE)
-    const validNumbers = Array.from(store._valid).sort();
+    // localStorage
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        const value = localStorage.getItem(key);
+        if (value) {
+          // Priorizar chaves com @c.us
+          if (value.includes('@c.us') || value.includes('@g.us')) {
+            count += extractFromText(value, source + '_ls', CONFIDENCE.HIGH);
+          } else if (key.includes('chat') || key.includes('contact')) {
+            count += extractFromText(value, source + '_ls', CONFIDENCE.MEDIUM);
+          }
+        }
+      }
+    } catch (e) {}
+    
+    // sessionStorage
+    try {
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const key = sessionStorage.key(i);
+        const value = sessionStorage.getItem(key);
+        if (value && (value.includes('@c.us') || value.includes('@g.us'))) {
+          count += extractFromText(value, source + '_ss', CONFIDENCE.HIGH);
+        }
+      }
+    } catch (e) {}
+    
+    return count;
+  }
 
-    window.postMessage({ 
-      type: 'WHL_EXTRACT_PROGRESS', 
-      progress: 100,
-      count: validNumbers.length
-    }, '*');
+  async function extractFromIndexedDB(source = 'idb') {
+    let count = 0;
+    
+    try {
+      const databases = await indexedDB.databases?.() || [];
+      
+      for (const dbInfo of databases) {
+        if (!dbInfo.name) continue;
+        
+        try {
+          const db = await new Promise((resolve, reject) => {
+            const req = indexedDB.open(dbInfo.name);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+            setTimeout(() => reject(new Error('timeout')), 3000);
+          });
+          
+          const storeNames = Array.from(db.objectStoreNames);
+          
+          for (const storeName of storeNames) {
+            if (storeName.includes('chat') || storeName.includes('contact') || storeName.includes('message')) {
+              try {
+                const tx = db.transaction(storeName, 'readonly');
+                const store = tx.objectStore(storeName);
+                
+                const allData = await new Promise((resolve, reject) => {
+                  const req = store.getAll();
+                  req.onsuccess = () => resolve(req.result);
+                  req.onerror = () => reject(req.error);
+                  setTimeout(() => reject(new Error('timeout')), 5000);
+                });
+                
+                if (Array.isArray(allData)) {
+                  allData.forEach(item => {
+                    const str = JSON.stringify(item);
+                    if (str.includes('@c.us') || str.includes('@g.us')) {
+                      count += extractFromText(str, source + '_' + storeName, CONFIDENCE.HIGH);
+                    }
+                  });
+                }
+              } catch {}
+            }
+          }
+          
+          db.close();
+        } catch {}
+      }
+    } catch (e) {}
+    
+    return count;
+  }
 
-    // Estatísticas
-    const stats = store.stats();
-    console.log('[WHL] ✅ Extração concluída v2:', {
-      total: store._phones.size,
-      validos: validNumbers.length,
-      stats: stats,
-      minScore: store.MIN_SCORE
-    });
+  // ===== SCROLL TURBO =====
+  async function turboScroll() {
+    const pane = document.querySelector('#pane-side');
+    if (!pane) return;
+    
+    console.log('[WHL] 📜 Iniciando TURBO scroll...');
+    
+    pane.scrollTop = 0;
+    await new Promise(r => setTimeout(r, 500));
+    
+    let lastTop = -1;
+    let stable = 0;
+    let scrollCount = 0;
+    
+    while (stable < CONFIG.stabilityCount && scrollCount < CONFIG.maxScrolls) {
+      // Extrair durante scroll
+      extractFromDOM('scroll_' + scrollCount);
+      
+      // Scroll
+      const increment = Math.floor(pane.clientHeight * CONFIG.scrollIncrement);
+      pane.scrollTop = Math.min(pane.scrollTop + increment, pane.scrollHeight);
+      pane.dispatchEvent(new Event('scroll', { bubbles: true }));
+      
+      scrollCount++;
+      
+      // Progresso
+      const progress = Math.min(80, 10 + Math.round((scrollCount / CONFIG.maxScrolls) * 70));
+      window.postMessage({
+        type: 'WHL_EXTRACT_PROGRESS',
+        progress,
+        count: PhoneStore.getFiltered().length
+      }, '*');
+      
+      await new Promise(r => setTimeout(r, CONFIG.scrollDelay));
+      
+      if (Math.abs(pane.scrollTop - lastTop) < 5) {
+        stable++;
+      } else {
+        stable = 0;
+      }
+      lastTop = pane.scrollTop;
+      
+      if (scrollCount % 30 === 0) {
+        console.log(`[WHL] Scroll ${scrollCount}/${CONFIG.maxScrolls}, filtrados: ${PhoneStore.getFiltered().length}`);
+      }
+    }
+    
+    pane.scrollTop = 0;
+    await new Promise(r => setTimeout(r, 500));
+    extractFromDOM('scroll_final');
+    
+    console.log(`[WHL] ✅ Scroll concluído: ${scrollCount} scrolls`);
+  }
+
+  // ===== HOOKS DE REDE =====
+  function installNetworkHooks() {
+    const originalFetch = window.fetch;
+    window.fetch = async function(...args) {
+      const response = await originalFetch.apply(this, args);
+      try {
+        const clone = response.clone();
+        const text = await clone.text().catch(() => '');
+        if (text.includes('@c.us') || text.includes('@g.us')) {
+          extractFromText(text, 'fetch', CONFIDENCE.HIGH);
+        }
+      } catch {}
+      return response;
+    };
+    
+    const OriginalWebSocket = window.WebSocket;
+    window.WebSocket = function(...args) {
+      const ws = new OriginalWebSocket(...args);
+      ws.addEventListener('message', function(e) {
+        try {
+          if (e.data && typeof e.data === 'string') {
+            if (e.data.includes('@c.us') || e.data.includes('@g.us')) {
+              extractFromText(e.data, 'ws', CONFIDENCE.HIGH);
+            }
+          }
+        } catch {}
+      });
+      return ws;
+    };
+    window.WebSocket.prototype = OriginalWebSocket.prototype;
+    
+    console.log('[WHL] 🔌 Network hooks instalados');
+  }
+
+  // ===== FUNÇÃO PRINCIPAL =====
+  async function extractAllTurbo() {
+    console.log('[WHL] 🚀🚀🚀 EXTRAÇÃO TURBO v4 INICIADA 🚀🚀🚀');
+    
+    PhoneStore.clear();
+    
+    window.postMessage({ type: 'WHL_EXTRACT_PROGRESS', progress: 5, count: 0 }, '*');
+    
+    installNetworkHooks();
+    
+    // Fase 1: DOM inicial
+    console.log('[WHL] 📱 Fase 1: DOM inicial...');
+    extractFromDOM('initial');
+    window.postMessage({ type: 'WHL_EXTRACT_PROGRESS', progress: 10, count: PhoneStore.getFiltered().length }, '*');
+    
+    // Fase 2: Storage
+    console.log('[WHL] 💾 Fase 2: Storage...');
+    extractFromStorage('storage');
+    window.postMessage({ type: 'WHL_EXTRACT_PROGRESS', progress: 15, count: PhoneStore.getFiltered().length }, '*');
+    
+    // Fase 3: IndexedDB
+    console.log('[WHL] 🗄️ Fase 3: IndexedDB...');
+    await extractFromIndexedDB('idb');
+    window.postMessage({ type: 'WHL_EXTRACT_PROGRESS', progress: 20, count: PhoneStore.getFiltered().length }, '*');
+    
+    // Fase 4: TURBO Scroll
+    console.log('[WHL] 📜 Fase 4: TURBO Scroll...');
+    await turboScroll();
+    
+    // Fase 5: Extração final
+    console.log('[WHL] 🔍 Fase 5: Extração final...');
+    extractFromDOM('final');
+    extractFromStorage('final');
+    
+    // Aguardar rede
+    await new Promise(r => setTimeout(r, 2000));
+    extractFromDOM('post_network');
+    
+    window.postMessage({ type: 'WHL_EXTRACT_PROGRESS', progress: 100, count: PhoneStore.getFiltered().length }, '*');
+    
+    // Resultados
+    const filtered = PhoneStore.getFiltered();
+    const stats = PhoneStore.getStats();
+    
+    console.log('[WHL] ✅✅✅ EXTRAÇÃO TURBO v4 CONCLUÍDA ✅✅✅');
+    console.log('[WHL] Total coletados:', stats.total);
+    console.log('[WHL] Após filtro:', filtered.length);
+    console.log('[WHL] Stats:', stats);
     
     // Salvar
-    store.save();
+    try {
+      localStorage.setItem('whl_extracted_numbers', JSON.stringify(filtered));
+    } catch {}
     
-    return validNumbers;
+    return filtered;
   }
 
-  // ===== LISTENER DE MENSAGENS =====
+  // ===== LISTENER =====
   window.addEventListener('message', async (ev) => {
-    if (!ev || !ev.data || ev.data.type !== 'WHL_EXTRACT_CONTACTS') return;
-    try {
-      const nums = await extractAll();
-      window.postMessage({ type:'WHL_EXTRACT_RESULT', numbers: nums }, '*');
-    } catch (e) {
-      console.log('[WHL] Erro na extração:', e);
-      window.postMessage({ type:'WHL_EXTRACT_ERROR', error: String(e) }, '*');
+    if (!ev?.data?.type) return;
+    
+    if (ev.data.type === 'WHL_EXTRACT_CONTACTS') {
+      try {
+        const numbers = await extractAllTurbo();
+        window.postMessage({ type: 'WHL_EXTRACT_RESULT', numbers }, '*');
+      } catch (e) {
+        console.error('[WHL] Erro:', e);
+        window.postMessage({ type: 'WHL_EXTRACT_ERROR', error: String(e) }, '*');
+      }
     }
   });
 
-  console.log('[WHL] 🚀 Extractor Híbrido v2 com DDD validation carregado');
+  // ===== DEBUG =====
+  window.__WHL_TURBO_V4__ = {
+    extract: extractAllTurbo,
+    store: PhoneStore,
+    config: CONFIG,
+    getFiltered: () => PhoneStore.getFiltered(),
+    getAll: () => PhoneStore.getAll(),
+    getStats: () => PhoneStore.getStats()
+  };
+
+  console.log('[WHL] ✅ EXTRATOR TURBO v4 com Filtro Inteligente carregado!');
 })();
