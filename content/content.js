@@ -870,7 +870,15 @@
           </div>
 
           <div class="title" style="font-size:13px;margin-top:10px">Mensagem padrão</div>
-          <textarea id="whlMsg" placeholder="Digite sua mensagem…"></textarea>
+          <div style="position:relative">
+            <textarea id="whlMsg" placeholder="Digite sua mensagem…"></textarea>
+            <button id="whlEmojiBtn" style="position:absolute;right:10px;top:10px;padding:6px 10px;border-radius:8px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);cursor:pointer;font-size:18px;line-height:1" title="Inserir emoji">😊</button>
+          </div>
+          
+          <!-- PR #78: Emoji Picker -->
+          <div id="whlEmojiPicker" style="display:none;position:absolute;z-index:100000;background:rgba(8,6,20,0.98);border:1px solid rgba(111,0,255,0.35);border-radius:12px;padding:10px;max-width:300px;box-shadow:0 10px 30px rgba(0,0,0,0.5)">
+            <div style="display:grid;grid-template-columns:repeat(8,1fr);gap:6px;max-height:200px;overflow-y:auto"></div>
+          </div>
           
           <button id="whlSaveMessage" class="iconbtn primary" style="width:100%; margin-top:8px;">
             💾 Salvar Mensagem
@@ -1091,16 +1099,6 @@
 
               <div class="settings-row">
                 <div class="settings-label">
-                  <div class="k">🔄 Retry</div>
-                  <div class="d">Tentativas extras em falha</div>
-                </div>
-                <div class="settings-control">
-                  <input type="number" id="whlRetryMax" min="0" max="5" value="0" />
-                </div>
-              </div>
-
-              <div class="settings-row">
-                <div class="settings-label">
                   <div class="k">📅 Agendamento</div>
                   <div class="d">Inicia no horário definido</div>
                 </div>
@@ -1110,29 +1108,8 @@
               </div>
             </div>
 
-            <div class="settings-section-title" style="margin-top:14px">Opções</div>
-            <div class="settings-table">
-              <div class="settings-row toggle">
-                <div class="settings-label">
-                  <div class="k">✅ Continuar em erros</div>
-                  <div class="d">Não interromper campanha</div>
-                </div>
-                <div class="settings-control">
-                  <input type="checkbox" id="whlContinueOnError" checked />
-                </div>
-              </div>
-
-              <div class="settings-row toggle">
-                <div class="settings-label">
-                  <div class="k">🔧 Worker Oculto</div>
-                  <div class="d">Enviar em aba separada (sem reload)</div>
-                </div>
-                <div class="settings-control">
-                  <input type="checkbox" id="whlUseWorker" checked />
-                </div>
-              </div>
-            </div>
-
+            <!-- PR #78: Removed obsolete settings (Worker Oculto, Continuar em erros, Retry) -->
+            
             <div class="settings-footer tiny" id="whlSelectorHealth"></div>
           </div>
         </div>
@@ -3361,21 +3338,15 @@
     const msgEl = document.getElementById('whlMsg');
     const delayMinEl = document.getElementById('whlDelayMin');
     const delayMaxEl = document.getElementById('whlDelayMax');
-    const continueOnErrorEl = document.getElementById('whlContinueOnError');
 
     if (numbersEl && numbersEl.value !== state.numbersText) numbersEl.value = state.numbersText;
     if (msgEl && msgEl.value !== state.message) msgEl.value = state.message;
     if (delayMinEl) delayMinEl.value = state.delayMin;
     if (delayMaxEl) delayMaxEl.value = state.delayMax;
-    if (continueOnErrorEl) continueOnErrorEl.checked = !!state.continueOnError;
-    const retryEl = document.getElementById('whlRetryMax');
-    const schedEl = document.getElementById('whlScheduleAt');
-    if (retryEl) retryEl.value = state.retryMax ?? 0;
-    if (schedEl && (schedEl.value||'') !== (state.scheduleAt||'')) schedEl.value = state.scheduleAt || '';
     
-    // NEW: Worker mode checkbox
-    const useWorkerEl = document.getElementById('whlUseWorker');
-    if (useWorkerEl) useWorkerEl.checked = !!state.useWorker;
+    // PR #78: Removed obsolete settings (continueOnError, retryMax, useWorker)
+    const schedEl = document.getElementById('whlScheduleAt');
+    if (schedEl && (schedEl.value||'') !== (state.scheduleAt||'')) schedEl.value = state.scheduleAt || '';
     
     // Preview
     const curp = state.queue[state.index];
@@ -4553,27 +4524,9 @@ try {
       st.delayMax = Math.max(1, parseInt(e.target.value) || 10);
       await setState(st);
     });
-    document.getElementById('whlContinueOnError').addEventListener('change', async (e) => {
-      const st = await getState();
-      st.continueOnError = !!e.target.checked;
-      await setState(st);
-    });
-
-    // NEW: Worker mode toggle
-    document.getElementById('whlUseWorker').addEventListener('change', async (e) => {
-      const st = await getState();
-      st.useWorker = !!e.target.checked;
-      await setState(st);
-      console.log('[WHL] Worker mode:', st.useWorker ? 'enabled' : 'disabled');
-    });
-
-    // Retry max
-    document.getElementById('whlRetryMax').addEventListener('input', async (e) => {
-      const st = await getState();
-      st.retryMax = Math.max(0, Math.min(5, parseInt(e.target.value)||0));
-      await setState(st);
-      await render();
-    });
+    
+    // PR #78: Removed obsolete settings event listeners (continueOnError, useWorker, retryMax)
+    
     // Schedule
     document.getElementById('whlScheduleAt').addEventListener('input', async (e) => {
       const st = await getState();
@@ -4760,6 +4713,92 @@ try {
 
     document.getElementById('whlSkip').addEventListener('click', skip);
     document.getElementById('whlWipe').addEventListener('click', wipe);
+
+    // PR #78: Emoji Picker
+    const emojiBtn = document.getElementById('whlEmojiBtn');
+    const emojiPicker = document.getElementById('whlEmojiPicker');
+    const msgTextarea = document.getElementById('whlMsg');
+    
+    if (emojiBtn && emojiPicker && msgTextarea) {
+      // Emoji list - categorized
+      const emojis = [
+        // Smileys
+        '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '😊', 
+        '😇', '🥰', '😍', '🤩', '😘', '😗', '😚', '😋', '😛', '😜',
+        '🤪', '😝', '🤑', '🤗', '🤭', '🤫', '🤔', '🤐', '🤨', '😐',
+        '😑', '😶', '😏', '😒', '🙄', '😬', '🤥', '😌', '😔', '😪',
+        '🤤', '😴', '😷', '🤒', '🤕', '🤢', '🤮', '🤧', '🥵', '🥶',
+        // Gestures
+        '👍', '👎', '👊', '✊', '🤛', '🤜', '🤞', '✌️', '🤟', '🤘',
+        '👌', '🤌', '🤏', '👈', '👉', '👆', '👇', '☝️', '👋', '🤚',
+        '🖐️', '✋', '🖖', '👏', '🙌', '👐', '🤲', '🤝', '🙏', '💪',
+        // Hearts & Symbols
+        '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔',
+        '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟', '☮️',
+        '✝️', '☪️', '🕉️', '☸️', '✡️', '🔯', '🕎', '☯️', '☦️', '⛎',
+        '♈', '♉', '♊', '♋', '♌', '♍', '♎', '♏', '♐', '♑',
+        // Common
+        '⭐', '🌟', '✨', '⚡', '🔥', '💥', '💫', '💦', '💨', '🌈',
+        '☀️', '🌤️', '⛅', '🌥️', '☁️', '🌦️', '🌧️', '⛈️', '🌩️', '🌨️',
+        '✅', '❌', '⚠️', '🚫', '📌', '📍', '🎉', '🎊', '🎈', '🎁'
+      ];
+      
+      // Populate emoji picker
+      const emojiGrid = emojiPicker.querySelector('div');
+      if (emojiGrid) {
+        emojiGrid.innerHTML = emojis.map(e => 
+          `<span class="emoji-item" style="font-size:22px;cursor:pointer;padding:4px;border-radius:6px;display:flex;align-items:center;justify-content:center;transition:background 0.1s" onmouseover="this.style.background='rgba(111,0,255,0.2)'" onmouseout="this.style.background='transparent'">${e}</span>`
+        ).join('');
+        
+        // Handle emoji selection
+        emojiGrid.addEventListener('click', (e) => {
+          if (e.target.classList.contains('emoji-item')) {
+            const emoji = e.target.textContent;
+            
+            // Insert at cursor position
+            const start = msgTextarea.selectionStart;
+            const end = msgTextarea.selectionEnd;
+            const text = msgTextarea.value;
+            
+            msgTextarea.value = text.substring(0, start) + emoji + text.substring(end);
+            msgTextarea.selectionStart = msgTextarea.selectionEnd = start + emoji.length;
+            msgTextarea.focus();
+            
+            // Update preview
+            updateMessagePreview();
+            
+            // Hide picker
+            emojiPicker.style.display = 'none';
+          }
+        });
+      }
+      
+      // Toggle picker
+      emojiBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        if (emojiPicker.style.display === 'none' || !emojiPicker.style.display) {
+          // Position picker
+          const btnRect = emojiBtn.getBoundingClientRect();
+          emojiPicker.style.display = 'block';
+          emojiPicker.style.position = 'absolute';
+          emojiPicker.style.right = '10px';
+          emojiPicker.style.top = (btnRect.bottom + 5) + 'px';
+        } else {
+          emojiPicker.style.display = 'none';
+        }
+      });
+      
+      // Close picker when clicking outside
+      document.addEventListener('click', (e) => {
+        if (emojiPicker.style.display !== 'none' && 
+            !emojiPicker.contains(e.target) && 
+            e.target !== emojiBtn) {
+          emojiPicker.style.display = 'none';
+        }
+      });
+    }
 
     document.getElementById('whlHide').addEventListener('click', async () => {
       const st = await getState();
