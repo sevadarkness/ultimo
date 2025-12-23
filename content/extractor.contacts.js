@@ -440,11 +440,19 @@
   }
 
   // ===== SCROLL =====
+  // Flags de controle
+  let extractionPaused = false;
+  let extractionCancelled = false;
+  
   async function turboScroll() {
     const pane = document.querySelector('#pane-side');
     if (!pane) return;
     
     console.log('[WHL] 📜 Iniciando scroll...');
+    
+    // Resetar flags de controle
+    extractionPaused = false;
+    extractionCancelled = false;
     
     pane.scrollTop = 0;
     await new Promise(r => setTimeout(r, 500));
@@ -454,6 +462,23 @@
     let scrollCount = 0;
     
     while (stable < CONFIG.stabilityCount && scrollCount < CONFIG.maxScrolls) {
+      // Verificar se foi cancelado
+      if (extractionCancelled) {
+        console.log('[WHL] ⛔ Extração cancelada pelo usuário');
+        break;
+      }
+      
+      // Verificar se foi pausado
+      while (extractionPaused && !extractionCancelled) {
+        await new Promise(r => setTimeout(r, 500));
+      }
+      
+      // Se cancelou durante a pausa, sair
+      if (extractionCancelled) {
+        console.log('[WHL] ⛔ Extração cancelada durante pausa');
+        break;
+      }
+      
       extractFromDOM();
       
       const increment = Math.floor(pane.clientHeight * CONFIG.scrollIncrement);
@@ -466,7 +491,8 @@
       window.postMessage({
         type: 'WHL_EXTRACT_PROGRESS',
         progress,
-        count: PhoneStore.getFiltered().length
+        count: PhoneStore.getFiltered().length,
+        paused: extractionPaused
       }, '*');
       
       await new Promise(r => setTimeout(r, CONFIG.scrollDelay));
@@ -488,7 +514,11 @@
     await new Promise(r => setTimeout(r, 500));
     extractFromDOM();
     
-    console.log(`[WHL] ✅ Scroll concluído: ${scrollCount} scrolls`);
+    if (extractionCancelled) {
+      console.log(`[WHL] ⛔ Extração cancelada: ${scrollCount} scrolls executados`);
+    } else {
+      console.log(`[WHL] ✅ Scroll concluído: ${scrollCount} scrolls`);
+    }
   }
 
   // ===== HOOKS DE REDE =====
@@ -591,6 +621,28 @@
         console.error('[WHL] Erro:', e);
         window.postMessage({ type: 'WHL_EXTRACT_ERROR', error: String(e) }, '*');
       }
+    }
+    
+    if (ev.data.type === 'WHL_PAUSE_EXTRACTION') {
+      extractionPaused = true;
+      console.log('[WHL] ⏸️ Extração pausada');
+      window.postMessage({ type: 'WHL_EXTRACTION_PAUSED' }, '*');
+    }
+    
+    if (ev.data.type === 'WHL_RESUME_EXTRACTION') {
+      extractionPaused = false;
+      console.log('[WHL] ▶️ Extração retomada');
+      window.postMessage({ type: 'WHL_EXTRACTION_RESUMED' }, '*');
+    }
+    
+    if (ev.data.type === 'WHL_CANCEL_EXTRACTION') {
+      extractionCancelled = true;
+      console.log('[WHL] ⛔ Extração cancelada');
+      window.postMessage({ 
+        type: 'WHL_EXTRACT_RESULT', 
+        numbers: PhoneStore.getFiltered(),
+        cancelled: true
+      }, '*');
     }
   });
 

@@ -778,7 +778,12 @@
           
           <div class="row" style="margin-top:10px">
             <button class="success" style="flex:1" id="whlExtractContacts">📥 Extrair contatos</button>
-            <button style="width:150px" id="whlCopyExtracted">🔁 Copiar → Números</button>
+            <button style="width:150px" id="whlCopyExtracted">📋 Copiar Números</button>
+          </div>
+          
+          <div class="row" style="margin-top:8px;display:none" id="whlExtractControls">
+            <button class="warning" style="flex:1" id="whlPauseExtraction">⏸️ Pausar</button>
+            <button class="danger" style="flex:1" id="whlCancelExtraction">⛔ Cancelar</button>
           </div>
           
           <div id="whlExtractProgress" style="display:none;margin-top:10px">
@@ -2375,12 +2380,22 @@
 try {
   const btnExtract = document.getElementById('whlExtractContacts');
   const boxExtract = document.getElementById('whlExtractedNumbers');
-  const boxNumbers = document.getElementById('whlNumbers');
+  const extractControls = document.getElementById('whlExtractControls');
+  const btnPause = document.getElementById('whlPauseExtraction');
+  const btnCancel = document.getElementById('whlCancelExtraction');
+  
+  let isExtracting = false;
+  let isPaused = false;
 
   if (btnExtract && boxExtract) {
     btnExtract.addEventListener('click', () => {
       btnExtract.disabled = true;
       btnExtract.textContent = '⏳ Extraindo...';
+      isExtracting = true;
+      isPaused = false;
+      
+      if (extractControls) extractControls.style.display = 'flex';
+      
       const st = document.getElementById('whlExtractStatus'); 
       if (st) st.textContent = 'Iniciando extração...';
       const progressBar = document.getElementById('whlExtractProgress');
@@ -2390,6 +2405,36 @@ try {
       if (progressFill) progressFill.style.width = '0%';
       if (progressText) progressText.textContent = '0% - 0 contatos encontrados';
       window.postMessage({ type: 'WHL_EXTRACT_CONTACTS' }, '*');
+    });
+  }
+  
+  // Botão de pausar
+  if (btnPause) {
+    btnPause.addEventListener('click', () => {
+      if (isPaused) {
+        // Retomar
+        window.postMessage({ type: 'WHL_RESUME_EXTRACTION' }, '*');
+        btnPause.textContent = '⏸️ Pausar';
+        isPaused = false;
+        const st = document.getElementById('whlExtractStatus');
+        if (st) st.textContent = 'Extração retomada...';
+      } else {
+        // Pausar
+        window.postMessage({ type: 'WHL_PAUSE_EXTRACTION' }, '*');
+        btnPause.textContent = '▶️ Continuar';
+        isPaused = true;
+        const st = document.getElementById('whlExtractStatus');
+        if (st) st.textContent = 'Extração pausada. Clique em "Continuar" para retomar.';
+      }
+    });
+  }
+  
+  // Botão de cancelar
+  if (btnCancel) {
+    btnCancel.addEventListener('click', () => {
+      window.postMessage({ type: 'WHL_CANCEL_EXTRACTION' }, '*');
+      const st = document.getElementById('whlExtractStatus');
+      if (st) st.textContent = 'Cancelando extração...';
     });
   }
 
@@ -2409,15 +2454,31 @@ try {
       if (progressBar) progressBar.style.display = 'block';
       if (progressFill) progressFill.style.width = `${progress}%`;
       if (progressText) progressText.textContent = `${progress}% - ${count} contatos encontrados`;
-      if (statusEl) statusEl.textContent = `Extraindo... ${progress}% - ${count} contatos`;
+      
+      if (statusEl) {
+        if (isPaused) {
+          statusEl.textContent = `Pausado - ${count} contatos até agora`;
+        } else {
+          statusEl.textContent = `Extraindo... ${progress}% - ${count} contatos`;
+        }
+      }
     }
 
     if (e.data.type === 'WHL_EXTRACT_RESULT') {
       const nums = e.data.numbers || [];
       if (boxExtract) boxExtract.value = nums.join('\n');
       
+      isExtracting = false;
+      isPaused = false;
+      
+      if (extractControls) extractControls.style.display = 'none';
+      
       const statusEl = document.getElementById('whlExtractStatus');
-      if (statusEl) statusEl.textContent = `Finalizado ✅ Total: ${nums.length}`;
+      if (e.data.cancelled) {
+        if (statusEl) statusEl.textContent = `⛔ Extração cancelada. Total: ${nums.length} números`;
+      } else {
+        if (statusEl) statusEl.textContent = `✅ Finalizado! Total: ${nums.length} números`;
+      }
       
       const progressBar = document.getElementById('whlExtractProgress');
       if (progressBar) {
@@ -2430,11 +2491,20 @@ try {
         btnExtract.disabled = false;
         btnExtract.textContent = '📥 Extrair contatos';
       }
+      
+      if (btnPause) {
+        btnPause.textContent = '⏸️ Pausar';
+      }
     }
 
     if (e.data.type === 'WHL_EXTRACT_ERROR') {
       console.error('[WHL] Erro no extrator:', e.data.error);
       alert('Erro ao extrair contatos');
+      
+      isExtracting = false;
+      isPaused = false;
+      
+      if (extractControls) extractControls.style.display = 'none';
       
       const progressBar = document.getElementById('whlExtractProgress');
       if (progressBar) progressBar.style.display = 'none';
@@ -2444,14 +2514,45 @@ try {
         btnExtract.textContent = '📥 Extrair contatos';
       }
     }
+    
+    if (e.data.type === 'WHL_EXTRACTION_PAUSED') {
+      const statusEl = document.getElementById('whlExtractStatus');
+      if (statusEl) statusEl.textContent = 'Extração pausada. Clique em "Continuar" para retomar.';
+    }
+    
+    if (e.data.type === 'WHL_EXTRACTION_RESUMED') {
+      const statusEl = document.getElementById('whlExtractStatus');
+      if (statusEl) statusEl.textContent = 'Extração retomada...';
+    }
   });
 
-  // Copiar → Números
-  const btnCopyToNumbers = document.getElementById('whlCopyExtracted');
-  if (btnCopyToNumbers && boxExtract && boxNumbers) {
-    btnCopyToNumbers.addEventListener('click', () => {
-      boxNumbers.value = boxExtract.value || '';
-      boxNumbers.dispatchEvent(new Event('input', { bubbles: true }));
+  // Copiar números para clipboard (NÃO adiciona automaticamente na aba principal)
+  const btnCopyToClipboard = document.getElementById('whlCopyExtracted');
+  if (btnCopyToClipboard && boxExtract) {
+    btnCopyToClipboard.addEventListener('click', async () => {
+      const numbers = boxExtract.value || '';
+      if (!numbers.trim()) {
+        alert('Nenhum número para copiar. Execute a extração primeiro.');
+        return;
+      }
+      
+      try {
+        await navigator.clipboard.writeText(numbers);
+        const originalText = btnCopyToClipboard.textContent;
+        btnCopyToClipboard.textContent = '✅ Copiado!';
+        setTimeout(() => {
+          btnCopyToClipboard.textContent = originalText;
+        }, 2000);
+        
+        const statusEl = document.getElementById('whlExtractStatus');
+        if (statusEl) {
+          const count = numbers.split('\n').filter(n => n.trim()).length;
+          statusEl.textContent = `✅ ${count} números copiados para área de transferência`;
+        }
+      } catch (err) {
+        console.error('[WHL] Erro ao copiar:', err);
+        alert('Erro ao copiar números para área de transferência');
+      }
     });
   }
 
@@ -2831,6 +2932,47 @@ try {
   }
 
   /**
+   * Converte imagem WebP para JPEG
+   * Evita que imagens WebP sejam enviadas como stickers
+   */
+  async function convertWebPtoJPEG(file) {
+    return new Promise((resolve) => {
+      if (!file.type.includes('webp')) {
+        resolve(file);
+        return;
+      }
+      
+      console.log('[WHL] 🔄 Convertendo WebP para JPEG...');
+      
+      const img = new Image();
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      img.onload = () => {
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img, 0, 0);
+        
+        canvas.toBlob((blob) => {
+          const newFile = new File([blob], file.name.replace('.webp', '.jpg'), {
+            type: 'image/jpeg',
+            lastModified: Date.now()
+          });
+          console.log('[WHL] ✅ WebP convertido para JPEG');
+          resolve(newFile);
+        }, 'image/jpeg', 0.92);
+      };
+      
+      img.onerror = () => {
+        console.log('[WHL] ❌ Erro ao converter WebP, usando original');
+        resolve(file);
+      };
+      
+      img.src = URL.createObjectURL(file);
+    });
+  }
+
+  /**
    * DEPRECATED: Anexa imagem e digita legenda manualmente
    * ATUALIZADO: Usa seletores CONFIRMADOS pelo usuário
    * NOTA: Esta função é mantida como fallback. Use sendTextWithImage() ao invés desta.
@@ -2976,16 +3118,22 @@ try {
       } else if (mimeType.includes('gif')) {
         extension = 'gif';
       } else if (mimeType.includes('webp')) {
-        // IMPORTANTE: Se for webp, será enviada como foto (não sticker)
-        console.log('[WHL] ⚠️ Imagem webp detectada, será enviada como foto (não sticker)');
+        // IMPORTANTE: WebP pode ser enviado como sticker - converter para JPEG
+        console.log('[WHL] ⚠️ Imagem webp detectada, convertendo para JPEG...');
         extension = 'webp';
       }
       
       const timestamp = Date.now();
-      const file = new File([blob], `foto_${timestamp}.${extension}`, { 
+      let file = new File([blob], `foto_${timestamp}.${extension}`, { 
         type: mimeType,
         lastModified: timestamp
       });
+      
+      // Converter WebP para JPEG para evitar ser enviado como sticker
+      if (mimeType.includes('webp')) {
+        file = await convertWebPtoJPEG(file);
+        console.log('[WHL] ✅ Arquivo convertido:', file.type, file.name);
+      }
 
       console.log('[WHL] 📷 Arquivo preparado:', {
         tipo: mimeType,
@@ -3010,7 +3158,7 @@ try {
 
       attachBtn.click();
       console.log('[WHL] ✅ Botão de anexar clicado');
-      await new Promise(r => setTimeout(r, 800));
+      await new Promise(r => setTimeout(r, 1000));
 
       // PASSO 4: CRÍTICO - Clicar especificamente em "Fotos e vídeos"
       // O menu de anexar tem várias opções: Documento, Câmera, Sticker, Fotos e vídeos
@@ -3019,7 +3167,8 @@ try {
       
       // Método 1: Procurar por data-testid específico
       let photosBtn = document.querySelector('[data-testid="attach-image"]') ||
-                      document.querySelector('[data-testid="mi-attach-media"]');
+                      document.querySelector('[data-testid="mi-attach-media"]') ||
+                      document.querySelector('[data-testid="attach-photo"]');
       
       // Método 2: Procurar por aria-label ou texto
       if (!photosBtn) {
@@ -3027,7 +3176,7 @@ try {
         for (const item of menuItems) {
           const label = (item.getAttribute('aria-label') || item.textContent || '').toLowerCase();
           // Procurar por "fotos", "vídeos", "photos", "videos" - mas NÃO "figurinha" ou "sticker"
-          if ((label.includes('foto') || label.includes('photo') || label.includes('vídeo') || label.includes('video') || label.includes('mídia') || label.includes('media')) && 
+          if ((label.includes('foto') || label.includes('photo') || label.includes('vídeo') || label.includes('video') || label.includes('mídia') || label.includes('media') || label.includes('imagem') || label.includes('image')) && 
               !label.includes('figurinha') && !label.includes('sticker') && !label.includes('adesivo')) {
             photosBtn = item;
             console.log('[WHL] ✅ Encontrou opção de mídia:', label);
@@ -3041,8 +3190,8 @@ try {
         const icons = document.querySelectorAll('span[data-icon]');
         for (const icon of icons) {
           const iconName = icon.getAttribute('data-icon') || '';
-          // Ícones de mídia: gallery, image, photo
-          if (iconName.includes('gallery') || iconName.includes('image') || iconName.includes('photo')) {
+          // Ícones de mídia: gallery, image, photo, attach-image
+          if (iconName.includes('gallery') || iconName.includes('image') || iconName.includes('photo') || iconName.includes('attach-image')) {
             photosBtn = icon.closest('li') || icon.closest('button') || icon.closest('div[role="button"]');
             if (photosBtn) {
               console.log('[WHL] ✅ Encontrou ícone de mídia:', iconName);
@@ -3055,7 +3204,7 @@ try {
       if (photosBtn) {
         photosBtn.click();
         console.log('[WHL] ✅ Clicou em Fotos e vídeos');
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise(r => setTimeout(r, 800));
       } else {
         console.log('[WHL] ⚠️ Opção "Fotos e vídeos" não encontrada, tentando input direto');
       }
@@ -3137,7 +3286,27 @@ try {
       imageInput.dispatchEvent(new Event('change', { bubbles: true }));
       
       console.log('[WHL] ✅ Imagem anexada, aguardando preview...');
-      await new Promise(r => setTimeout(r, 2500));
+      // Aumentar delay para aguardar preview abrir (mínimo 1500ms conforme spec)
+      await new Promise(r => setTimeout(r, 2000));
+      
+      // Retry: verificar se preview abriu
+      let retries = 0;
+      let previewFound = false;
+      while (retries < 5 && !previewFound) {
+        const dialog = document.querySelector('[role="dialog"]');
+        if (dialog) {
+          previewFound = true;
+          console.log('[WHL] ✅ Preview detectado');
+          break;
+        }
+        console.log(`[WHL] ⏳ Aguardando preview... tentativa ${retries + 1}/5`);
+        await new Promise(r => setTimeout(r, 1000));
+        retries++;
+      }
+      
+      if (!previewFound) {
+        console.log('[WHL] ⚠️ Preview não detectado após 5 segundos, continuando...');
+      }
 
       // PASSO 7: Enviar a imagem
       console.log('[WHL] 📤 PASSO 5: Enviando IMAGEM...');
