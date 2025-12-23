@@ -665,6 +665,8 @@
       <div class="whl-tabs">
         <button class="whl-tab active" data-tab="principal">📱 Principal</button>
         <button class="whl-tab" data-tab="extrator">📥 Extrator</button>
+        <button class="whl-tab" data-tab="grupos">👥 Grupos</button>
+        <button class="whl-tab" data-tab="recover">🔄 Recover</button>
         <button class="whl-tab" data-tab="config">⚙️ Configurações</button>
       </div>
 
@@ -782,7 +784,7 @@
           </div>
           
           <!-- Botões de controle - SEMPRE VISÍVEIS durante extração -->
-          <div class="row" style="margin-top:8px;display:none" id="whlExtractControls">
+          <div class="row" style="margin-top:8px" id="whlExtractControls">
             <button class="warning" style="flex:1" id="whlPauseExtraction">⏸️ Pausar</button>
             <button class="danger" style="flex:1" id="whlCancelExtraction">⛔ Cancelar</button>
           </div>
@@ -824,6 +826,74 @@
           <div class="tiny" id="whlExtractStatus" style="margin-top:10px;opacity:.8"></div>
           
           <button class="primary" style="width:100%;margin-top:8px" id="whlExportExtractedCsv">📥 Exportar CSV</button>
+        </div>
+      </div>
+
+      <!-- Nova Aba: Grupos -->
+      <div class="whl-tab-content" id="whl-tab-grupos">
+        <div class="card">
+          <div class="title">👥 Extrair Membros de Grupos</div>
+          <div class="muted">Selecione um grupo para extrair os números dos participantes.</div>
+          
+          <div class="row" style="margin-top:10px">
+            <button class="primary" style="flex:1" id="whlLoadGroups">🔄 Carregar Grupos</button>
+          </div>
+          
+          <select id="whlGroupsList" size="8" style="width:100%;margin-top:10px;min-height:200px;background:rgba(255,255,255,0.05);color:#fff;border-radius:8px;padding:8px;border:1px solid rgba(255,255,255,0.1)">
+            <option disabled style="color:#888">Clique em "Carregar Grupos" primeiro...</option>
+          </select>
+          
+          <div class="row" style="margin-top:10px">
+            <button class="success" style="flex:1" id="whlExtractGroupMembers">📥 Extrair Membros</button>
+            <button style="width:150px" id="whlCopyGroupMembers">📋 Copiar</button>
+          </div>
+          
+          <div style="margin-top:10px">
+            <div class="muted">Membros extraídos: <span id="whlGroupMembersCount">0</span></div>
+            <textarea id="whlGroupMembersNumbers" placeholder="Números dos membros..." style="min-height:200px;margin-top:6px"></textarea>
+          </div>
+          
+          <button class="primary" style="width:100%;margin-top:10px" id="whlExportGroupCsv">📥 Exportar CSV</button>
+        </div>
+      </div>
+
+      <!-- Nova Aba: Recover Ultra++ -->
+      <div class="whl-tab-content" id="whl-tab-recover">
+        <div class="card">
+          <div class="title">🔄 RECOVER ULTRA++ (Anti-Revoke)</div>
+          <div class="muted">Recupera mensagens apagadas (texto, imagem, áudio, vídeo).</div>
+          
+          <div class="stats" style="margin-top:10px;display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+            <div class="stat-item" style="text-align:center">
+              <div class="muted" style="font-size:11px">Status</div>
+              <span class="stat-value" id="whlRecoverStatus" style="font-size:13px">🟢 Ativo</span>
+            </div>
+            <div class="stat-item" style="text-align:center">
+              <div class="muted" style="font-size:11px">Mensagens Salvas</div>
+              <span class="stat-value" id="whlRecoverCount" style="font-size:13px">0</span>
+            </div>
+            <div class="stat-item" style="text-align:center">
+              <div class="muted" style="font-size:11px">Recuperadas</div>
+              <span class="stat-value" id="whlRecoveredCount" style="font-size:13px">0</span>
+            </div>
+          </div>
+          
+          <div class="row" style="margin-top:10px">
+            <button class="success" style="flex:1" id="whlRecoverEnable">✅ Ativar</button>
+            <button class="danger" style="flex:1" id="whlRecoverDisable">❌ Desativar</button>
+          </div>
+          
+          <div style="margin-top:15px">
+            <div class="title" style="font-size:13px">📜 Histórico de Mensagens Recuperadas</div>
+            <div id="whlRecoverHistory" style="max-height:300px;overflow-y:auto;background:rgba(0,0,0,0.2);border-radius:8px;padding:10px;margin-top:8px">
+              <div class="muted">Nenhuma mensagem recuperada ainda...</div>
+            </div>
+          </div>
+          
+          <div class="row" style="margin-top:10px">
+            <button class="primary" style="flex:1" id="whlExportRecovered">📥 Exportar JSON</button>
+            <button style="flex:1" id="whlClearRecovered">🗑️ Limpar Histórico</button>
+          </div>
         </div>
       </div>
 
@@ -898,8 +968,26 @@
           <div class="title" style="font-size:13px">💾 Rascunhos</div>
           
           <div class="row" style="margin-top:10px">
-            <button style="flex:1" id="whlSaveDraft">💾 Salvar</button>
-            <button style="flex:1" id="whlLoadDraft">📂 Carregar</button>
+            <input type="text" id="whlDraftName" placeholder="Nome do rascunho..." style="flex:1;padding:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:4px;color:#fff">
+            <button style="width:100px;margin-left:8px" id="whlSaveDraft">💾 Salvar</button>
+          </div>
+          
+          <div style="margin-top:10px;max-height:200px;overflow-y:auto">
+            <table id="whlDraftsTable" style="width:100%;border-collapse:collapse">
+              <thead>
+                <tr style="border-bottom:1px solid rgba(255,255,255,0.1)">
+                  <th style="padding:8px;text-align:left;font-size:11px">Nome</th>
+                  <th style="padding:8px;text-align:left;font-size:11px">Data</th>
+                  <th style="padding:8px;text-align:center;font-size:11px">Contatos</th>
+                  <th style="padding:8px;text-align:center;font-size:11px">Ações</th>
+                </tr>
+              </thead>
+              <tbody id="whlDraftsBody">
+                <tr>
+                  <td colspan="4" style="padding:12px;text-align:center;opacity:0.6;font-size:11px">Nenhum rascunho salvo</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
 
@@ -1007,6 +1095,147 @@
     
     const statusEl = document.getElementById('whlExtractStatus');
     if (statusEl) statusEl.textContent = `✅ CSV exportado com ${numbers.length} números`;
+  }
+
+  // ===== DRAFT MANAGEMENT FUNCTIONS =====
+  async function saveDraft(name) {
+    const st = await getState();
+    
+    const draft = {
+      name: name,
+      savedAt: new Date().toISOString(),
+      // Configurações
+      delayMin: st.delayMin,
+      delayMax: st.delayMax,
+      retryMax: st.retryMax,
+      scheduleAt: st.scheduleAt,
+      typingEffect: st.typingEffect,
+      continueOnError: st.continueOnError,
+      // Conteúdo
+      numbersText: st.numbersText,
+      message: st.message,
+      imageData: st.imageData,
+      // Contatos extraídos
+      extractedNormal: document.getElementById('whlExtractedNumbers')?.value || '',
+      extractedArchived: document.getElementById('whlArchivedNumbers')?.value || '',
+      extractedBlocked: document.getElementById('whlBlockedNumbers')?.value || '',
+      // Fila atual
+      queue: st.queue,
+      index: st.index,
+      stats: st.stats
+    };
+    
+    st.drafts = st.drafts || {};
+    st.drafts[name] = draft;
+    await setState(st);
+    
+    await renderDraftsTable();
+  }
+
+  async function loadDraft(name) {
+    const st = await getState();
+    const draft = st.drafts?.[name];
+    if (!draft) return;
+    
+    // Restaurar configurações
+    st.delayMin = draft.delayMin ?? st.delayMin;
+    st.delayMax = draft.delayMax ?? st.delayMax;
+    st.retryMax = draft.retryMax ?? st.retryMax;
+    st.scheduleAt = draft.scheduleAt || '';
+    st.typingEffect = draft.typingEffect ?? st.typingEffect;
+    st.continueOnError = draft.continueOnError ?? st.continueOnError;
+    
+    // Restaurar conteúdo
+    st.numbersText = draft.numbersText || '';
+    st.message = draft.message || '';
+    st.imageData = draft.imageData || null;
+    
+    // Restaurar fila
+    st.queue = draft.queue || [];
+    st.index = draft.index || 0;
+    st.stats = draft.stats || { sent: 0, failed: 0, pending: 0 };
+    
+    await setState(st);
+    
+    // Restaurar campos extraídos
+    const normalBox = document.getElementById('whlExtractedNumbers');
+    const archivedBox = document.getElementById('whlArchivedNumbers');
+    const blockedBox = document.getElementById('whlBlockedNumbers');
+    
+    if (normalBox) normalBox.value = draft.extractedNormal || '';
+    if (archivedBox) archivedBox.value = draft.extractedArchived || '';
+    if (blockedBox) blockedBox.value = draft.extractedBlocked || '';
+    
+    // Atualizar contadores
+    const normalCount = document.getElementById('whlNormalCount');
+    const archivedCount = document.getElementById('whlArchivedCount');
+    const blockedCount = document.getElementById('whlBlockedCount');
+    
+    if (normalCount) normalCount.textContent = (draft.extractedNormal || '').split('\n').filter(n => n.trim()).length;
+    if (archivedCount) archivedCount.textContent = (draft.extractedArchived || '').split('\n').filter(n => n.trim()).length;
+    if (blockedCount) blockedCount.textContent = (draft.extractedBlocked || '').split('\n').filter(n => n.trim()).length;
+    
+    await render();
+    alert(`✅ Rascunho "${name}" carregado!`);
+  }
+
+  async function deleteDraft(name) {
+    const st = await getState();
+    if (st.drafts?.[name]) {
+      delete st.drafts[name];
+      await setState(st);
+      await renderDraftsTable();
+    }
+  }
+
+  async function renderDraftsTable() {
+    const st = await getState();
+    const tbody = document.getElementById('whlDraftsBody');
+    if (!tbody) return;
+    
+    const drafts = st.drafts || {};
+    const names = Object.keys(drafts);
+    
+    if (names.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="padding:12px;text-align:center;opacity:0.6;font-size:11px">Nenhum rascunho salvo</td></tr>';
+      return;
+    }
+    
+    tbody.innerHTML = names.map(name => {
+      const d = drafts[name];
+      const date = new Date(d.savedAt).toLocaleString('pt-BR', { 
+        day: '2-digit', 
+        month: '2-digit', 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+      const contacts = (d.queue?.length || 0) + 
+                       (d.extractedNormal?.split('\n').filter(n => n.trim()).length || 0);
+      
+      return `
+        <tr style="border-bottom:1px solid rgba(255,255,255,0.05)">
+          <td style="padding:8px;font-size:11px">${name}</td>
+          <td style="padding:8px;font-size:10px;color:#888">${date}</td>
+          <td style="padding:8px;text-align:center;font-size:11px">${contacts}</td>
+          <td style="padding:8px;text-align:center">
+            <button data-draft-load="${name}" style="padding:4px 8px;margin-right:4px;font-size:11px;cursor:pointer">📂</button>
+            <button data-draft-delete="${name}" style="padding:4px 8px;font-size:11px;cursor:pointer;background:#d00;color:#fff;border:none;border-radius:4px">🗑️</button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+    
+    // Bind events
+    tbody.querySelectorAll('[data-draft-load]').forEach(btn => {
+      btn.onclick = () => loadDraft(btn.dataset.draftLoad);
+    });
+    tbody.querySelectorAll('[data-draft-delete]').forEach(btn => {
+      btn.onclick = () => {
+        if (confirm(`Excluir rascunho "${btn.dataset.draftDelete}"?`)) {
+          deleteDraft(btn.dataset.draftDelete);
+        }
+      };
+    });
   }
 
 
@@ -2421,7 +2650,6 @@ try {
       isExtracting = true;
       isPaused = false;
       
-      if (extractControls) extractControls.style.display = 'flex';
       
       const st = document.getElementById('whlExtractStatus'); 
       if (st) st.textContent = 'Iniciando extração...';
@@ -2519,7 +2747,7 @@ try {
       isExtracting = false;
       isPaused = false;
       
-      if (extractControls) extractControls.style.display = 'none';
+      // Keep controls visible - no longer hiding them
       
       const statusEl = document.getElementById('whlExtractStatus');
       const totalCount = normal.length + archived.length + blocked.length;
@@ -2703,6 +2931,205 @@ try {
   console.error('[WHL] Falha ao bindar extrator no painel', e);
 }
 
+// ===== WHL: Bind Grupos (Groups) Tab =====
+try {
+  const btnLoadGroups = document.getElementById('whlLoadGroups');
+  const btnExtractGroupMembers = document.getElementById('whlExtractGroupMembers');
+  const btnCopyGroupMembers = document.getElementById('whlCopyGroupMembers');
+  const btnExportGroupCsv = document.getElementById('whlExportGroupCsv');
+  const groupsList = document.getElementById('whlGroupsList');
+  const groupMembersBox = document.getElementById('whlGroupMembersNumbers');
+  const groupMembersCount = document.getElementById('whlGroupMembersCount');
+
+  let loadedGroups = [];
+
+  if (btnLoadGroups) {
+    btnLoadGroups.addEventListener('click', async () => {
+      btnLoadGroups.disabled = true;
+      btnLoadGroups.textContent = '⏳ Carregando...';
+      
+      try {
+        // Wait for WhatsApp Store to be available
+        await new Promise(resolve => {
+          if (window.Store) return resolve();
+          const interval = setInterval(() => {
+            if (window.Store) {
+              clearInterval(interval);
+              resolve();
+            }
+          }, 100);
+          setTimeout(() => { clearInterval(interval); resolve(); }, 5000);
+        });
+
+        await new Promise(r => setTimeout(r, 1000));
+
+        const chats = window.Store?.Chat?.models || [];
+        const groups = chats.filter(chat => chat.isGroup).map(chat => ({
+          id: chat.id?._serialized,
+          name: chat.formattedTitle || chat.name || 'Grupo sem nome'
+        }));
+
+        loadedGroups = groups;
+
+        if (groupsList) {
+          groupsList.innerHTML = '';
+          if (groups.length === 0) {
+            const option = document.createElement('option');
+            option.disabled = true;
+            option.textContent = 'Nenhum grupo encontrado';
+            groupsList.appendChild(option);
+          } else {
+            groups.forEach(group => {
+              const option = document.createElement('option');
+              option.value = group.id;
+              option.textContent = group.name;
+              groupsList.appendChild(option);
+            });
+          }
+        }
+
+        alert(`✅ ${groups.length} grupos carregados!`);
+      } catch (e) {
+        console.error('[WHL] Erro ao carregar grupos:', e);
+        alert('Erro ao carregar grupos. Tente novamente.');
+      } finally {
+        btnLoadGroups.disabled = false;
+        btnLoadGroups.textContent = '🔄 Carregar Grupos';
+      }
+    });
+  }
+
+  if (btnExtractGroupMembers && groupsList && groupMembersBox) {
+    btnExtractGroupMembers.addEventListener('click', async () => {
+      const selectedGroupId = groupsList.value;
+      if (!selectedGroupId) {
+        alert('Selecione um grupo primeiro');
+        return;
+      }
+
+      btnExtractGroupMembers.disabled = true;
+      btnExtractGroupMembers.textContent = '⏳ Extraindo...';
+
+      try {
+        const chat = window.Store?.Chat?.models.find(c => c.id?._serialized === selectedGroupId);
+        if (!chat) {
+          alert('Grupo não encontrado');
+          return;
+        }
+
+        // Try to get group metadata
+        const metadata = await chat.groupMetadata;
+        const participants = metadata?.participants || [];
+        
+        const numbers = participants.map(p => {
+          const id = p.id?._serialized || p.id?.user;
+          if (id) {
+            const num = id.replace('@c.us', '').replace('@s.whatsapp.net', '');
+            return num.startsWith('+') ? num : `+${num}`;
+          }
+          return null;
+        }).filter(Boolean);
+
+        groupMembersBox.value = numbers.join('\n');
+        if (groupMembersCount) groupMembersCount.textContent = numbers.length;
+
+        alert(`✅ ${numbers.length} membros extraídos!`);
+      } catch (e) {
+        console.error('[WHL] Erro ao extrair membros:', e);
+        alert('Erro ao extrair membros. Tente novamente.');
+      } finally {
+        btnExtractGroupMembers.disabled = false;
+        btnExtractGroupMembers.textContent = '📥 Extrair Membros';
+      }
+    });
+  }
+
+  if (btnCopyGroupMembers && groupMembersBox) {
+    btnCopyGroupMembers.addEventListener('click', async () => {
+      const numbers = groupMembersBox.value || '';
+      if (!numbers.trim()) {
+        alert('Nenhum número para copiar');
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(numbers);
+        const originalText = btnCopyGroupMembers.textContent;
+        btnCopyGroupMembers.textContent = '✅ Copiado!';
+        setTimeout(() => {
+          btnCopyGroupMembers.textContent = originalText;
+        }, 2000);
+      } catch (err) {
+        console.error('[WHL] Erro ao copiar:', err);
+        alert('Erro ao copiar números');
+      }
+    });
+  }
+
+  if (btnExportGroupCsv && groupMembersBox) {
+    btnExportGroupCsv.addEventListener('click', () => {
+      const numbers = groupMembersBox.value.split('\n').filter(n => n.trim());
+      if (numbers.length === 0) {
+        alert('Nenhum número para exportar');
+        return;
+      }
+
+      const rows = [['phone']];
+      numbers.forEach(phone => rows.push([phone.trim()]));
+      
+      const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+      const blob = new Blob([csv], { type:'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `group_members_${Date.now()}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  }
+} catch(e) {
+  console.error('[WHL] Falha ao bindar grupos no painel', e);
+}
+
+// ===== WHL: Bind Recover Ultra++ Tab =====
+try {
+  const btnRecoverEnable = document.getElementById('whlRecoverEnable');
+  const btnRecoverDisable = document.getElementById('whlRecoverDisable');
+  const btnExportRecovered = document.getElementById('whlExportRecovered');
+  const btnClearRecovered = document.getElementById('whlClearRecovered');
+
+  if (btnRecoverEnable) {
+    btnRecoverEnable.addEventListener('click', () => {
+      window.postMessage({ type: 'WHL_RECOVER_ENABLE' }, '*');
+      alert('✅ Recover Ultra++ ativado!');
+    });
+  }
+
+  if (btnRecoverDisable) {
+    btnRecoverDisable.addEventListener('click', () => {
+      window.postMessage({ type: 'WHL_RECOVER_DISABLE' }, '*');
+      alert('❌ Recover Ultra++ desativado!');
+    });
+  }
+
+  if (btnExportRecovered) {
+    btnExportRecovered.addEventListener('click', () => {
+      window.postMessage({ type: 'WHL_RECOVER_EXPORT' }, '*');
+    });
+  }
+
+  if (btnClearRecovered) {
+    btnClearRecovered.addEventListener('click', () => {
+      if (confirm('Tem certeza que deseja limpar todo o histórico de mensagens recuperadas?')) {
+        window.postMessage({ type: 'WHL_RECOVER_CLEAR' }, '*');
+        alert('🗑️ Histórico limpo!');
+      }
+    });
+  }
+} catch(e) {
+  console.error('[WHL] Falha ao bindar recover no painel', e);
+}
+
 // persist typing
     document.getElementById('whlNumbers').addEventListener('input', async (e) => {
       const st = await getState();
@@ -2824,43 +3251,23 @@ try {
     
     // Drafts
     document.getElementById('whlSaveDraft').addEventListener('click', async () => {
-      const name = prompt('Nome do rascunho:', 'default') || 'default';
-      const st = await getState();
-      st.drafts = st.drafts || {};
-      st.drafts[name] = {
-        numbersText: st.numbersText, message: st.message, imageData: st.imageData,
-        delayMin: st.delayMin, delayMax: st.delayMax, retryMax: st.retryMax,
-        scheduleAt: st.scheduleAt, typingEffect: st.typingEffect
-      };
-      await setState(st);
-      await render();
-    });
-    document.getElementById('whlLoadDraft').addEventListener('click', async () => {
-      const st = await getState();
-      const keys = Object.keys(st.drafts||{});
+      const nameInput = document.getElementById('whlDraftName');
+      const name = nameInput?.value?.trim() || '';
       
-      if (!keys.length) {
-        // Mostrar mensagem clara
-        alert('Nenhum rascunho salvo.\n\nPara salvar um rascunho, preencha os campos e clique em "Salvar".');
+      if (!name) {
+        alert('Por favor, digite um nome para o rascunho.');
         return;
       }
       
-      const name = prompt('Rascunhos disponíveis:\n\n' + keys.map((k, i) => `${i+1}. ${k}`).join('\n') + '\n\nDigite o nome do rascunho:', keys[0]);
-      if (!name || !st.drafts[name]) {
-        if (name) alert(`Rascunho "${name}" não encontrado.`);
-        return;
-      }
+      await saveDraft(name);
       
-      const d = st.drafts[name];
-      st.numbersText = d.numbersText||''; st.message=d.message||''; st.imageData=d.imageData||null;
-      st.delayMin = d.delayMin ?? st.delayMin; st.delayMax = d.delayMax ?? st.delayMax;
-      st.retryMax = d.retryMax ?? st.retryMax; st.scheduleAt = d.scheduleAt||'';
-      st.typingEffect = d.typingEffect ?? st.typingEffect;
-      await setState(st);
-      await render();
+      if (nameInput) nameInput.value = '';
       
-      alert(`Rascunho "${name}" carregado com sucesso!`);
+      alert(`✅ Rascunho "${name}" salvo com sucesso!`);
     });
+    
+    // Render drafts table on load
+    await renderDraftsTable();
     // Report
     document.getElementById('whlExportReport').addEventListener('click', async ()=>{ await whlExportReportCSV(); const h=document.getElementById('whlReportHint'); if(h) h.textContent='✅ Exportado.'; });
     document.getElementById('whlCopyFailed').addEventListener('click', async ()=>{ const st=await getState(); const f=(st.queue||[]).filter(x=>x.status==='failed'||x.valid===false).map(x=>x.phone).join('\n'); await navigator.clipboard.writeText(f); const h=document.getElementById('whlReportHint'); if(h) h.textContent='✅ Falhas copiadas.'; });
