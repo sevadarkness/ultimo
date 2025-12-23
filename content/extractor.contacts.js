@@ -42,6 +42,7 @@
       return num;
     }
     // If it's a 10 or 11 digit number without country code, add 55
+    // NOTE: This assumes Brazilian context. Non-Brazilian numbers should be filtered by hasBrazilianDDD()
     if (num.length === 10 || num.length === 11) {
       return '55' + num;
     }

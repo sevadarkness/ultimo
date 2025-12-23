@@ -2237,7 +2237,8 @@
     const rawNums = (st.numbersText||'').split(/\r?\n/).map(n => whlSanitize(n)).filter(n => n.length >= 1);
     
     // MELHORIA: Remover duplicatas usando Set
-    // Também normaliza para evitar que 5521... e 21... sejam considerados diferentes
+    // Normaliza para evitar que 5521... e 21... sejam considerados diferentes
+    // NOTA: Sistema projetado para números brasileiros. Números com 10-11 dígitos são assumidos como brasileiros.
     const uniqueNums = [];
     const seen = new Set();
     
@@ -2254,7 +2255,8 @@
         continue;
       }
       
-      // Também verificar a versão sem 55 para números brasileiros (12-13 dígitos com 55)
+      // Para números brasileiros válidos (12-13 dígitos com 55), também verificar versão sem 55
+      // Isso garante que 5521999999999 e 21999999999 sejam tratados como duplicados (mesmo número)
       if (normalized.startsWith('55') && (normalized.length === 12 || normalized.length === 13)) {
         const without55 = normalized.substring(2);
         if (seen.has(without55)) {
