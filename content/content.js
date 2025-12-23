@@ -3359,7 +3359,7 @@ try {
         console.log('[WHL] Analisando input:', accept);
         
         // EVITAR input de sticker (apenas image/webp)
-        if (accept === 'image/webp' || accept.match(/^image\/webp$/)) {
+        if (accept === 'image/webp') {
           console.log('[WHL] ⚠️ Ignorando input de sticker:', accept);
           continue;
         }
@@ -3376,7 +3376,7 @@ try {
       if (!imageInput) {
         for (const input of allInputs) {
           const accept = input.getAttribute('accept') || '';
-          if (accept.includes('image') && !accept.match(/^image\/webp$/)) {
+          if (accept.includes('image') && accept !== 'image/webp') {
             imageInput = input;
             console.log('[WHL] ✅ Input de imagem encontrado (fallback 1):', accept);
             break;

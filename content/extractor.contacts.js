@@ -436,19 +436,14 @@
         const key = localStorage.key(i);
         if (key && (key.includes('archived') || key.includes('archive'))) {
           const value = localStorage.getItem(key);
-          if (value) {
-            try {
-              const data = JSON.parse(value);
-              const str = JSON.stringify(data);
-              if (str.includes('@c.us')) {
-                const matches = str.matchAll(/(\d{10,15})@c\.us/g);
-                for (const match of matches) {
-                  if (PhoneStore.add(match[1], 'cus', str, 'archived')) {
-                    count++;
-                  }
-                }
+          if (value && value.includes('@c.us')) {
+            // Trabalhar diretamente com a string para melhor performance
+            const matches = value.matchAll(/(\d{10,15})@c\.us/g);
+            for (const match of matches) {
+              if (PhoneStore.add(match[1], 'cus', value, 'archived')) {
+                count++;
               }
-            } catch {}
+            }
           }
         }
       }
@@ -471,19 +466,14 @@
         const key = localStorage.key(i);
         if (key && (key.includes('block') || key.includes('Block'))) {
           const value = localStorage.getItem(key);
-          if (value) {
-            try {
-              const data = JSON.parse(value);
-              const str = JSON.stringify(data);
-              if (str.includes('@c.us')) {
-                const matches = str.matchAll(/(\d{10,15})@c\.us/g);
-                for (const match of matches) {
-                  if (PhoneStore.add(match[1], 'cus', str, 'blocked')) {
-                    count++;
-                  }
-                }
+          if (value && value.includes('@c.us')) {
+            // Trabalhar diretamente com a string para melhor performance
+            const matches = value.matchAll(/(\d{10,15})@c\.us/g);
+            for (const match of matches) {
+              if (PhoneStore.add(match[1], 'cus', value, 'blocked')) {
+                count++;
               }
-            } catch {}
+            }
           }
         }
       }
@@ -493,19 +483,14 @@
         const key = sessionStorage.key(i);
         if (key && (key.includes('block') || key.includes('Block'))) {
           const value = sessionStorage.getItem(key);
-          if (value) {
-            try {
-              const data = JSON.parse(value);
-              const str = JSON.stringify(data);
-              if (str.includes('@c.us')) {
-                const matches = str.matchAll(/(\d{10,15})@c\.us/g);
-                for (const match of matches) {
-                  if (PhoneStore.add(match[1], 'cus', str, 'blocked')) {
-                    count++;
-                  }
-                }
+          if (value && value.includes('@c.us')) {
+            // Trabalhar diretamente com a string para melhor performance
+            const matches = value.matchAll(/(\d{10,15})@c\.us/g);
+            for (const match of matches) {
+              if (PhoneStore.add(match[1], 'cus', value, 'blocked')) {
+                count++;
               }
-            } catch {}
+            }
           }
         }
       }
