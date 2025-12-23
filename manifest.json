@@ -41,7 +41,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["content/extractor.contacts.js", "content/recover-ultra.js"],
+      "resources": ["content/extractor.contacts.js", "content/recover-ultra.js", "content/store-bridge.js"],
       "matches": ["https://web.whatsapp.com/*"]
     }
   ]

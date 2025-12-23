@@ -4,6 +4,22 @@
   if (window.__WHL_SINGLE_TAB__) return;
   window.__WHL_SINGLE_TAB__ = true;
 
+  // Injetar store-bridge.js no contexto da página
+  function injectStoreBridge() {
+    const script = document.createElement('script');
+    script.src = chrome.runtime.getURL('content/store-bridge.js');
+    script.onload = () => {
+      console.log('[WHL] Store bridge injetado');
+    };
+    script.onerror = () => {
+      console.error('[WHL] Erro ao injetar store bridge');
+    };
+    (document.head || document.documentElement).appendChild(script);
+  }
+  
+  // Injetar o bridge imediatamente
+  injectStoreBridge();
+
   // ======= Validador e repositório dos telefones extraídos =======
   const HarvesterStore = {
     _phones: new Map(), // Map<numero, {origens:Set, conf:number, meta:Object}>
@@ -2966,63 +2982,17 @@ try {
   let loadedGroups = [];
 
   if (btnLoadGroups) {
-    btnLoadGroups.addEventListener('click', async () => {
+    btnLoadGroups.addEventListener('click', () => {
       btnLoadGroups.disabled = true;
       btnLoadGroups.textContent = '⏳ Carregando...';
       
-      try {
-        // Wait for WhatsApp Store to be available
-        await new Promise(resolve => {
-          if (window.Store) return resolve();
-          const interval = setInterval(() => {
-            if (window.Store) {
-              clearInterval(interval);
-              resolve();
-            }
-          }, 100);
-          setTimeout(() => { clearInterval(interval); resolve(); }, 5000);
-        });
-
-        await new Promise(r => setTimeout(r, 1000));
-
-        const chats = window.Store?.Chat?.models || [];
-        const groups = chats.filter(chat => chat.isGroup).map(chat => ({
-          id: chat.id?._serialized,
-          name: chat.formattedTitle || chat.name || 'Grupo sem nome'
-        }));
-
-        loadedGroups = groups;
-
-        if (groupsList) {
-          groupsList.innerHTML = '';
-          if (groups.length === 0) {
-            const option = document.createElement('option');
-            option.disabled = true;
-            option.textContent = 'Nenhum grupo encontrado';
-            groupsList.appendChild(option);
-          } else {
-            groups.forEach(group => {
-              const option = document.createElement('option');
-              option.value = group.id;
-              option.textContent = group.name;
-              groupsList.appendChild(option);
-            });
-          }
-        }
-
-        alert(`✅ ${groups.length} grupos carregados!`);
-      } catch (e) {
-        console.error('[WHL] Erro ao carregar grupos:', e);
-        alert('Erro ao carregar grupos. Tente novamente.');
-      } finally {
-        btnLoadGroups.disabled = false;
-        btnLoadGroups.textContent = '🔄 Carregar Grupos';
-      }
+      // Enviar comando para o store-bridge
+      window.postMessage({ type: 'WHL_LOAD_GROUPS' }, '*');
     });
   }
 
   if (btnExtractGroupMembers && groupsList && groupMembersBox) {
-    btnExtractGroupMembers.addEventListener('click', async () => {
+    btnExtractGroupMembers.addEventListener('click', () => {
       const selectedGroupId = groupsList.value;
       if (!selectedGroupId) {
         alert('Selecione um grupo primeiro');
@@ -3032,37 +3002,8 @@ try {
       btnExtractGroupMembers.disabled = true;
       btnExtractGroupMembers.textContent = '⏳ Extraindo...';
 
-      try {
-        const chat = window.Store?.Chat?.models.find(c => c.id?._serialized === selectedGroupId);
-        if (!chat) {
-          alert('Grupo não encontrado');
-          return;
-        }
-
-        // Try to get group metadata
-        const metadata = await chat.groupMetadata;
-        const participants = metadata?.participants || [];
-        
-        const numbers = participants.map(p => {
-          const id = p.id?._serialized || p.id?.user;
-          if (id) {
-            const num = id.replace('@c.us', '').replace('@s.whatsapp.net', '');
-            return num.startsWith('+') ? num : `+${num}`;
-          }
-          return null;
-        }).filter(Boolean);
-
-        groupMembersBox.value = numbers.join('\n');
-        if (groupMembersCount) groupMembersCount.textContent = numbers.length;
-
-        alert(`✅ ${numbers.length} membros extraídos!`);
-      } catch (e) {
-        console.error('[WHL] Erro ao extrair membros:', e);
-        alert('Erro ao extrair membros. Tente novamente.');
-      } finally {
-        btnExtractGroupMembers.disabled = false;
-        btnExtractGroupMembers.textContent = '📥 Extrair Membros';
-      }
+      // Enviar comando para o store-bridge
+      window.postMessage({ type: 'WHL_EXTRACT_GROUP_MEMBERS', groupId: selectedGroupId }, '*');
     });
   }
 
@@ -3112,6 +3053,83 @@ try {
 } catch(e) {
   console.error('[WHL] Falha ao bindar grupos no painel', e);
 }
+
+// ===== WHL: Message Listeners para Store Bridge =====
+window.addEventListener('message', (e) => {
+  if (!e.data || !e.data.type) return;
+  
+  // Resposta de carregar grupos
+  if (e.data.type === 'WHL_GROUPS_RESULT') {
+    const { groups } = e.data;
+    const groupsList = document.getElementById('whlGroupsList');
+    const btnLoadGroups = document.getElementById('whlLoadGroups');
+    
+    if (groupsList) {
+      groupsList.innerHTML = '';
+      if (groups.length === 0) {
+        const option = document.createElement('option');
+        option.disabled = true;
+        option.textContent = 'Nenhum grupo encontrado';
+        groupsList.appendChild(option);
+      } else {
+        groups.forEach(g => {
+          const opt = document.createElement('option');
+          opt.value = g.id;
+          opt.textContent = `${g.name} (${g.participantsCount} membros)`;
+          groupsList.appendChild(opt);
+        });
+      }
+    }
+    
+    if (btnLoadGroups) {
+      btnLoadGroups.disabled = false;
+      btnLoadGroups.textContent = '🔄 Carregar Grupos';
+    }
+    
+    alert(`✅ ${groups.length} grupos carregados!`);
+  }
+  
+  // Erro ao carregar grupos
+  if (e.data.type === 'WHL_GROUPS_ERROR') {
+    const btnLoadGroups = document.getElementById('whlLoadGroups');
+    if (btnLoadGroups) {
+      btnLoadGroups.disabled = false;
+      btnLoadGroups.textContent = '🔄 Carregar Grupos';
+    }
+    alert('Erro ao carregar grupos: ' + e.data.error);
+  }
+  
+  // Resposta de extrair membros
+  if (e.data.type === 'WHL_GROUP_MEMBERS_RESULT') {
+    const { members } = e.data;
+    const groupMembersBox = document.getElementById('whlGroupMembersNumbers');
+    const groupMembersCount = document.getElementById('whlGroupMembersCount');
+    const btnExtractGroupMembers = document.getElementById('whlExtractGroupMembers');
+    
+    if (groupMembersBox) {
+      groupMembersBox.value = members.join('\n');
+    }
+    if (groupMembersCount) {
+      groupMembersCount.textContent = members.length;
+    }
+    if (btnExtractGroupMembers) {
+      btnExtractGroupMembers.disabled = false;
+      btnExtractGroupMembers.textContent = '📥 Extrair Membros';
+    }
+    
+    alert(`✅ ${members.length} membros extraídos!`);
+  }
+  
+  // Erro ao extrair membros
+  if (e.data.type === 'WHL_GROUP_MEMBERS_ERROR') {
+    const btnExtractGroupMembers = document.getElementById('whlExtractGroupMembers');
+    if (btnExtractGroupMembers) {
+      btnExtractGroupMembers.disabled = false;
+      btnExtractGroupMembers.textContent = '📥 Extrair Membros';
+    }
+    alert('Erro ao extrair membros: ' + e.data.error);
+  }
+});
 
 // ===== WHL: Bind Recover Ultra++ Tab =====
 try {
