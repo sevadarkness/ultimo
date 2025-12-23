@@ -1,23 +1,28 @@
 /**
- * WhatsHybrid – EXTRATOR TURBO v4 com FILTRO INTELIGENTE
+ * WhatsHybrid – EXTRATOR TURBO v5 com FILTRO RIGOROSO
  * 
  * ESTRATÉGIA:
  * 1. Coleta AGRESSIVA (máximo de números possível)
- * 2. Filtro INTELIGENTE (só retorna números confiáveis)
+ * 2. Filtro RIGOROSO (TODOS os números passam por validação)
  * 
- * NÍVEIS DE CONFIANÇA:
- * - ALTA (100%): @c.us, data-id, data-jid → SEMPRE inclui
- * - MÉDIA (80%): wa.me/, phone=, título → Inclui se DDD válido
- * - BAIXA (30%): Texto raw → Só inclui se aparecer 2+ vezes E DDD válido
+ * VALIDAÇÕES OBRIGATÓRIAS PARA TODOS:
+ * - Tamanho correto (12-13 dígitos com 55)
+ * - DDD brasileiro válido (67 DDDs)
+ * - Formato de celular brasileiro (9º dígito = 9 para celulares)
+ * 
+ * NÍVEIS DE CONFIANÇA (após validação):
+ * - ALTA: @c.us, data-id, data-jid → Inclui se passar validação
+ * - MÉDIA: wa.me/, phone= → Inclui se passar validação
+ * - BAIXA: raw → Inclui se passar validação E 2+ ocorrências
  * 
  * Comunicação via window.postMessage
  */
 
 (function () {
-  if (window.__WHL_EXTRACTOR_TURBO_V4__) return;
-  window.__WHL_EXTRACTOR_TURBO_V4__ = true;
+  if (window.__WHL_EXTRACTOR_TURBO_V5__) return;
+  window.__WHL_EXTRACTOR_TURBO_V5__ = true;
 
-  console.log('[WHL] 🚀 EXTRATOR TURBO v4 com Filtro Inteligente iniciando...');
+  console.log('[WHL] 🚀 EXTRATOR TURBO v5 com Filtro RIGOROSO iniciando...');
 
   // ===== CONFIGURAÇÃO =====
   const CONFIG = {
@@ -27,132 +32,189 @@
     scrollIncrement: 0.85,
     stabilityCount: 10,
     
-    // Números
-    minDigits: 10,  // Mínimo para telefone brasileiro (DDD + número)
-    maxDigits: 15,  // Máximo (código país + DDD + número)
-    
-    // Filtro
-    minOccurrencesForRaw: 2,  // Números raw precisam aparecer 2+ vezes
+    // Filtro rigoroso
+    minOccurrencesForRaw: 2,
     
     debug: true
   };
 
-  // ===== DDDs BRASILEIROS VÁLIDOS =====
+  // ===== DDDs BRASILEIROS VÁLIDOS (COMPLETO) =====
   const VALID_DDDS = new Set([
-    11, 12, 13, 14, 15, 16, 17, 18, 19, // SP
-    21, 22, 24, 27, 28, // RJ/ES
-    31, 32, 33, 34, 35, 37, 38, // MG
-    41, 42, 43, 44, 45, 46, // PR
-    47, 48, 49, // SC
-    51, 53, 54, 55, // RS
-    61, 62, 63, 64, 65, 66, 67, 68, 69, // DF/GO/TO/MT/MS/AC/RO
-    71, 73, 74, 75, 77, 79, // BA/SE
-    81, 82, 83, 84, 85, 86, 87, 88, 89, // PE/AL/PB/RN/CE/PI
-    91, 92, 93, 94, 95, 96, 97, 98, 99  // PA/AM/RR/AP/MA
+    // São Paulo
+    11, 12, 13, 14, 15, 16, 17, 18, 19,
+    // Rio de Janeiro / Espírito Santo
+    21, 22, 24, 27, 28,
+    // Minas Gerais
+    31, 32, 33, 34, 35, 37, 38,
+    // Paraná
+    41, 42, 43, 44, 45, 46,
+    // Santa Catarina
+    47, 48, 49,
+    // Rio Grande do Sul
+    51, 53, 54, 55,
+    // Distrito Federal / Goiás / Tocantins / Mato Grosso / Mato Grosso do Sul / Acre / Rondônia
+    61, 62, 63, 64, 65, 66, 67, 68, 69,
+    // Bahia / Sergipe
+    71, 73, 74, 75, 77, 79,
+    // Pernambuco / Alagoas / Paraíba / Rio Grande do Norte / Ceará / Piauí
+    81, 82, 83, 84, 85, 86, 87, 88, 89,
+    // Pará / Amazonas / Roraima / Amapá / Maranhão
+    91, 92, 93, 94, 95, 96, 97, 98, 99
   ]);
 
   // ===== NÍVEIS DE CONFIANÇA =====
   const CONFIDENCE = {
-    HIGH: 'high',     // @c.us, data-id, data-jid
-    MEDIUM: 'medium', // wa.me, phone=, title
-    LOW: 'low'        // raw text
+    HIGH: 'high',
+    MEDIUM: 'medium',
+    LOW: 'low'
   };
+
+  // ===== VALIDAÇÃO RIGOROSA DE NÚMERO BRASILEIRO =====
+  function isValidBrazilianPhone(num) {
+    if (!num) return false;
+    
+    let n = String(num).replace(/\D/g, '');
+    
+    // Normalizar: adicionar 55 se necessário
+    if (n.length === 10 || n.length === 11) {
+      n = '55' + n;
+    }
+    
+    // Deve ter 12 ou 13 dígitos (55 + DDD + número)
+    // 12 dígitos: fixo (55 + DD + 8 dígitos)
+    // 13 dígitos: celular (55 + DD + 9 dígitos)
+    if (n.length !== 12 && n.length !== 13) {
+      return false;
+    }
+    
+    // Deve começar com 55 (Brasil)
+    if (!n.startsWith('55')) {
+      return false;
+    }
+    
+    // Extrair DDD (posição 2-3)
+    const ddd = parseInt(n.substring(2, 4), 10);
+    
+    // DDD deve ser válido
+    if (!VALID_DDDS.has(ddd)) {
+      return false;
+    }
+    
+    // Extrair número local (após DDD)
+    const localNumber = n.substring(4);
+    
+    // Para celular (9 dígitos): deve começar com 9
+    if (localNumber.length === 9) {
+      if (!localNumber.startsWith('9')) {
+        return false;
+      }
+      // O segundo dígito de celular deve ser 6, 7, 8 ou 9
+      const secondDigit = parseInt(localNumber[1], 10);
+      if (secondDigit < 6) {
+        return false;
+      }
+    }
+    
+    // Para fixo (8 dígitos): deve começar com 2, 3, 4 ou 5
+    if (localNumber.length === 8) {
+      const firstDigit = parseInt(localNumber[0], 10);
+      if (firstDigit < 2 || firstDigit > 5) {
+        return false;
+      }
+    }
+    
+    // Rejeitar números repetidos (ex: 99999999999)
+    const uniqueDigits = new Set(n.split(''));
+    if (uniqueDigits.size <= 3) {
+      return false;
+    }
+    
+    // Rejeitar sequências óbvias
+    if (/^55\d{2}(12345678|87654321|11111111|22222222|33333333|44444444|55555555|66666666|77777777|88888888|99999999|00000000)/.test(n)) {
+      return false;
+    }
+    
+    return true;
+  }
+
+  // ===== NORMALIZAÇÃO =====
+  function normalizePhone(num) {
+    if (!num) return null;
+    
+    let n = String(num).replace(/\D/g, '');
+    
+    // Adicionar 55 se necessário
+    if (n.length === 10 || n.length === 11) {
+      n = '55' + n;
+    }
+    
+    // Validar
+    if (!isValidBrazilianPhone(n)) {
+      return null;
+    }
+    
+    return n;
+  }
 
   // ===== ARMAZENAMENTO =====
   const PhoneStore = {
-    _phones: new Map(), // número -> { sources: Set, confidence: string, occurrences: number }
+    _phones: new Map(),
     
     add(num, source, confidence = CONFIDENCE.LOW) {
-      if (!num) return null;
-      
-      // Limpar e normalizar
-      let n = String(num).replace(/\D/g, '');
-      
-      // Validar tamanho
-      if (n.length < CONFIG.minDigits || n.length > CONFIG.maxDigits) {
-        return null;
-      }
-      
-      // Normalizar para formato brasileiro (adicionar 55 se necessário)
-      if (n.length === 10 || n.length === 11) {
-        n = '55' + n;
-      }
+      // Normalizar e validar
+      const normalized = normalizePhone(num);
+      if (!normalized) return null;
       
       // Criar ou atualizar registro
-      if (!this._phones.has(n)) {
-        this._phones.set(n, {
+      if (!this._phones.has(normalized)) {
+        this._phones.set(normalized, {
           sources: new Set(),
           confidence: confidence,
           occurrences: 0
         });
       }
       
-      const record = this._phones.get(n);
+      const record = this._phones.get(normalized);
       record.sources.add(source);
       record.occurrences++;
       
-      // Upgrade de confiança (HIGH > MEDIUM > LOW)
+      // Upgrade de confiança
       if (confidence === CONFIDENCE.HIGH) {
         record.confidence = CONFIDENCE.HIGH;
       } else if (confidence === CONFIDENCE.MEDIUM && record.confidence === CONFIDENCE.LOW) {
         record.confidence = CONFIDENCE.MEDIUM;
       }
       
-      return n;
+      return normalized;
     },
     
-    // Verifica se tem DDD brasileiro válido
-    hasValidDDD(num) {
-      let n = num;
-      if (n.startsWith('55') && n.length >= 12) {
-        n = n.substring(2);
-      }
-      if (n.length >= 10) {
-        const ddd = parseInt(n.substring(0, 2), 10);
-        return VALID_DDDS.has(ddd);
-      }
-      return false;
-    },
-    
-    // Retorna APENAS números filtrados (confiáveis)
+    // Retorna números filtrados (todos já são válidos, mas LOW precisa de 2+ ocorrências)
     getFiltered() {
       const result = [];
       
       this._phones.forEach((record, num) => {
-        let include = false;
-        
-        // ALTA confiança: SEMPRE inclui
-        if (record.confidence === CONFIDENCE.HIGH) {
-          include = true;
+        // HIGH e MEDIUM: incluir (já validados no add)
+        if (record.confidence === CONFIDENCE.HIGH || record.confidence === CONFIDENCE.MEDIUM) {
+          result.push(num);
         }
-        // MÉDIA confiança: inclui se DDD válido
-        else if (record.confidence === CONFIDENCE.MEDIUM) {
-          include = this.hasValidDDD(num);
-        }
-        // BAIXA confiança: inclui se DDD válido E apareceu 2+ vezes
-        else if (record.confidence === CONFIDENCE.LOW) {
-          include = this.hasValidDDD(num) && record.occurrences >= CONFIG.minOccurrencesForRaw;
-        }
-        
-        if (include) {
+        // LOW: precisa de 2+ ocorrências
+        else if (record.confidence === CONFIDENCE.LOW && record.occurrences >= CONFIG.minOccurrencesForRaw) {
           result.push(num);
         }
       });
       
-      // Ordenar e remover duplicatas
       return [...new Set(result)].sort();
     },
     
-    // Retorna TODOS os números (sem filtro)
     getAll() {
       return Array.from(this._phones.keys()).sort();
     },
     
     getStats() {
-      let high = 0, medium = 0, low = 0, filtered = 0;
+      let high = 0, medium = 0, low = 0;
       const sources = {};
       
-      this._phones.forEach((record, num) => {
+      this._phones.forEach((record) => {
         if (record.confidence === CONFIDENCE.HIGH) high++;
         else if (record.confidence === CONFIDENCE.MEDIUM) medium++;
         else low++;
@@ -163,11 +225,9 @@
         });
       });
       
-      filtered = this.getFiltered().length;
-      
       return {
         total: this._phones.size,
-        filtered,
+        filtered: this.getFiltered().length,
         high,
         medium,
         low,
@@ -213,19 +273,11 @@
       if (PhoneStore.add(match[1], source + '_phone', CONFIDENCE.MEDIUM)) count++;
     }
     
-    // Números raw - só se defaultConfidence não for LOW ou se parecer telefone formatado
-    if (defaultConfidence !== CONFIDENCE.LOW) {
-      const rawRe = /\b(\d{10,15})\b/g;
-      while ((match = rawRe.exec(text)) !== null) {
-        if (PhoneStore.add(match[1], source + '_raw', defaultConfidence)) count++;
-      }
-    } else {
-      // Para LOW, só extrair se parecer telefone formatado
-      const formattedRe = /(?:\+?55)?[\s\-\.]?\(?(\d{2})\)?[\s\-\.]?(\d{4,5})[\s\-\.]?(\d{4})/g;
-      while ((match = formattedRe.exec(text)) !== null) {
-        const num = match[1] + match[2] + match[3];
-        if (PhoneStore.add(num, source + '_formatted', CONFIDENCE.LOW)) count++;
-      }
+    // Números formatados (BAIXA CONFIANÇA)
+    const formattedRe = /(?:\+?55)?[\s\-\.]?\(?(\d{2})\)?[\s\-\.]?(\d{4,5})[\s\-\.]?(\d{4})/g;
+    while ((match = formattedRe.exec(text)) !== null) {
+      const num = match[1] + match[2] + match[3];
+      if (PhoneStore.add(num, source + '_formatted', defaultConfidence)) count++;
     }
     
     return count;
@@ -255,16 +307,6 @@
       } catch {}
     });
     
-    // Outros atributos são BAIXA CONFIANÇA
-    ['data-testid', 'data-link', 'data-phone'].forEach(attr => {
-      try {
-        const val = el.getAttribute?.(attr);
-        if (val) {
-          count += extractFromText(val, source + '_' + attr, CONFIDENCE.LOW);
-        }
-      } catch {}
-    });
-    
     return count;
   }
 
@@ -287,16 +329,16 @@
     });
     
     // Linhas e itens
-    document.querySelectorAll('[role="row"], [role="listitem"], [role="gridcell"]').forEach(el => {
+    document.querySelectorAll('[role="row"], [role="listitem"]').forEach(el => {
       count += extractFromElement(el, source + '_row');
     });
     
-    // Links
+    // Links wa.me
     document.querySelectorAll('a[href*="wa.me"], a[href*="phone"]').forEach(el => {
       count += extractFromElement(el, source + '_link');
     });
     
-    // Títulos
+    // Títulos com números
     document.querySelectorAll('span[title], div[title]').forEach(el => {
       count += extractFromElement(el, source + '_title');
     });
@@ -315,23 +357,16 @@
   function extractFromStorage(source = 'storage') {
     let count = 0;
     
-    // localStorage
     try {
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         const value = localStorage.getItem(key);
-        if (value) {
-          // Priorizar chaves com @c.us
-          if (value.includes('@c.us') || value.includes('@g.us')) {
-            count += extractFromText(value, source + '_ls', CONFIDENCE.HIGH);
-          } else if (key.includes('chat') || key.includes('contact')) {
-            count += extractFromText(value, source + '_ls', CONFIDENCE.MEDIUM);
-          }
+        if (value && (value.includes('@c.us') || value.includes('@g.us'))) {
+          count += extractFromText(value, source + '_ls', CONFIDENCE.HIGH);
         }
       }
-    } catch (e) {}
+    } catch {}
     
-    // sessionStorage
     try {
       for (let i = 0; i < sessionStorage.length; i++) {
         const key = sessionStorage.key(i);
@@ -340,7 +375,7 @@
           count += extractFromText(value, source + '_ss', CONFIDENCE.HIGH);
         }
       }
-    } catch (e) {}
+    } catch {}
     
     return count;
   }
@@ -392,7 +427,7 @@
           db.close();
         } catch {}
       }
-    } catch (e) {}
+    } catch {}
     
     return count;
   }
@@ -412,17 +447,14 @@
     let scrollCount = 0;
     
     while (stable < CONFIG.stabilityCount && scrollCount < CONFIG.maxScrolls) {
-      // Extrair durante scroll
       extractFromDOM('scroll_' + scrollCount);
       
-      // Scroll
       const increment = Math.floor(pane.clientHeight * CONFIG.scrollIncrement);
       pane.scrollTop = Math.min(pane.scrollTop + increment, pane.scrollHeight);
       pane.dispatchEvent(new Event('scroll', { bubbles: true }));
       
       scrollCount++;
       
-      // Progresso
       const progress = Math.min(80, 10 + Math.round((scrollCount / CONFIG.maxScrolls) * 70));
       window.postMessage({
         type: 'WHL_EXTRACT_PROGRESS',
@@ -440,7 +472,7 @@
       lastTop = pane.scrollTop;
       
       if (scrollCount % 30 === 0) {
-        console.log(`[WHL] Scroll ${scrollCount}/${CONFIG.maxScrolls}, filtrados: ${PhoneStore.getFiltered().length}`);
+        console.log(`[WHL] Scroll ${scrollCount}/${CONFIG.maxScrolls}, válidos: ${PhoneStore.getFiltered().length}`);
       }
     }
     
@@ -487,7 +519,7 @@
 
   // ===== FUNÇÃO PRINCIPAL =====
   async function extractAllTurbo() {
-    console.log('[WHL] 🚀🚀🚀 EXTRAÇÃO TURBO v4 INICIADA 🚀🚀🚀');
+    console.log('[WHL] 🚀🚀🚀 EXTRAÇÃO TURBO v5 (FILTRO RIGOROSO) INICIADA 🚀🚀🚀');
     
     PhoneStore.clear();
     
@@ -529,9 +561,9 @@
     const filtered = PhoneStore.getFiltered();
     const stats = PhoneStore.getStats();
     
-    console.log('[WHL] ✅✅✅ EXTRAÇÃO TURBO v4 CONCLUÍDA ✅✅✅');
-    console.log('[WHL] Total coletados:', stats.total);
-    console.log('[WHL] Após filtro:', filtered.length);
+    console.log('[WHL] ✅✅✅ EXTRAÇÃO TURBO v5 CONCLUÍDA ✅✅✅');
+    console.log('[WHL] Total coletados (válidos):', stats.total);
+    console.log('[WHL] Após filtro de confiança:', filtered.length);
     console.log('[WHL] Stats:', stats);
     
     // Salvar
@@ -558,14 +590,15 @@
   });
 
   // ===== DEBUG =====
-  window.__WHL_TURBO_V4__ = {
+  window.__WHL_TURBO_V5__ = {
     extract: extractAllTurbo,
     store: PhoneStore,
     config: CONFIG,
+    validate: isValidBrazilianPhone,
     getFiltered: () => PhoneStore.getFiltered(),
     getAll: () => PhoneStore.getAll(),
     getStats: () => PhoneStore.getStats()
   };
 
-  console.log('[WHL] ✅ EXTRATOR TURBO v4 com Filtro Inteligente carregado!');
+  console.log('[WHL] ✅ EXTRATOR TURBO v5 com Filtro RIGOROSO carregado!');
 })();
