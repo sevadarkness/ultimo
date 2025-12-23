@@ -3717,9 +3717,6 @@ try {
         console.log('[WHL] ✅ Contador normais atualizado:', normalCount);
       } else {
         console.error('[WHL] ❌ Elemento contador normais não encontrado!');
-        // Tentar criar/atualizar via query mais genérica
-        const allCounters = document.querySelectorAll('[id*="Count"], [class*="count"]');
-        console.log('[WHL] Contadores encontrados:', allCounters.length);
       }
       
       const archivedCountEl = document.getElementById('whlArchivedCount') ||

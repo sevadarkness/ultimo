@@ -59,9 +59,7 @@
           contact.id?.user,
           contact.id?._serialized?.replace('@c.us', '').replace('@s.whatsapp.net', ''),
           contact.phoneNumber,
-          contact.formattedNumber,
-          contact.verifiedName,
-          contact.pushname
+          contact.formattedNumber
         ];
         
         for (const num of possibleNumbers) {
