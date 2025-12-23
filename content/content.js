@@ -359,7 +359,8 @@
       drafts: {},
       lastReport: null,
       selectorHealth: { ok: true, issues: [] },
-      stats: { sent: 0, failed: 0, pending: 0 }
+      stats: { sent: 0, failed: 0, pending: 0 },
+      useWorker: true  // NEW: Enable worker mode by default
     };
   }
   async function setState(next) {
@@ -998,6 +999,16 @@
                 </div>
                 <div class="settings-control">
                   <input type="checkbox" id="whlContinueOnError" checked />
+                </div>
+              </div>
+
+              <div class="settings-row toggle">
+                <div class="settings-label">
+                  <div class="k">🔧 Worker Oculto</div>
+                  <div class="d">Enviar em aba separada (sem reload)</div>
+                </div>
+                <div class="settings-control">
+                  <input type="checkbox" id="whlUseWorker" checked />
                 </div>
               </div>
             </div>
@@ -2557,8 +2568,8 @@
 
     console.log('[WHL] 🚀 Campanha iniciada');
     
-    // Check if worker mode is enabled
-    if (WHL_CONFIG.USE_WORKER_FOR_SENDING) {
+    // Check if worker mode is enabled (from user settings)
+    if (st.useWorker) {
       console.log('[WHL] 🔧 Using Hidden Worker Tab for sending');
       await startCampaignViaWorker();
       return;
@@ -2609,8 +2620,8 @@
       await setState(st);
       await render();
       
-      // Check if using worker mode
-      if (WHL_CONFIG.USE_WORKER_FOR_SENDING) {
+      // Check if using worker mode (from user settings)
+      if (st.useWorker) {
         chrome.runtime.sendMessage({ action: 'RESUME_CAMPAIGN' });
         return;
       }
@@ -2631,8 +2642,8 @@
       await setState(st);
       await render();
       
-      // Check if using worker mode
-      if (WHL_CONFIG.USE_WORKER_FOR_SENDING) {
+      // Check if using worker mode (from user settings)
+      if (st.useWorker) {
         chrome.runtime.sendMessage({ action: 'PAUSE_CAMPAIGN' });
         return;
       }
@@ -2652,8 +2663,8 @@
     await setState(st);
     await render();
 
-    // Check if using worker mode
-    if (WHL_CONFIG.USE_WORKER_FOR_SENDING) {
+    // Check if using worker mode (from user settings)
+    if (st.useWorker) {
       chrome.runtime.sendMessage({ action: 'STOP_CAMPAIGN' });
       return;
     }
@@ -2690,6 +2701,11 @@
     const schedEl = document.getElementById('whlScheduleAt');
     if (retryEl) retryEl.value = state.retryMax ?? 0;
     if (schedEl && (schedEl.value||'') !== (state.scheduleAt||'')) schedEl.value = state.scheduleAt || '';
+    
+    // NEW: Worker mode checkbox
+    const useWorkerEl = document.getElementById('whlUseWorker');
+    if (useWorkerEl) useWorkerEl.checked = !!state.useWorker;
+    
     // Preview
     const curp = state.queue[state.index];
     const phone = curp?.phone || '';
@@ -3519,6 +3535,14 @@ try {
       const st = await getState();
       st.continueOnError = !!e.target.checked;
       await setState(st);
+    });
+
+    // NEW: Worker mode toggle
+    document.getElementById('whlUseWorker').addEventListener('change', async (e) => {
+      const st = await getState();
+      st.useWorker = !!e.target.checked;
+      await setState(st);
+      console.log('[WHL] Worker mode:', st.useWorker ? 'enabled' : 'disabled');
     });
 
     // Retry max
