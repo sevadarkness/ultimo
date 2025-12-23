@@ -515,6 +515,40 @@
         font-weight: bold;
       }
       
+      /* PR #78: Highlighted input fields for Numbers and Message */
+      #whlPanel .whl-input-highlight {
+        background: linear-gradient(135deg, rgba(0,168,132,0.08), rgba(111,0,255,0.08));
+        border: 2px solid rgba(0,168,132,0.3);
+        border-radius: 12px;
+        padding: 16px;
+        margin: 10px 0;
+        box-shadow: 0 4px 12px rgba(0,168,132,0.1);
+        transition: all 0.3s ease;
+      }
+      
+      #whlPanel .whl-input-highlight:hover {
+        border-color: rgba(0,168,132,0.5);
+        box-shadow: 0 6px 20px rgba(0,168,132,0.2);
+      }
+      
+      #whlPanel .whl-input-highlight .title {
+        color: #00a884 !important;
+        font-weight: bold;
+        font-size: 14px;
+        margin-bottom: 8px;
+      }
+      
+      #whlPanel .whl-input-highlight textarea {
+        background: rgba(0,0,0,0.3) !important;
+        border: 2px solid rgba(0,168,132,0.4) !important;
+        margin-top: 0;
+      }
+      
+      #whlPanel .whl-input-highlight textarea:focus {
+        border-color: #00a884 !important;
+        box-shadow: 0 0 0 3px rgba(0,168,132,0.1);
+      }
+      
       #whlPanel button{margin-top:8px;padding:10px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.12);
         background:rgba(255,255,255,.06);color:#fff;font-weight:900;cursor:pointer;box-sizing:border-box}
       #whlPanel button.primary{background:linear-gradient(180deg, rgba(111,0,255,.95), rgba(78,0,190,.95));
@@ -596,6 +630,26 @@
         #whlPanel .settings-grid{grid-template-columns:1fr}
       }
 
+      /* PR #78: Tooltips and help text */
+      #whlPanel .whl-tooltip {
+        display: inline-block;
+        position: relative;
+        cursor: help;
+        color: #00a884;
+        font-size: 16px;
+        margin-left: 6px;
+        vertical-align: middle;
+      }
+      
+      #whlPanel .whl-help-text {
+        font-size: 11px;
+        color: #00a884;
+        background: rgba(0,168,132,0.1);
+        padding: 6px 10px;
+        border-radius: 6px;
+        margin-top: 6px;
+        border-left: 3px solid #00a884;
+      }
 
       /* ===== TABS SYSTEM ===== */
       #whlPanel .whl-tabs {
@@ -854,10 +908,13 @@
       <div class="whl-tab-content active" id="whl-tab-principal">
         
         <div class="card">
-          <div class="title" style="font-size:13px">Números (um por linha)</div>
-          <div class="muted">Cole sua lista aqui. Ex: 5511999998888</div>
-          <textarea id="whlNumbers" placeholder="5511999998888
-5511988887777"></textarea>
+          <!-- PR #78: Highlighted numbers field -->
+          <div class="whl-input-highlight">
+            <div class="title" style="font-size:14px;color:#00a884;font-weight:bold;margin-bottom:8px">📱 Números (um por linha)</div>
+            <div class="muted" style="margin-bottom:8px">Cole sua lista aqui. Ex: 5511999998888</div>
+            <textarea id="whlNumbers" placeholder="5511999998888
+5511988887777" style="min-height:120px;background:rgba(0,0,0,0.3);border:2px solid #00a884"></textarea>
+          </div>
 
           <div style="margin-top:10px">
             <div class="muted">📊 Importar CSV (phone,message opcional)</div>
@@ -869,8 +926,22 @@
             <div class="tiny" id="whlCsvHint" style="margin-top:6px"></div>
           </div>
 
-          <div class="title" style="font-size:13px;margin-top:10px">Mensagem padrão</div>
-          <textarea id="whlMsg" placeholder="Digite sua mensagem…"></textarea>
+          <!-- PR #78: Highlighted message field -->
+          <div class="whl-input-highlight" style="margin-top:16px">
+            <div class="title" style="font-size:14px;color:#00a884;font-weight:bold;margin-bottom:8px">💬 Mensagem padrão</div>
+            <div class="muted" style="margin-bottom:8px">
+              Use variáveis: {{nome}}, {{first_name}}, {{phone}}
+            </div>
+            <div style="position:relative">
+              <textarea id="whlMsg" placeholder="Digite sua mensagem…" style="min-height:120px;background:rgba(0,0,0,0.3);border:2px solid #00a884;padding-right:50px"></textarea>
+              <button id="whlEmojiBtn" style="position:absolute;right:10px;top:10px;padding:6px 10px;border-radius:8px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);cursor:pointer;font-size:18px;line-height:1" title="Inserir emoji">😊</button>
+            </div>
+          </div>
+          
+          <!-- PR #78: Emoji Picker -->
+          <div id="whlEmojiPicker" style="display:none;position:absolute;z-index:100000;background:rgba(8,6,20,0.98);border:1px solid rgba(111,0,255,0.35);border-radius:12px;padding:10px;max-width:300px;box-shadow:0 10px 30px rgba(0,0,0,0.5)">
+            <div style="display:grid;grid-template-columns:repeat(8,1fr);gap:6px;max-height:200px;overflow-y:auto"></div>
+          </div>
           
           <button id="whlSaveMessage" class="iconbtn primary" style="width:100%; margin-top:8px;">
             💾 Salvar Mensagem
@@ -1091,16 +1162,6 @@
 
               <div class="settings-row">
                 <div class="settings-label">
-                  <div class="k">🔄 Retry</div>
-                  <div class="d">Tentativas extras em falha</div>
-                </div>
-                <div class="settings-control">
-                  <input type="number" id="whlRetryMax" min="0" max="5" value="0" />
-                </div>
-              </div>
-
-              <div class="settings-row">
-                <div class="settings-label">
                   <div class="k">📅 Agendamento</div>
                   <div class="d">Inicia no horário definido</div>
                 </div>
@@ -1110,29 +1171,8 @@
               </div>
             </div>
 
-            <div class="settings-section-title" style="margin-top:14px">Opções</div>
-            <div class="settings-table">
-              <div class="settings-row toggle">
-                <div class="settings-label">
-                  <div class="k">✅ Continuar em erros</div>
-                  <div class="d">Não interromper campanha</div>
-                </div>
-                <div class="settings-control">
-                  <input type="checkbox" id="whlContinueOnError" checked />
-                </div>
-              </div>
-
-              <div class="settings-row toggle">
-                <div class="settings-label">
-                  <div class="k">🔧 Worker Oculto</div>
-                  <div class="d">Enviar em aba separada (sem reload)</div>
-                </div>
-                <div class="settings-control">
-                  <input type="checkbox" id="whlUseWorker" checked />
-                </div>
-              </div>
-            </div>
-
+            <!-- PR #78: Removed obsolete settings (Worker Oculto, Continuar em erros, Retry) -->
+            
             <div class="settings-footer tiny" id="whlSelectorHealth"></div>
           </div>
         </div>
@@ -2506,6 +2546,42 @@
   
   // ===== DIRECT API CAMPAIGN PROCESSING (NO RELOAD) =====
   
+  // PR #78: Function to replace dynamic variables in messages
+  function substituirVariaveis(mensagem, contato) {
+    if (!mensagem) return '';
+    
+    // Extract contact info from phone number or contact object
+    let nome = '';
+    let firstName = '';
+    let lastName = '';
+    let phone = '';
+    let email = '';
+    
+    if (typeof contato === 'object') {
+      nome = contato.name || contato.pushname || '';
+      phone = contato.phone || contato.number || '';
+      email = contato.email || '';
+    } else {
+      // If just a phone string
+      phone = String(contato || '');
+    }
+    
+    // Split name into first and last
+    if (nome) {
+      const partes = nome.split(' ').filter(p => p.length > 0);
+      firstName = partes[0] || '';
+      lastName = partes.slice(1).join(' ') || '';
+    }
+    
+    // Replace all variables
+    return mensagem
+      .replace(/{{nome}}/gi, nome)
+      .replace(/{{first_name}}/gi, firstName)
+      .replace(/{{last_name}}/gi, lastName)
+      .replace(/{{phone}}/gi, phone)
+      .replace(/{{email}}/gi, email);
+  }
+  
   /**
    * Processa campanha usando API direta (sem reload)
    * Envia mensagens via postMessage para wpp-hooks.js
@@ -2571,6 +2647,9 @@
     await setState(st);
     await render();
     
+    // PR #78: Apply variable substitution
+    const messageToSend = substituirVariaveis(st.message || '', cur.phone);
+    
     // ATUALIZADO: Usar métodos testados e validados (WHL_SEND_MESSAGE_API e WHL_SEND_IMAGE_DOM)
     const requestId = Date.now().toString();
     
@@ -2581,7 +2660,7 @@
         type: 'WHL_SEND_IMAGE_TO_NUMBER',  // CORREÇÃO BUG 2: Novo tipo que abre chat correto
         phone: cur.phone,
         image: st.imageData,
-        caption: st.message || '',
+        caption: messageToSend,  // PR #78: Use substituted message
         requestId: requestId
       }, '*');
     } else {
@@ -2592,7 +2671,7 @@
       window.postMessage({
         type: 'WHL_SEND_MESSAGE_API',
         phone: cur.phone,
-        message: st.message,
+        message: messageToSend,  // PR #78: Use substituted message
         requestId: requestId
       }, '*');
     }
@@ -3174,6 +3253,9 @@
     }, 100);
   }
 
+  // PR #78: Store scheduled timeout ID for cancellation
+  let scheduledCampaignTimeout = null;
+  
   async function startCampaign() {
     const st = await getState();
     
@@ -3186,6 +3268,51 @@
       console.log('[WHL] Campaign already running');
       return;
     }
+
+    // PR #78: Check if scheduling is enabled
+    if (st.scheduleAt) {
+      const scheduledTime = new Date(st.scheduleAt);
+      const now = new Date();
+      
+      // Validate the date
+      if (isNaN(scheduledTime.getTime())) {
+        console.error('[WHL] Invalid schedule date:', st.scheduleAt);
+        alert('⚠️ Data de agendamento inválida. Por favor, defina uma data válida.');
+        return;
+      }
+      
+      if (scheduledTime > now) {
+        const delayMs = scheduledTime - now;
+        const delayMinutes = Math.round(delayMs / 60000);
+        
+        console.log(`[WHL] 📅 Campanha agendada para ${scheduledTime.toLocaleString('pt-BR')}`);
+        console.log(`[WHL] ⏰ Aguardando ${delayMinutes} minutos...`);
+        
+        alert(`✅ Campanha agendada!\nInício: ${scheduledTime.toLocaleString('pt-BR')}\nAguardando ${delayMinutes} minutos...`);
+        
+        // Cancel any previous scheduled campaign
+        if (scheduledCampaignTimeout) {
+          clearTimeout(scheduledCampaignTimeout);
+        }
+        
+        // Schedule the start and store the timeout ID
+        scheduledCampaignTimeout = setTimeout(() => {
+          startCampaignNow();
+          scheduledCampaignTimeout = null;
+        }, delayMs);
+        
+        return;
+      } else {
+        console.log('[WHL] ⚠️ Horário agendado já passou, iniciando imediatamente');
+      }
+    }
+    
+    // Start immediately
+    startCampaignNow();
+  }
+  
+  async function startCampaignNow() {
+    const st = await getState();
 
     // Calculate stats
     st.stats.sent = st.queue.filter(c => c.status === 'sent').length;
@@ -3305,6 +3432,13 @@
       clearTimeout(campaignInterval);
       campaignInterval = null;
     }
+    
+    // PR #78: Cancel scheduled campaign if exists
+    if (scheduledCampaignTimeout) {
+      clearTimeout(scheduledCampaignTimeout);
+      scheduledCampaignTimeout = null;
+      console.log('[WHL] Scheduled campaign cancelled');
+    }
 
     console.log('[WHL] Campaign stopped');
   }
@@ -3322,21 +3456,15 @@
     const msgEl = document.getElementById('whlMsg');
     const delayMinEl = document.getElementById('whlDelayMin');
     const delayMaxEl = document.getElementById('whlDelayMax');
-    const continueOnErrorEl = document.getElementById('whlContinueOnError');
 
     if (numbersEl && numbersEl.value !== state.numbersText) numbersEl.value = state.numbersText;
     if (msgEl && msgEl.value !== state.message) msgEl.value = state.message;
     if (delayMinEl) delayMinEl.value = state.delayMin;
     if (delayMaxEl) delayMaxEl.value = state.delayMax;
-    if (continueOnErrorEl) continueOnErrorEl.checked = !!state.continueOnError;
-    const retryEl = document.getElementById('whlRetryMax');
-    const schedEl = document.getElementById('whlScheduleAt');
-    if (retryEl) retryEl.value = state.retryMax ?? 0;
-    if (schedEl && (schedEl.value||'') !== (state.scheduleAt||'')) schedEl.value = state.scheduleAt || '';
     
-    // NEW: Worker mode checkbox
-    const useWorkerEl = document.getElementById('whlUseWorker');
-    if (useWorkerEl) useWorkerEl.checked = !!state.useWorker;
+    // PR #78: Removed obsolete settings (continueOnError, retryMax, useWorker)
+    const schedEl = document.getElementById('whlScheduleAt');
+    if (schedEl && (schedEl.value||'') !== (state.scheduleAt||'')) schedEl.value = state.scheduleAt || '';
     
     // Preview
     const curp = state.queue[state.index];
@@ -3493,6 +3621,43 @@
     if (stopBtn) {
       stopBtn.disabled = !state.isRunning;
       stopBtn.style.opacity = stopBtn.disabled ? '0.5' : '1';
+    }
+  }
+
+  // PR #78: Function to update message preview in real-time
+  function updateMessagePreview() {
+    try {
+      const previewEl = document.getElementById('whlPreviewText');
+      const messageEl = document.getElementById('whlMsg');
+      
+      if (!previewEl || !messageEl) return;
+      
+      const message = messageEl.value || '';
+      
+      // Replace variables with highlighted placeholders
+      const previewHTML = message
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\n/g, '<br>')
+        .replace(/{{nome}}/gi, '<span style="background:rgba(111,0,255,0.3);padding:2px 6px;border-radius:4px;color:#fff">[Nome]</span>')
+        .replace(/{{first_name}}/gi, '<span style="background:rgba(111,0,255,0.3);padding:2px 6px;border-radius:4px;color:#fff">[Primeiro Nome]</span>')
+        .replace(/{{last_name}}/gi, '<span style="background:rgba(111,0,255,0.3);padding:2px 6px;border-radius:4px;color:#fff">[Último Nome]</span>')
+        .replace(/{{phone}}/gi, '<span style="background:rgba(111,0,255,0.3);padding:2px 6px;border-radius:4px;color:#fff">[Telefone]</span>')
+        .replace(/{{email}}/gi, '<span style="background:rgba(111,0,255,0.3);padding:2px 6px;border-radius:4px;color:#fff">[Email]</span>');
+      
+      previewEl.innerHTML = previewHTML;
+      
+      // Update time
+      const timeEl = document.getElementById('whlPreviewMeta');
+      if (timeEl) {
+        const d = new Date();
+        const hh = String(d.getHours()).padStart(2,'0');
+        const mm = String(d.getMinutes()).padStart(2,'0');
+        timeEl.textContent = `${hh}:${mm}`;
+      }
+    } catch (e) {
+      console.error('[WHL] Erro ao atualizar preview:', e);
     }
   }
 
@@ -4436,7 +4601,13 @@ try {
       const st = await getState();
       st.message = e.target.value || '';
       await setState(st);
+      // PR #78: Update preview automatically
+      updateMessagePreview();
     });
+    
+    // PR #78: Add blur and change listeners for preview update
+    document.getElementById('whlMsg').addEventListener('blur', updateMessagePreview);
+    document.getElementById('whlMsg').addEventListener('change', updateMessagePreview);
     
     // Enter key to auto-generate queue (build table)
     const msgTextarea = document.getElementById('whlMsg');
@@ -4471,27 +4642,9 @@ try {
       st.delayMax = Math.max(1, parseInt(e.target.value) || 10);
       await setState(st);
     });
-    document.getElementById('whlContinueOnError').addEventListener('change', async (e) => {
-      const st = await getState();
-      st.continueOnError = !!e.target.checked;
-      await setState(st);
-    });
-
-    // NEW: Worker mode toggle
-    document.getElementById('whlUseWorker').addEventListener('change', async (e) => {
-      const st = await getState();
-      st.useWorker = !!e.target.checked;
-      await setState(st);
-      console.log('[WHL] Worker mode:', st.useWorker ? 'enabled' : 'disabled');
-    });
-
-    // Retry max
-    document.getElementById('whlRetryMax').addEventListener('input', async (e) => {
-      const st = await getState();
-      st.retryMax = Math.max(0, Math.min(5, parseInt(e.target.value)||0));
-      await setState(st);
-      await render();
-    });
+    
+    // PR #78: Removed obsolete settings event listeners (continueOnError, useWorker, retryMax)
+    
     // Schedule
     document.getElementById('whlScheduleAt').addEventListener('input', async (e) => {
       const st = await getState();
@@ -4678,6 +4831,92 @@ try {
 
     document.getElementById('whlSkip').addEventListener('click', skip);
     document.getElementById('whlWipe').addEventListener('click', wipe);
+
+    // PR #78: Emoji Picker
+    const emojiBtn = document.getElementById('whlEmojiBtn');
+    const emojiPicker = document.getElementById('whlEmojiPicker');
+    const msgTextarea = document.getElementById('whlMsg');
+    
+    if (emojiBtn && emojiPicker && msgTextarea) {
+      // Emoji list - categorized
+      const emojis = [
+        // Smileys
+        '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '😊', 
+        '😇', '🥰', '😍', '🤩', '😘', '😗', '😚', '😋', '😛', '😜',
+        '🤪', '😝', '🤑', '🤗', '🤭', '🤫', '🤔', '🤐', '🤨', '😐',
+        '😑', '😶', '😏', '😒', '🙄', '😬', '🤥', '😌', '😔', '😪',
+        '🤤', '😴', '😷', '🤒', '🤕', '🤢', '🤮', '🤧', '🥵', '🥶',
+        // Gestures
+        '👍', '👎', '👊', '✊', '🤛', '🤜', '🤞', '✌️', '🤟', '🤘',
+        '👌', '🤌', '🤏', '👈', '👉', '👆', '👇', '☝️', '👋', '🤚',
+        '🖐️', '✋', '🖖', '👏', '🙌', '👐', '🤲', '🤝', '🙏', '💪',
+        // Hearts & Symbols
+        '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔',
+        '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟', '☮️',
+        '✝️', '☪️', '🕉️', '☸️', '✡️', '🔯', '🕎', '☯️', '☦️', '⛎',
+        '♈', '♉', '♊', '♋', '♌', '♍', '♎', '♏', '♐', '♑',
+        // Common
+        '⭐', '🌟', '✨', '⚡', '🔥', '💥', '💫', '💦', '💨', '🌈',
+        '☀️', '🌤️', '⛅', '🌥️', '☁️', '🌦️', '🌧️', '⛈️', '🌩️', '🌨️',
+        '✅', '❌', '⚠️', '🚫', '📌', '📍', '🎉', '🎊', '🎈', '🎁'
+      ];
+      
+      // Populate emoji picker
+      const emojiGrid = emojiPicker.querySelector('div');
+      if (emojiGrid) {
+        emojiGrid.innerHTML = emojis.map(e => 
+          `<span class="emoji-item" style="font-size:22px;cursor:pointer;padding:4px;border-radius:6px;display:flex;align-items:center;justify-content:center;transition:background 0.1s" onmouseover="this.style.background='rgba(111,0,255,0.2)'" onmouseout="this.style.background='transparent'">${e}</span>`
+        ).join('');
+        
+        // Handle emoji selection
+        emojiGrid.addEventListener('click', (e) => {
+          if (e.target.classList.contains('emoji-item')) {
+            const emoji = e.target.textContent;
+            
+            // Insert at cursor position
+            const start = msgTextarea.selectionStart;
+            const end = msgTextarea.selectionEnd;
+            const text = msgTextarea.value;
+            
+            msgTextarea.value = text.substring(0, start) + emoji + text.substring(end);
+            msgTextarea.selectionStart = msgTextarea.selectionEnd = start + emoji.length;
+            msgTextarea.focus();
+            
+            // Update preview
+            updateMessagePreview();
+            
+            // Hide picker
+            emojiPicker.style.display = 'none';
+          }
+        });
+      }
+      
+      // Toggle picker
+      emojiBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        if (emojiPicker.style.display === 'none' || !emojiPicker.style.display) {
+          // Position picker
+          const btnRect = emojiBtn.getBoundingClientRect();
+          emojiPicker.style.display = 'block';
+          emojiPicker.style.position = 'absolute';
+          emojiPicker.style.right = '10px';
+          emojiPicker.style.top = (btnRect.bottom + 5) + 'px';
+        } else {
+          emojiPicker.style.display = 'none';
+        }
+      });
+      
+      // Close picker when clicking outside
+      document.addEventListener('click', (e) => {
+        if (emojiPicker.style.display !== 'none' && 
+            !emojiPicker.contains(e.target) && 
+            e.target !== emojiBtn) {
+          emojiPicker.style.display = 'none';
+        }
+      });
+    }
 
     document.getElementById('whlHide').addEventListener('click', async () => {
       const st = await getState();
