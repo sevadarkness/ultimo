@@ -4,6 +4,17 @@
   if (window.__WHL_SINGLE_TAB__) return;
   window.__WHL_SINGLE_TAB__ = true;
 
+  // ===== WORKER TAB DETECTION =====
+  // Check if this is the worker tab - if so, don't initialize UI
+  const urlParams = new URLSearchParams(window.location.search);
+  const isWorkerTab = urlParams.has('whl_worker') || window.location.href.includes('whl_worker=true');
+  
+  if (isWorkerTab) {
+    console.log('[WHL] This is the worker tab, UI disabled');
+    // Worker content script will handle this tab
+    return;
+  }
+
   // ===== CONFIGURAÇÃO GLOBAL =====
   // Flag para habilitar envio via API direta (WPP Boladão) ou URL tradicional
   // true = API direta (10x mais rápido, sem reload)
@@ -11,6 +22,7 @@
   const WHL_CONFIG = {
     USE_DIRECT_API: true,  // Usar API direta por padrão
     API_RETRY_ON_FAIL: true,  // Se API falhar, tentar URL mode
+    USE_WORKER_FOR_SENDING: true,  // NEW: Use hidden worker tab for sending
   };
 
   // Injetar wpp-hooks.js no contexto da página
@@ -347,7 +359,8 @@
       drafts: {},
       lastReport: null,
       selectorHealth: { ok: true, issues: [] },
-      stats: { sent: 0, failed: 0, pending: 0 }
+      stats: { sent: 0, failed: 0, pending: 0 },
+      useWorker: true  // NEW: Enable worker mode by default
     };
   }
   async function setState(next) {
@@ -986,6 +999,16 @@
                 </div>
                 <div class="settings-control">
                   <input type="checkbox" id="whlContinueOnError" checked />
+                </div>
+              </div>
+
+              <div class="settings-row toggle">
+                <div class="settings-label">
+                  <div class="k">🔧 Worker Oculto</div>
+                  <div class="d">Enviar em aba separada (sem reload)</div>
+                </div>
+                <div class="settings-control">
+                  <input type="checkbox" id="whlUseWorker" checked />
                 </div>
               </div>
             </div>
@@ -2545,6 +2568,13 @@
 
     console.log('[WHL] 🚀 Campanha iniciada');
     
+    // Check if worker mode is enabled (from user settings)
+    if (st.useWorker) {
+      console.log('[WHL] 🔧 Using Hidden Worker Tab for sending');
+      await startCampaignViaWorker();
+      return;
+    }
+    
     // Usar configuração global para escolher modo
     if (WHL_CONFIG.USE_DIRECT_API) {
       console.log('[WHL] 📡 Usando API direta (WPP Boladão) - SEM RELOAD!');
@@ -2553,6 +2583,30 @@
       console.log('[WHL] 🔗 Usando modo URL (com reload)');
       processCampaignStepViaDom();
     }
+  }
+
+  // NEW: Function to start campaign via worker tab
+  async function startCampaignViaWorker() {
+    const st = await getState();
+    
+    // Send to background to manage via worker
+    chrome.runtime.sendMessage({
+      action: 'START_CAMPAIGN_WORKER',
+      queue: st.queue,
+      config: {
+        message: st.message,
+        imageData: st.imageData,
+        delayMin: (st.delayMin || 2) * 1000,
+        delayMax: (st.delayMax || 6) * 1000
+      }
+    }, (response) => {
+      if (response?.success) {
+        console.log('[WHL] Campaign started via Hidden Worker');
+      } else {
+        console.error('[WHL] Failed to start campaign via worker:', response?.error);
+        alert('Erro ao iniciar campanha via worker. Tente novamente.');
+      }
+    });
   }
 
   async function pauseCampaign() {
@@ -2565,6 +2619,12 @@
       st.isPaused = false;
       await setState(st);
       await render();
+      
+      // Check if using worker mode (from user settings)
+      if (st.useWorker) {
+        chrome.runtime.sendMessage({ action: 'RESUME_CAMPAIGN' });
+        return;
+      }
       
       // Continuar processamento de onde parou
       if (st.isRunning) {
@@ -2582,6 +2642,12 @@
       await setState(st);
       await render();
       
+      // Check if using worker mode (from user settings)
+      if (st.useWorker) {
+        chrome.runtime.sendMessage({ action: 'PAUSE_CAMPAIGN' });
+        return;
+      }
+      
       // Limpar interval para parar o loop
       if (campaignInterval) {
         clearTimeout(campaignInterval);
@@ -2596,6 +2662,12 @@
     st.isPaused = false;
     await setState(st);
     await render();
+
+    // Check if using worker mode (from user settings)
+    if (st.useWorker) {
+      chrome.runtime.sendMessage({ action: 'STOP_CAMPAIGN' });
+      return;
+    }
 
     if (campaignInterval) {
       clearTimeout(campaignInterval);
@@ -2629,6 +2701,11 @@
     const schedEl = document.getElementById('whlScheduleAt');
     if (retryEl) retryEl.value = state.retryMax ?? 0;
     if (schedEl && (schedEl.value||'') !== (state.scheduleAt||'')) schedEl.value = state.scheduleAt || '';
+    
+    // NEW: Worker mode checkbox
+    const useWorkerEl = document.getElementById('whlUseWorker');
+    if (useWorkerEl) useWorkerEl.checked = !!state.useWorker;
+    
     // Preview
     const curp = state.queue[state.index];
     const phone = curp?.phone || '';
@@ -3460,6 +3537,14 @@ try {
       await setState(st);
     });
 
+    // NEW: Worker mode toggle
+    document.getElementById('whlUseWorker').addEventListener('change', async (e) => {
+      const st = await getState();
+      st.useWorker = !!e.target.checked;
+      await setState(st);
+      console.log('[WHL] Worker mode:', st.useWorker ? 'enabled' : 'disabled');
+    });
+
     // Retry max
     document.getElementById('whlRetryMax').addEventListener('input', async (e) => {
       const st = await getState();
@@ -3670,6 +3755,72 @@ try {
         await setState(st);
         await render();
       })();
+    }
+    
+    // NEW: Handle worker-related messages
+    if (msg?.action === 'CAMPAIGN_PROGRESS') {
+      (async () => {
+        const st = await getState();
+        // Update index if worker is ahead
+        if (msg.current > st.index) {
+          st.index = msg.current;
+          await setState(st);
+        }
+        await render();
+      })();
+    }
+    
+    if (msg?.action === 'SEND_RESULT') {
+      (async () => {
+        const st = await getState();
+        // Find the contact in queue and update status
+        const contact = st.queue.find(c => c.phone === msg.phone);
+        if (contact) {
+          contact.status = msg.status;
+          if (msg.error) contact.error = msg.error;
+          
+          // Update stats
+          st.stats.sent = st.queue.filter(c => c.status === 'sent').length;
+          st.stats.failed = st.queue.filter(c => c.status === 'failed').length;
+          st.stats.pending = st.queue.filter(c => c.status === 'pending' || c.status === 'opened').length;
+          
+          await setState(st);
+          await render();
+        }
+      })();
+    }
+    
+    if (msg?.action === 'CAMPAIGN_COMPLETED') {
+      (async () => {
+        const st = await getState();
+        st.isRunning = false;
+        st.isPaused = false;
+        await setState(st);
+        await render();
+        alert('🎉 Campanha finalizada!');
+      })();
+    }
+    
+    if (msg?.action === 'WORKER_CLOSED') {
+      (async () => {
+        const st = await getState();
+        st.isPaused = true;
+        await setState(st);
+        await render();
+        alert('⚠️ A aba worker foi fechada. A campanha foi pausada.');
+      })();
+    }
+    
+    if (msg?.action === 'WORKER_STATUS_UPDATE') {
+      console.log('[WHL] Worker status:', msg.status);
+      if (msg.status === 'QR_CODE_REQUIRED') {
+        alert('⚠️ A aba worker precisa escanear o QR Code do WhatsApp.');
+      }
+    }
+    
+    if (msg?.action === 'WORKER_ERROR') {
+      console.error('[WHL] Worker error:', msg.error);
+      alert('❌ Erro no worker: ' + msg.error);
     }
   });
 

@@ -33,7 +33,8 @@
         "https://web.whatsapp.com/*"
       ],
       "js": [
-        "content/content.js"
+        "content/content.js",
+        "content/worker-content.js"
       ],
       "run_at": "document_idle"
     }
