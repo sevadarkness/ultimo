@@ -81,6 +81,12 @@ window.whl_hooks_main = () => {
             const REVOKE_SUBTYPES = ['sender_revoke', 'admin_revoke'];
             if (!REVOKE_SUBTYPES.includes(message?.subtype)) return false;
             
+            // Check if protocolMessageKey exists before accessing
+            if (!message.protocolMessageKey) {
+                console.warn('[WHL Hooks] protocolMessageKey not found in revoked message');
+                return false;
+            }
+            
             // Transformar mensagem apagada em mensagem visível
             message.type = 'chat';
             message.body = '🚫 Esta mensagem foi excluída!';
@@ -120,8 +126,10 @@ window.whl_hooks_main = () => {
         }
         
         static handle_edited_message(message, arg1, arg2) {
+            // Extract message content - body for text, caption for media
+            const messageContent = message?.body || message?.caption || '[sem conteúdo]';
             message.type = 'chat';
-            message.body = `✏️ Esta mensagem foi editada para: ${message?.body || message?.caption}`;
+            message.body = `✏️ Esta mensagem foi editada para: ${messageContent}`;
             
             if (!message.protocolMessageKey) return true;
             
@@ -205,7 +213,8 @@ window.whl_hooks_main = () => {
         while (attempts < maxAttempts) {
             try {
                 // Testar se módulos do WhatsApp estão disponíveis
-                if (require('WAWebMessageProcessRenderable')) {
+                // Use constant for consistency
+                if (require(WA_MODULES.PROCESS_RENDERABLE_MESSAGES)) {
                     console.log('[WHL Hooks] WhatsApp modules detected, starting...');
                     start();
                     return;
@@ -231,6 +240,11 @@ window.whl_hooks_main = () => {
         
         const { type } = event.data;
         
+        // Helper function to check if a chat is a group
+        const isGroupChat = (chat) => {
+            return chat.id?._serialized?.endsWith('@g.us') || chat.isGroup;
+        };
+        
         // CARREGAR GRUPOS
         if (type === 'WHL_LOAD_GROUPS') {
             const groups = [];
@@ -241,7 +255,7 @@ window.whl_hooks_main = () => {
                     const chats = MODULES.CHAT_STORE.getModelsArray?.() || MODULES.CHAT_STORE.models || [];
                     
                     chats.forEach(chat => {
-                        if (chat.id?._serialized?.endsWith('@g.us') || chat.isGroup) {
+                        if (isGroupChat(chat)) {
                             groups.push({
                                 id: chat.id._serialized,
                                 name: chat.formattedTitle || chat.name || chat.contact?.name || 'Grupo sem nome',
