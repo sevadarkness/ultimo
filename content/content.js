@@ -3442,6 +3442,178 @@ window.addEventListener('message', (e) => {
     }
     alert('Erro ao extrair membros: ' + e.data.error);
   }
+  
+  // ===== LISTENERS PARA EXTRAÇÃO INSTANTÂNEA =====
+  
+  // Resultado de extração instantânea
+  if (e.data.type === 'WHL_EXTRACT_INSTANT_RESULT') {
+    const extractStatus = document.getElementById('whlExtractStatus');
+    
+    if (e.data.success) {
+      console.log('[WHL] Extração instantânea bem-sucedida:', e.data.contacts?.length, 'contatos');
+      if (extractStatus) {
+        extractStatus.textContent = `✅ ${e.data.contacts?.length || 0} contatos extraídos via ${e.data.method}`;
+      }
+    } else {
+      console.log('[WHL] Extração instantânea falhou:', e.data.error);
+      if (extractStatus) {
+        extractStatus.textContent = `⚠️ Método instantâneo falhou: ${e.data.error}`;
+      }
+    }
+  }
+  
+  // Resultado de extração completa instantânea
+  if (e.data.type === 'WHL_EXTRACT_ALL_INSTANT_RESULT') {
+    const extractStatus = document.getElementById('whlExtractStatus');
+    
+    if (e.data.success) {
+      const normalBox = document.getElementById('whlExtractedNumbers');
+      const archivedBox = document.getElementById('whlArchivedNumbers');
+      const blockedBox = document.getElementById('whlBlockedNumbers');
+      
+      const normalCount = document.getElementById('whlNormalCount');
+      const archivedCount = document.getElementById('whlArchivedCount');
+      const blockedCount = document.getElementById('whlBlockedCount');
+      
+      if (normalBox && e.data.contacts) {
+        normalBox.value = e.data.contacts.join('\n');
+      }
+      if (archivedBox && e.data.archived) {
+        archivedBox.value = e.data.archived.join('\n');
+      }
+      if (blockedBox && e.data.blocked) {
+        blockedBox.value = e.data.blocked.join('\n');
+      }
+      
+      if (normalCount) normalCount.textContent = e.data.contacts?.length || 0;
+      if (archivedCount) archivedCount.textContent = e.data.archived?.length || 0;
+      if (blockedCount) blockedCount.textContent = e.data.blocked?.length || 0;
+      
+      console.log('[WHL] Extração completa instantânea:', {
+        normal: e.data.contacts?.length || 0,
+        archived: e.data.archived?.length || 0,
+        blocked: e.data.blocked?.length || 0,
+        groups: e.data.groups?.length || 0
+      });
+      
+      if (extractStatus) {
+        extractStatus.textContent = `✅ Extração instantânea concluída: ${e.data.contacts?.length || 0} normais, ${e.data.archived?.length || 0} arquivados, ${e.data.blocked?.length || 0} bloqueados`;
+      }
+    } else {
+      if (extractStatus) {
+        extractStatus.textContent = `⚠️ Extração instantânea falhou: ${e.data.error}`;
+      }
+    }
+  }
+  
+  // Resultado de carregar grupos (novo formato)
+  if (e.data.type === 'WHL_LOAD_GROUPS_RESULT') {
+    const groupsList = document.getElementById('whlGroupsList');
+    const btnLoadGroups = document.getElementById('whlLoadGroups');
+    
+    if (btnLoadGroups) {
+      btnLoadGroups.disabled = false;
+      btnLoadGroups.textContent = '🔄 Carregar Grupos';
+    }
+    
+    if (e.data.success && e.data.groups && groupsList) {
+      const groups = e.data.groups;
+      groupsList.innerHTML = '';
+      
+      groups.forEach(g => {
+        const opt = document.createElement('option');
+        opt.value = g.id;
+        opt.textContent = `${g.name} (${g.participants} membros)`;
+        opt.dataset.groupId = g.id;
+        groupsList.appendChild(opt);
+      });
+      
+      console.log(`[WHL] ${groups.length} grupos carregados`);
+      alert(`✅ ${groups.length} grupos carregados!`);
+    } else if (!e.data.success) {
+      alert('Erro ao carregar grupos: ' + (e.data.error || 'Desconhecido'));
+    }
+  }
+  
+  // ===== LISTENERS PARA RECOVER HISTORY =====
+  
+  // Nova mensagem recuperada
+  if (e.data.type === 'WHL_RECOVER_NEW_MESSAGE') {
+    const recoverCount = document.getElementById('whlRecoveredCount');
+    const recoverHistory = document.getElementById('whlRecoverHistory');
+    
+    if (recoverCount) {
+      recoverCount.textContent = e.data.total || 0;
+    }
+    
+    if (recoverHistory && e.data.message) {
+      const msg = e.data.message;
+      const msgEl = document.createElement('div');
+      msgEl.style.cssText = 'padding:8px;margin-bottom:8px;background:rgba(255,100,100,0.1);border-left:3px solid #f55;border-radius:6px;';
+      msgEl.innerHTML = `
+        <div style="font-size:11px;opacity:0.7;margin-bottom:4px">
+          ${new Date(msg.timestamp).toLocaleString('pt-BR')} - De: ${msg.from}
+        </div>
+        <div style="font-size:12px">${msg.body}</div>
+      `;
+      recoverHistory.insertBefore(msgEl, recoverHistory.firstChild);
+      
+      // Limitar a 20 mensagens visíveis
+      while (recoverHistory.children.length > 20) {
+        recoverHistory.removeChild(recoverHistory.lastChild);
+      }
+    }
+    
+    console.log('[WHL Recover] Nova mensagem recuperada:', e.data.message?.body?.substring(0, 50));
+  }
+  
+  // Histórico completo de recover
+  if (e.data.type === 'WHL_RECOVER_HISTORY_RESULT') {
+    const recoverCount = document.getElementById('whlRecoveredCount');
+    const recoverHistory = document.getElementById('whlRecoverHistory');
+    
+    if (recoverCount) {
+      recoverCount.textContent = e.data.total || 0;
+    }
+    
+    if (recoverHistory && e.data.history) {
+      recoverHistory.innerHTML = '';
+      
+      if (e.data.history.length === 0) {
+        recoverHistory.innerHTML = '<div class="muted">Nenhuma mensagem recuperada ainda...</div>';
+      } else {
+        e.data.history.slice().reverse().forEach(msg => {
+          const msgEl = document.createElement('div');
+          msgEl.style.cssText = 'padding:8px;margin-bottom:8px;background:rgba(255,100,100,0.1);border-left:3px solid #f55;border-radius:6px;';
+          msgEl.innerHTML = `
+            <div style="font-size:11px;opacity:0.7;margin-bottom:4px">
+              ${new Date(msg.timestamp).toLocaleString('pt-BR')} - De: ${msg.from}
+            </div>
+            <div style="font-size:12px">${msg.body}</div>
+          `;
+          recoverHistory.appendChild(msgEl);
+        });
+      }
+    }
+    
+    console.log('[WHL Recover] Histórico carregado:', e.data.total, 'mensagens');
+  }
+  
+  // Histórico limpo
+  if (e.data.type === 'WHL_RECOVER_HISTORY_CLEARED') {
+    const recoverCount = document.getElementById('whlRecoveredCount');
+    const recoverHistory = document.getElementById('whlRecoverHistory');
+    
+    if (recoverCount) {
+      recoverCount.textContent = '0';
+    }
+    
+    if (recoverHistory) {
+      recoverHistory.innerHTML = '<div class="muted">Nenhuma mensagem recuperada ainda...</div>';
+    }
+    
+    console.log('[WHL Recover] Histórico limpo');
+  }
 });
 
 // ===== WHL: Bind Recover Ultra++ Tab =====
@@ -3458,10 +3630,15 @@ try {
   if (recoverStatus) {
     recoverStatus.textContent = '🟢 Sempre Ativo';
   }
+  
+  // Load recover history on init
+  window.postMessage({ type: 'WHL_GET_RECOVER_HISTORY' }, '*');
 
   if (btnRecoverEnable) {
     btnRecoverEnable.addEventListener('click', () => {
       alert('✅ Recover Ultra++ está sempre ativo com a nova implementação WPP Boladão!\n\nMensagens apagadas e editadas são interceptadas automaticamente.');
+      // Atualizar histórico
+      window.postMessage({ type: 'WHL_GET_RECOVER_HISTORY' }, '*');
     });
   }
 
@@ -3473,13 +3650,31 @@ try {
 
   if (btnExportRecovered) {
     btnExportRecovered.addEventListener('click', () => {
-      alert('⚠️ Função de exportação será implementada em breve.\n\nPor enquanto, as mensagens são exibidas diretamente no chat.');
+      // Exportar histórico de recover como JSON
+      const history = localStorage.getItem('whl_recover_history');
+      if (!history || history === '[]') {
+        alert('⚠️ Nenhuma mensagem recuperada para exportar.');
+        return;
+      }
+      
+      const blob = new Blob([history], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `whl_recover_history_${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      
+      alert('✅ Histórico exportado como JSON!');
     });
   }
 
   if (btnClearRecovered) {
     btnClearRecovered.addEventListener('click', () => {
-      alert('ℹ️ Com a nova implementação, as mensagens recuperadas são exibidas inline.\n\nRecarregue a página para limpar.');
+      if (confirm('⚠️ Tem certeza que deseja limpar todo o histórico de mensagens recuperadas?')) {
+        window.postMessage({ type: 'WHL_CLEAR_RECOVER_HISTORY' }, '*');
+        alert('✅ Histórico limpo!');
+      }
     });
   }
 } catch(e) {
