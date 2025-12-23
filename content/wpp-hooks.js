@@ -517,17 +517,64 @@ window.whl_hooks_main = () => {
     let MODULES = {};
 
     // ===== RECOVER HISTORY TRACKING =====
+    // CORREÇÃO ISSUE 05: Cache de mensagens para recuperar conteúdo quando forem apagadas
+    // Mantém as últimas 200 mensagens em memória
+    const messageCache = new Map(); // Map<messageId, {body, from, timestamp}>
+    
     // Array para armazenar histórico de mensagens recuperadas
     const historicoRecover = [];
+    
+    /**
+     * CORREÇÃO ISSUE 05: Cachear mensagem recebida para poder recuperá-la se for apagada
+     */
+    function cachearMensagem(msg) {
+        if (!msg?.id?.id) return;
+        
+        const messageId = msg.id.id;
+        const body = msg.body || msg.caption || '';
+        
+        // Só cachear se tem conteúdo
+        if (body) {
+            messageCache.set(messageId, {
+                body: body,
+                from: msg.from?._serialized || msg.from,
+                timestamp: Date.now(),
+                type: msg.type
+            });
+            
+            // Limitar cache a 200 mensagens (remover mais antigas)
+            if (messageCache.size > 200) {
+                const firstKey = messageCache.keys().next().value;
+                messageCache.delete(firstKey);
+            }
+        }
+    }
     
     /**
      * Função para salvar mensagem recuperada
      */
     function salvarMensagemRecuperada(msg) {
+        // CORREÇÃO ISSUE 05: Tentar recuperar do cache se body estiver vazio
+        let body = msg.body || msg.caption || '';
+        
+        // Se body estiver vazio, tentar pegar do cache usando protocolMessageKey
+        if (!body && msg.protocolMessageKey?.id) {
+            const cached = messageCache.get(msg.protocolMessageKey.id);
+            if (cached) {
+                body = cached.body;
+                console.log('[WHL Recover] ✅ Conteúdo recuperado do cache:', body.substring(0, 50));
+            }
+        }
+        
+        // Se ainda estiver vazio, usar placeholder
+        if (!body) {
+            body = '[Mídia ou mensagem sem texto]';
+        }
+        
         const entrada = {
             id: msg.id?.id || Date.now().toString(),
             from: msg.from || msg.id?.remote || 'Desconhecido',
-            body: msg.body || '[Mídia]',
+            body: body,
             type: msg.type || 'chat',
             timestamp: Date.now(),
             originalTimestamp: msg.t ? msg.t * 1000 : Date.now()
@@ -600,6 +647,10 @@ window.whl_hooks_main = () => {
         }
         
         static handle_message(message) {
+            // CORREÇÃO ISSUE 05: Cachear todas as mensagens antes de processar
+            // Isso permite recuperar o conteúdo quando a mensagem for apagada
+            cachearMensagem(message);
+            
             return RenderableMessageHook.revoke_handler(message);
         }
         
@@ -1123,6 +1174,57 @@ window.whl_hooks_main = () => {
     }
     
     /**
+     * CORREÇÃO ISSUE 02: Extrair membros usando o ID do grupo passado
+     * @param {string} groupId - ID do grupo (_serialized)
+     * @returns {Promise<Object>} Resultado com membros extraídos
+     */
+    async function extrairMembrosGrupoPorId(groupId) {
+        console.log('[WHL] Extraindo membros do grupo:', groupId);
+        
+        try {
+            const CC = require('WAWebChatCollection');
+            
+            // Buscar o grupo pelo ID
+            let chat = CC.ChatCollection.get(groupId);
+            
+            if (!chat) {
+                // Tentar criar WID e buscar
+                const WF = require('WAWebWidFactory');
+                const wid = WF.createWid(groupId);
+                chat = CC.ChatCollection.get(wid);
+            }
+            
+            if (!chat || !chat.isGroup) {
+                return { success: false, error: 'Grupo não encontrado: ' + groupId };
+            }
+            
+            // Carregar metadados do grupo se necessário
+            if (!chat.groupMetadata || !chat.groupMetadata.participants) {
+                try {
+                    await chat.queryGroupMetadata();
+                } catch (e) {
+                    console.log('[WHL] Tentando método alternativo para metadados...');
+                }
+            }
+            
+            const participants = chat.groupMetadata?.participants || [];
+            const members = participants
+                .map(p => p.id?._serialized?.replace('@c.us', '') || p.id?.user)
+                .filter(n => n && /^\d{8,15}$/.test(n));
+            
+            return {
+                success: true,
+                members: [...new Set(members)],
+                count: members.length,
+                groupName: chat.name || chat.formattedTitle || 'Grupo'
+            };
+        } catch (e) {
+            console.error('[WHL] Erro ao extrair membros:', e);
+            return { success: false, error: e.message };
+        }
+    }
+    
+    /**
      * Extração instantânea unificada - retorna tudo de uma vez
      * Usa WAWebChatCollection e WAWebBlocklistCollection via require()
      */
@@ -1203,6 +1305,19 @@ window.whl_hooks_main = () => {
             } catch (e) {
                 window.postMessage({ type: 'WHL_GROUP_MEMBERS_ERROR', error: e.message }, '*');
             }
+        }
+        
+        // CORREÇÃO ISSUE 02: Listener para extrair membros por ID (usa grupo selecionado)
+        if (type === 'WHL_EXTRACT_GROUP_MEMBERS_BY_ID') {
+            const { groupId, requestId } = event.data;
+            (async () => {
+                const result = await extrairMembrosGrupoPorId(groupId);
+                window.postMessage({
+                    type: 'WHL_EXTRACT_GROUP_MEMBERS_RESULT',
+                    requestId,
+                    ...result
+                }, '*');
+            })();
         }
         
         if (type === 'WHL_EXTRACT_ALL') {
