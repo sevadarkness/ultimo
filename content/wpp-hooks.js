@@ -5,6 +5,69 @@
  */
 
 window.whl_hooks_main = () => {
+    // ===== HELPER FUNCTIONS FOR GROUP MEMBER EXTRACTION =====
+    function safeRequire(name) {
+        try {
+            if (typeof require === 'function') {
+                return require(name);
+            }
+        } catch {}
+        return null;
+    }
+
+    function resolveCollections() {
+        // A — require()
+        try {
+            const ChatMod = safeRequire('WAWebChatCollection');
+            const ContactMod = safeRequire('WAWebContactCollection');
+
+            if (ChatMod && ContactMod) {
+                const ChatCollection =
+                    ChatMod.ChatCollection || ChatMod.default?.ChatCollection;
+                const ContactCollection =
+                    ContactMod.ContactCollection || ContactMod.default?.ContactCollection;
+
+                if (ChatCollection && ContactCollection) {
+                    return { ChatCollection, ContactCollection };
+                }
+            }
+        } catch {}
+
+        // B — globais (quando existirem)
+        try {
+            if (window.ChatCollection && window.ContactCollection) {
+                return {
+                    ChatCollection: window.ChatCollection,
+                    ContactCollection: window.ContactCollection
+                };
+            }
+        } catch {}
+
+        // C — introspecção defensiva
+        try {
+            for (const k in window) {
+                const v = window[k];
+                if (v?.getModelsArray && v?.get) {
+                    const arr = v.getModelsArray();
+                    if (Array.isArray(arr) && arr.some(c => c?.isGroup)) {
+                        return { ChatCollection: v, ContactCollection: null };
+                    }
+                }
+            }
+        } catch {}
+
+        return null;
+    }
+
+    async function waitForCollections(maxTries = 50, delay = 400) {
+        for (let i = 0; i < maxTries; i++) {
+            const cols = resolveCollections();
+            if (cols?.ChatCollection) return cols;
+            await new Promise(r => setTimeout(r, delay));
+        }
+        return null;
+    }
+    
     // ===== Robust Webpack require bootstrap =====
     function getWpRequire() {
         if (window.webpackChunkwhatsapp_web_client) {
@@ -1279,81 +1342,66 @@ window.whl_hooks_main = () => {
     }
     
     /**
-     * CORREÇÃO BUG 3: Extrair membros usando o ID do grupo passado
+     * PR #71: Extrair membros de grupos - Código Testado e Validado
+     * Usa waitForCollections() com múltiplos fallbacks e loadParticipants()
      * @param {string} groupId - ID do grupo (_serialized)
      * @returns {Promise<Object>} Resultado com membros extraídos
      */
-    async function extrairMembrosGrupoPorId(groupId) {
-        console.log('[WHL] 👥 Extraindo membros do grupo:', groupId);
-        
+    async function extractGroupMembers(groupId) {
         try {
-            const CC = require('WAWebChatCollection');
-            
-            // CORREÇÃO BUG 3: Garantir que groupId tem o formato correto
-            let gid = groupId;
-            if (!gid.includes('@g.us')) {
-                gid = gid + '@g.us';
+            const cols = await waitForCollections();
+            if (!cols) return { success: false, error: 'API interna indisponível.', members: [], count: 0 };
+
+            const chat = cols.ChatCollection.get(groupId);
+            if (!chat || !chat.isGroup) {
+                return { success: false, error: 'Grupo inválido ou não encontrado.', members: [], count: 0 };
             }
-            
-            console.log('[WHL] Buscando grupo com ID:', gid);
-            
-            // CORREÇÃO BUG 3: Tentar encontrar o grupo de múltiplas formas
-            let chat = null;
-            const models = CC.ChatCollection.getModelsArray() || [];
-            
-            for (const c of models) {
-                if (c.id._serialized === gid || c.id._serialized === groupId) {
-                    chat = c;
-                    break;
+
+            const meta = chat.groupMetadata;
+            if (!meta) return { success: false, error: 'Metadata indisponível.', members: [], count: 0 };
+
+            // IMPORTANTE: Carregar participantes se a função existir
+            if (typeof meta.loadParticipants === 'function') {
+                await meta.loadParticipants();
+            }
+
+            let participants = [];
+
+            // Tratar múltiplos formatos de participantes
+            if (meta.participants?.toArray) {
+                participants = meta.participants.toArray();
+            } else if (Array.isArray(meta.participants)) {
+                participants = meta.participants;
+            } else if (meta.participants?.size) {
+                participants = [...meta.participants.values()];
+            }
+
+            if (!participants.length) {
+                return { success: false, error: 'Nenhum participante encontrado.', members: [], count: 0 };
+            }
+
+            const members = participants.map(p => {
+                const id = p.id;
+                if (!id || !id.user) return null;
+
+                // Normalização FINAL (c.us + lid)
+                if (id.server === 'c.us' || id.server === 'lid') {
+                    return id.user;  // Retorna apenas o número sem +
                 }
-            }
-            
-            if (!chat) {
-                console.error('[WHL] Grupo não encontrado:', gid);
-                return { success: false, error: 'Grupo não encontrado: ' + groupId, members: [], count: 0 };
-            }
-            
-            if (!chat.isGroup) {
-                console.error('[WHL] Chat não é um grupo:', gid);
-                return { success: false, error: 'Chat não é um grupo', members: [], count: 0 };
-            }
-            
-            console.log('[WHL] Grupo encontrado:', chat.name || chat.formattedTitle);
-            
-            // CORREÇÃO BUG 3: Carregar metadados se necessário
-            if (!chat.groupMetadata || !chat.groupMetadata.participants || chat.groupMetadata.participants.length === 0) {
-                console.log('[WHL] Carregando metadados do grupo...');
-                try {
-                    if (chat.queryGroupMetadata) {
-                        await chat.queryGroupMetadata();
-                    }
-                } catch (e) {
-                    console.warn('[WHL] Erro ao carregar metadados:', e);
-                }
-            }
-            
-            const participants = chat.groupMetadata?.participants || [];
-            console.log('[WHL] Participantes encontrados:', participants.length);
-            
-            const members = participants
-                .map(p => {
-                    const id = p.id?._serialized || p.id?.user || '';
-                    return id.replace('@c.us', '');
-                })
-                .filter(n => n && /^\d{8,15}$/.test(n));
-            
+
+                return null;
+            }).filter(Boolean);
+
             const uniqueMembers = [...new Set(members)];
-            
-            console.log('[WHL] ✅ Membros extraídos:', uniqueMembers.length);
-            
+
             return {
                 success: true,
                 members: uniqueMembers,
                 count: uniqueMembers.length,
                 groupName: chat.name || chat.formattedTitle || 'Grupo'
             };
+
         } catch (e) {
-            console.error('[WHL] ❌ Erro ao extrair membros:', e);
             return { success: false, error: e.message, members: [], count: 0 };
         }
     }
@@ -1441,14 +1489,14 @@ window.whl_hooks_main = () => {
             }
         }
         
-        // CORREÇÃO BUG 3: Listener para extrair membros por ID (garantir que sempre responde)
+        // PR #71: Listener para extrair membros por ID com código testado e validado
         if (type === 'WHL_EXTRACT_GROUP_MEMBERS_BY_ID') {
             const { groupId, requestId } = event.data;
             console.log('[WHL] Recebido pedido de extração de membros:', groupId);
             
             (async () => {
                 try {
-                    const result = await extrairMembrosGrupoPorId(groupId);
+                    const result = await extractGroupMembers(groupId);
                     console.log('[WHL] Enviando resultado:', result);
                     window.postMessage({
                         type: 'WHL_EXTRACT_GROUP_MEMBERS_RESULT',
