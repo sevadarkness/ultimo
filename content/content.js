@@ -681,7 +681,12 @@
 
           <div style="margin-top:10px">
             <div class="muted">📊 Importar CSV (phone,message opcional)</div>
-            <input id="whlCsv" type="file" accept=".csv,text/csv" />
+            <div class="row" style="margin-top:6px">
+              <button id="whlSelectCsvBtn" style="flex:1">📁 Escolher arquivo</button>
+              <button id="whlClearCsvBtn" style="width:120px;display:none" title="Remover arquivo CSV">🗑️ Remover</button>
+            </div>
+            <input id="whlCsv" type="file" accept=".csv,text/csv" style="display:none" />
+            <div class="tiny" id="whlCsvHint" style="margin-top:6px"></div>
           </div>
 
           <div class="title" style="font-size:13px;margin-top:10px">Mensagem padrão</div>
@@ -3215,7 +3220,17 @@ try {
     // CSV
     document.getElementById('whlCsv').addEventListener('change', async (e) => {
       const file = e.target.files?.[0];
-      if (!file) return;
+      const csvHint = document.getElementById('whlCsvHint');
+      const clearCsvBtn = document.getElementById('whlClearCsvBtn');
+      const selectCsvBtn = document.getElementById('whlSelectCsvBtn');
+      
+      if (!file) {
+        if (csvHint) csvHint.textContent = '';
+        if (clearCsvBtn) clearCsvBtn.style.display = 'none';
+        if (selectCsvBtn) selectCsvBtn.textContent = '📁 Escolher arquivo';
+        return;
+      }
+      
       const text = await file.text();
       const rows = whlCsvToRows(text);
       const st = await getState();
@@ -3231,7 +3246,53 @@ try {
       st.stats = { sent:0, failed: queue.filter(x=>x.status==='failed').length, pending: queue.filter(x=>x.status==='pending').length };
       await setState(st);
       await render();
+      
+      // Atualizar UI
+      if (csvHint) {
+        csvHint.textContent = `✅ ${file.name} - ${queue.length} números carregados`;
+        csvHint.style.color = '#78ffa0';
+      }
+      if (clearCsvBtn) {
+        clearCsvBtn.style.display = '';
+      }
+      if (selectCsvBtn) {
+        selectCsvBtn.textContent = '📁 Trocar arquivo';
+      }
     });
+    
+    // CSV button handlers
+    const selectCsvBtn = document.getElementById('whlSelectCsvBtn');
+    if (selectCsvBtn) {
+      selectCsvBtn.addEventListener('click', () => {
+        const csvInput = document.getElementById('whlCsv');
+        if (csvInput) {
+          csvInput.click();
+        }
+      });
+    }
+    
+    const clearCsvBtn = document.getElementById('whlClearCsvBtn');
+    if (clearCsvBtn) {
+      clearCsvBtn.addEventListener('click', async () => {
+        const csvInput = document.getElementById('whlCsv');
+        
+        // Limpar fila e números
+        const st = await getState();
+        st.queue = [];
+        st.numbersText = '';
+        st.index = 0;
+        st.stats = { sent: 0, failed: 0, pending: 0 };
+        await setState(st);
+        await render();
+        
+        // Clear the file input and trigger change event to update UI
+        if (csvInput) {
+          csvInput.value = '';
+          csvInput.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      });
+    }
+    
     // Image
     document.getElementById('whlImage').addEventListener('change', async (e) => {
       const file = e.target.files?.[0];
