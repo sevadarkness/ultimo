@@ -793,36 +793,34 @@ window.whl_hooks_main = () => {
      */
     function extrairContatosInstantaneo() {
         try {
-            // Tentar múltiplos métodos
-            let Store = window.Store || {};
-            
-            // Método 1: window.Store direto
-            if (Store.Contact?.models) {
-                const contatos = Store.Contact.models.map(contact => contact.id.user || contact.id._serialized?.replace('@c.us', ''));
-                console.log('[WHL] ✅ Extração via Store.Contact:', contatos.length);
-                return { success: true, contacts: contatos, method: 'Store.Contact' };
-            }
-            
-            // Método 2: via require
+            // Método 1: via ContactCollection
             try {
-                const ContactCollection = require('WAWebContactCollection');
-                if (ContactCollection?.Contact?.models) {
-                    const contatos = ContactCollection.Contact.models.map(c => c.id.user || c.id._serialized?.replace('@c.us', ''));
-                    console.log('[WHL] ✅ Extração via require:', contatos.length);
-                    return { success: true, contacts: contatos, method: 'require' };
+                const ContactC = require('WAWebContactCollection');
+                const ContactCollection = ContactC?.ContactCollection;
+                if (ContactCollection && ContactCollection.getModelsArray) {
+                    const models = ContactCollection.getModelsArray() || [];
+                    const contatos = models.map(contact => contact.id.user || contact.id._serialized?.replace('@c.us', ''));
+                    console.log('[WHL] ✅ Extração via ContactCollection:', contatos.length);
+                    return { success: true, contacts: contatos, method: 'ContactCollection' };
                 }
             } catch(e) {
-                console.log('[WHL] Método require falhou:', e.message);
+                console.log('[WHL] Método ContactCollection falhou:', e.message);
             }
             
-            // Método 3: Chat models
-            if (Store.Chat?.models || MODULES.CHAT_COLLECTION?.models) {
-                const chats = Store.Chat?.models || MODULES.CHAT_COLLECTION?.models || [];
-                const contatos = chats
-                    .filter(c => !c.isGroup && (c.id._serialized?.endsWith('@c.us') || c.id?.user))
-                    .map(c => c.id.user || c.id._serialized?.replace('@c.us', ''));
-                console.log('[WHL] ✅ Extração via Store.Chat:', contatos.length);
-                return { success: true, contacts: contatos, method: 'Store.Chat' };
+            // Método 2: via ChatCollection
+            try {
+                const CC = require('WAWebChatCollection');
+                const ChatCollection = CC?.ChatCollection;
+                if (ChatCollection && ChatCollection.getModelsArray) {
+                    const chats = ChatCollection.getModelsArray() || [];
+                    const contatos = chats
+                        .filter(c => !c.isGroup && (c.id._serialized?.endsWith('@c.us') || c.id?.user))
+                        .map(c => c.id.user || c.id._serialized?.replace('@c.us', ''));
+                    console.log('[WHL] ✅ Extração via ChatCollection:', contatos.length);
+                    return { success: true, contacts: contatos, method: 'ChatCollection' };
+                }
+            } catch(e) {
+                console.log('[WHL] Método ChatCollection falhou:', e.message);
             }
             
             return { success: false, error: 'Nenhum método disponível' };
@@ -837,18 +835,20 @@ window.whl_hooks_main = () => {
      */
     function extrairArquivados() {
         try {
-            let Store = window.Store || {};
+            const CC = require('WAWebChatCollection');
+            const ChatCollection = CC?.ChatCollection;
             
-            if (Store.Chat?.models || MODULES.CHAT_COLLECTION?.models) {
-                const chats = Store.Chat?.models || MODULES.CHAT_COLLECTION?.models || [];
-                const arquivados = chats
-                    .filter(c => c.archive && (c.id._serialized?.endsWith('@c.us') || c.id?.user))
-                    .map(c => c.id.user || c.id._serialized?.replace('@c.us', ''));
-                console.log('[WHL] ✅ Arquivados encontrados:', arquivados.length);
-                return { success: true, archived: arquivados };
+            if (!ChatCollection || !ChatCollection.getModelsArray) {
+                console.warn('[WHL] ChatCollection não disponível');
+                return { success: false, error: 'ChatCollection não disponível' };
             }
             
-            return { success: false, error: 'Store.Chat não disponível' };
+            const chats = ChatCollection.getModelsArray() || [];
+            const arquivados = chats
+                .filter(c => c.archive && (c.id._serialized?.endsWith('@c.us') || c.id?.user))
+                .map(c => c.id.user || c.id._serialized?.replace('@c.us', ''));
+            console.log('[WHL] ✅ Arquivados encontrados:', arquivados.length);
+            return { success: true, archived: arquivados };
         } catch (error) {
             console.error('[WHL] Erro ao extrair arquivados:', error);
             return { success: false, error: error.message };
@@ -860,27 +860,18 @@ window.whl_hooks_main = () => {
      */
     function extrairBloqueados() {
         try {
-            let Store = window.Store || {};
+            // Método 1: BlocklistCollection
+            const BC = require('WAWebBlocklistCollection');
+            const BlocklistCollection = BC?.BlocklistCollection;
             
-            // Método 1: Store.Blocklist
-            if (Store.Blocklist?.models) {
-                const bloqueados = Store.Blocklist.models.map(c => c.id.user || c.id._serialized?.replace('@c.us', ''));
-                console.log('[WHL] ✅ Bloqueados via Store.Blocklist:', bloqueados.length);
+            if (BlocklistCollection && BlocklistCollection.getModelsArray) {
+                const blocklist = BlocklistCollection.getModelsArray() || [];
+                const bloqueados = blocklist.map(c => c.id.user || c.id._serialized?.replace('@c.us', ''));
+                console.log('[WHL] ✅ Bloqueados via BlocklistCollection:', bloqueados.length);
                 return { success: true, blocked: bloqueados };
             }
             
-            // Método 2: via require
-            try {
-                const BlocklistCollection = require('WAWebBlocklistCollection');
-                if (BlocklistCollection?.Blocklist?.models) {
-                    const bloqueados = BlocklistCollection.Blocklist.models.map(c => c.id.user || c.id._serialized?.replace('@c.us', ''));
-                    console.log('[WHL] ✅ Bloqueados via require:', bloqueados.length);
-                    return { success: true, blocked: bloqueados };
-                }
-            } catch(e) {
-                console.log('[WHL] Método require bloqueados falhou:', e.message);
-            }
-            
+            console.warn('[WHL] BlocklistCollection não disponível');
             return { success: false, error: 'Blocklist não disponível' };
         } catch (error) {
             console.error('[WHL] Erro ao extrair bloqueados:', error);
@@ -900,10 +891,12 @@ window.whl_hooks_main = () => {
         };
         
         try {
-            let Store = window.Store || {};
+            // Extrair chats usando require
+            const CC = require('WAWebChatCollection');
+            const ChatCollection = CC?.ChatCollection;
             
-            if (Store.Chat?.models || MODULES.CHAT_COLLECTION?.models) {
-                const chats = Store.Chat?.models || MODULES.CHAT_COLLECTION?.models || [];
+            if (ChatCollection && ChatCollection.getModelsArray) {
+                const chats = ChatCollection.getModelsArray() || [];
                 chats.forEach(chat => {
                     try {
                         const id = chat.id?._serialized || chat.id?.user;
@@ -931,8 +924,15 @@ window.whl_hooks_main = () => {
             }
             
             // Bloqueados separado
-            if (Store.Blocklist?.models) {
-                result.blocked = Store.Blocklist.models.map(c => c.id?.user || c.id?._serialized?.replace('@c.us', ''));
+            try {
+                const BC = require('WAWebBlocklistCollection');
+                const BlocklistCollection = BC?.BlocklistCollection;
+                if (BlocklistCollection && BlocklistCollection.getModelsArray) {
+                    const blocklist = BlocklistCollection.getModelsArray() || [];
+                    result.blocked = blocklist.map(c => c.id?.user || c.id?._serialized?.replace('@c.us', ''));
+                }
+            } catch(e) {
+                console.log('[WHL] Blocklist não disponível:', e.message);
             }
             
             console.log('[WHL] ✅ Extração completa instantânea:', {
@@ -1180,8 +1180,10 @@ window.whl_hooks_main = () => {
         if (event.data?.type !== 'WHL_LOAD_ARCHIVED_BLOCKED') return;
         
         try {
-            const chats = Store.ChatCollection?.getModelsArray?.() || [];
-            const contacts = Store.ContactCollection?.getModelsArray?.() || [];
+            const CC = require('WAWebChatCollection');
+            const ContactC = require('WAWebContactCollection');
+            const chats = CC?.ChatCollection?.getModelsArray?.() || [];
+            const contacts = ContactC?.ContactCollection?.getModelsArray?.() || [];
 
             const archived = chats
                 .filter(c => c?.archive === true || c?.isArchived === true)
@@ -1214,7 +1216,8 @@ window.whl_hooks_main = () => {
         // Carregar grupos
         if (type === 'WHL_LOAD_GROUPS') {
             try {
-                const chats = Store.ChatCollection?.getModelsArray?.() || [];
+                const CC = require('WAWebChatCollection');
+                const chats = CC?.ChatCollection?.getModelsArray?.() || [];
                 const groups = chats.filter(c =>
                     c?.id?._serialized?.endsWith('@g.us') || c?.isGroup
                 ).map(c => ({
@@ -1235,7 +1238,8 @@ window.whl_hooks_main = () => {
         if (type === 'WHL_EXTRACT_GROUP_MEMBERS') {
             const { groupId } = event.data;
             try {
-                const chats = Store.ChatCollection?.getModelsArray?.() || [];
+                const CC = require('WAWebChatCollection');
+                const chats = CC?.ChatCollection?.getModelsArray?.() || [];
                 const chat = chats.find(c => c?.id?._serialized === groupId);
                 const members = (chat?.groupMetadata?.participants || [])
                     .map(p => p?.id?._serialized)
@@ -1259,8 +1263,10 @@ window.whl_hooks_main = () => {
         if (event.data?.type !== 'WHL_EXTRACT_INSTANT') return;
         
         try {
-            const chats = Store.ChatCollection?.getModelsArray?.() || [];
-            const contacts = Store.ContactCollection?.getModelsArray?.() || [];
+            const CC = require('WAWebChatCollection');
+            const ContactC = require('WAWebContactCollection');
+            const chats = CC?.ChatCollection?.getModelsArray?.() || [];
+            const contacts = ContactC?.ContactCollection?.getModelsArray?.() || [];
 
             const phoneFromId = (id) => (id?._serialized || '').replace('@c.us', '');
             const nums = new Set();
