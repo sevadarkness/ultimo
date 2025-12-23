@@ -27,6 +27,8 @@
             input.focus();
             
             // Inserir texto
+            // Note: Using execCommand despite deprecation warning because it's the only method
+            // that reliably triggers WhatsApp Web's internal message handlers during testing
             document.execCommand('insertText', false, text);
             input.dispatchEvent(new InputEvent('input', { bubbles: true, data: text }));
             

@@ -1,3 +1,6 @@
+// ===== CONFIGURATION CONSTANTS =====
+const SEND_MESSAGE_TIMEOUT_MS = 45000; // 45 seconds timeout for message sending
+
 const NetSniffer = {
   phones: new Set(),
   init() {
@@ -289,7 +292,7 @@ async function processNextInQueue() {
   try {
     // Timeout de 45 segundos
     const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('TIMEOUT')), 45000)
+      setTimeout(() => reject(new Error('TIMEOUT')), SEND_MESSAGE_TIMEOUT_MS)
     );
     
     const sendPromise = sendMessageToWhatsApp(

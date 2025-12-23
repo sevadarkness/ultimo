@@ -75,7 +75,11 @@ window.whl_hooks_main = () => {
             // Filtrar por server (não por _serialized que pode ter problemas)
             const contatos = models
                 .filter(m => m.id.server === 'c.us')
-                .map(m => m.id.user || m.id._serialized.replace('@c.us', ''))
+                .map(m => {
+                    if (m.id.user) return m.id.user;
+                    const serialized = m.id._serialized || '';
+                    return serialized.includes('@c.us') ? serialized.replace('@c.us', '') : serialized;
+                })
                 .filter(n => /^\d{8,15}$/.test(n));
             
             return { success: true, contacts: [...new Set(contatos)], count: contatos.length };
@@ -120,7 +124,11 @@ window.whl_hooks_main = () => {
             
             const arquivados = models
                 .filter(m => m.archive === true && m.id.server === 'c.us')
-                .map(m => m.id.user || m.id._serialized.replace('@c.us', ''))
+                .map(m => {
+                    if (m.id.user) return m.id.user;
+                    const serialized = m.id._serialized || '';
+                    return serialized.includes('@c.us') ? serialized.replace('@c.us', '') : serialized;
+                })
                 .filter(n => /^\d{8,15}$/.test(n));
             
             return { success: true, archived: [...new Set(arquivados)], count: arquivados.length };
@@ -142,7 +150,11 @@ window.whl_hooks_main = () => {
                 : (modules.BlocklistCollection._models || []);
             
             const bloqueados = blocklist
-                .map(b => b.id?.user || b.id?._serialized?.replace('@c.us', ''))
+                .map(b => {
+                    if (b.id?.user) return b.id.user;
+                    const serialized = b.id?._serialized || '';
+                    return serialized.includes('@c.us') ? serialized.replace('@c.us', '') : null;
+                })
                 .filter(n => n && /^\d{8,15}$/.test(n));
             
             return { success: true, blocked: [...new Set(bloqueados)], count: bloqueados.length };
