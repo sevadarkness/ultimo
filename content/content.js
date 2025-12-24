@@ -15,6 +15,15 @@
     return;
   }
 
+  // Item 20: Minimize console log pollution based on environment
+  const WHL_DEBUG = localStorage.getItem('whl_debug') === 'true' || false;
+  const whlLog = {
+    debug: (...args) => { if (WHL_DEBUG) console.log('[WHL DEBUG]', ...args); },
+    info: (...args) => console.log('[WHL]', ...args),
+    warn: (...args) => console.warn('[WHL]', ...args),
+    error: (...args) => console.error('[WHL]', ...args)
+  };
+
   // ===== CONFIGURAÇÃO GLOBAL =====
   // Flag para habilitar envio via API direta (WPP Boladão) ou URL tradicional
   // true = API direta com métodos validados (SEM reload, resultados confirmados)
@@ -31,10 +40,10 @@
     const script = document.createElement('script');
     script.src = chrome.runtime.getURL('content/wpp-hooks.js');
     script.onload = () => {
-      console.log('[WHL] WPP Hooks injetados');
+      whlLog.info('WPP Hooks injetados');
     };
     script.onerror = () => {
-      console.error('[WHL] Erro ao injetar WPP Hooks');
+      whlLog.error('Erro ao injetar WPP Hooks');
     };
     (document.head || document.documentElement).appendChild(script);
   }
@@ -1542,6 +1551,7 @@
           <div class="row" style="margin-top:10px">
             <button class="success" style="flex:1" id="whlExtractGroupMembers">📥 Extrair Membros</button>
             <button style="width:150px" id="whlCopyGroupMembers">📋 Copiar</button>
+            <button style="width:150px" id="whlCopyGroupId">🆔 Copiar ID</button>
           </div>
           
           <div style="margin-top:10px">
@@ -4099,6 +4109,7 @@
       // Highlight current item
       if (i === state.index && state.isRunning) {
         tr.classList.add('current');
+        tr.id = 'whl-current-row'; // Item 13: ID for auto-scroll
       }
       
       tr.innerHTML = `
@@ -4111,6 +4122,16 @@
       `;
       tb.appendChild(tr);
     });
+    
+    // Item 13: Auto-scroll to highlight current row in table
+    if (state.isRunning && state.index >= 0) {
+      setTimeout(() => {
+        const currentRow = document.getElementById('whl-current-row');
+        if (currentRow) {
+          currentRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
+    }
 
     tb.querySelectorAll('button').forEach(btn => {
       btn.onclick = async () => {
@@ -4235,7 +4256,7 @@
       if (seen.has(normalized) || seen.has(without55)) {
         duplicatesRemoved++;
         duplicateNumbers.push(num);
-        console.log('[WHL] Duplicata removida:', num);
+        whlLog.debug('Duplicata removida:', num);
         continue;
       }
       
@@ -4737,6 +4758,37 @@ try {
       }
     });
   }
+  
+  // Item 11: Add functionality to copy group IDs directly
+  const btnCopyGroupId = document.getElementById('whlCopyGroupId');
+  if (btnCopyGroupId) {
+    btnCopyGroupId.addEventListener('click', async () => {
+      const groupsList = document.getElementById('whlGroupsList');
+      const selectedOption = groupsList?.selectedOptions[0];
+      
+      if (!selectedOption || !selectedOption.dataset.groupId) {
+        alert('Por favor, selecione um grupo primeiro');
+        return;
+      }
+      
+      const groupId = selectedOption.dataset.groupId;
+      const groupName = selectedOption.dataset.groupName || '';
+      
+      try {
+        await navigator.clipboard.writeText(groupId);
+        const originalText = btnCopyGroupId.textContent;
+        btnCopyGroupId.textContent = '✅ Copiado!';
+        setTimeout(() => {
+          btnCopyGroupId.textContent = originalText;
+        }, 2000);
+        
+        console.log(`[WHL] ID do grupo "${groupName}" copiado: ${groupId}`);
+      } catch (err) {
+        console.error('[WHL] Erro ao copiar ID do grupo:', err);
+        alert('Erro ao copiar ID do grupo');
+      }
+    });
+  }
 
   if (btnExportGroupCsv && groupMembersBox) {
     btnExportGroupCsv.addEventListener('click', () => {
@@ -4781,11 +4833,40 @@ window.addEventListener('message', (e) => {
         option.textContent = 'Nenhum grupo encontrado';
         groupsList.appendChild(option);
       } else {
+        // Item 23: Get last selected group from storage
+        const lastSelectedGroupId = localStorage.getItem('whl_last_selected_group');
+        
         groups.forEach(g => {
           const opt = document.createElement('option');
           opt.value = g.id;
-          opt.textContent = `${g.name} (${g.participantsCount} membros)`;
+          
+          // Item 2: Truncate long names with tooltip
+          const maxLength = 50;
+          const displayName = g.name.length > maxLength 
+            ? g.name.substring(0, maxLength) + '...' 
+            : g.name;
+          
+          opt.textContent = `${displayName} (${g.participantsCount} membros)`;
+          // Item 2: Add full name as title for tooltip
+          opt.title = `${g.name} (${g.participantsCount} membros)\nID: ${g.id}`;
+          // Item 11: Store group ID for copying
+          opt.dataset.groupId = g.id;
+          opt.dataset.groupName = g.name;
+          
+          // Item 23: Restore last selected group
+          if (g.id === lastSelectedGroupId) {
+            opt.selected = true;
+          }
+          
           groupsList.appendChild(opt);
+        });
+        
+        // Item 23: Save selected group when changed
+        groupsList.addEventListener('change', () => {
+          const selectedOption = groupsList.selectedOptions[0];
+          if (selectedOption && selectedOption.dataset.groupId) {
+            localStorage.setItem('whl_last_selected_group', selectedOption.dataset.groupId);
+          }
         });
       }
     }
