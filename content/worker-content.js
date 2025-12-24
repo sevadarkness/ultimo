@@ -304,7 +304,7 @@
       const chats = ChatCollection.getModelsArray();
 
       const groups = chats
-        .filter(c => c?.isGroup)
+        .filter(c => c?.id?.server === 'g.us')
         .map(c => ({
           id: c.id?._serialized,
           name: c.name || c.formattedTitle || 'Grupo sem nome',
@@ -342,7 +342,7 @@
       }
 
       const chat = ChatCollection.get(groupId);
-      if (!chat || !chat.isGroup) {
+      if (!chat || chat?.id?.server !== 'g.us') {
         invalidate(groupPartKey(groupId));
         return { error: 'Grupo inválido ou não encontrado.' };
       }
