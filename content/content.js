@@ -9,19 +9,61 @@
   const urlParams = new URLSearchParams(window.location.search);
   const isWorkerTab = urlParams.has('whl_worker') || window.location.href.includes('whl_worker=true');
   
+  // Item 20: Minimize console log pollution based on environment
+  const WHL_DEBUG = localStorage.getItem('whl_debug') === 'true';
+  
   if (isWorkerTab) {
-    console.log('[WHL] This is the worker tab, UI disabled');
+    if (WHL_DEBUG) console.log('[WHL] This is the worker tab, UI disabled');
     // Worker content script will handle this tab
     return;
   }
 
-  // Item 20: Minimize console log pollution based on environment
-  const WHL_DEBUG = localStorage.getItem('whl_debug') === 'true' || false;
   const whlLog = {
     debug: (...args) => { if (WHL_DEBUG) console.log('[WHL DEBUG]', ...args); },
     info: (...args) => console.log('[WHL]', ...args),
     warn: (...args) => console.warn('[WHL]', ...args),
     error: (...args) => console.error('[WHL]', ...args)
+  };
+
+  // ===== DOM SELECTORS =====
+  // Centralized selector constants for better maintainability
+  const WHL_SELECTORS = {
+    // Message input
+    MESSAGE_INPUT: [
+      '[data-testid="conversation-compose-box-input"]',
+      'footer div[contenteditable="true"][role="textbox"]',
+      'div[contenteditable="true"][role="textbox"]'
+    ],
+    // Send button
+    SEND_BUTTON: [
+      '[data-testid="send"]',
+      '[data-testid="compose-btn-send"]',
+      '[aria-label="Enviar"]',
+      'button[aria-label*="Send"]',
+      'span[data-icon="send"]'
+    ],
+    // Attach menu
+    ATTACH_BUTTON: [
+      '[data-testid="attach-clip"]',
+      '[data-testid="clip"]',
+      'span[data-icon="attach-menu-plus"]',
+      'span[data-icon="clip"]',
+      '[aria-label="Anexar"]'
+    ],
+    // Media attach
+    ATTACH_IMAGE: [
+      '[data-testid="attach-image"]',
+      '[data-testid="mi-attach-media"]',
+      '[data-testid="attach-photo"]'
+    ],
+    // Caption input
+    CAPTION_INPUT: [
+      '[data-testid="media-caption-input"]',
+      'div[aria-label*="legenda"][contenteditable="true"]',
+      'div[aria-label*="Legenda"][contenteditable="true"]',
+      'div[aria-label*="caption"][contenteditable="true"]',
+      'div[contenteditable="true"][data-lexical-editor="true"]'
+    ]
   };
 
   // ===== CONFIGURAÇÃO GLOBAL =====
@@ -33,6 +75,13 @@
     API_RETRY_ON_FAIL: true,  // Se API falhar, tentar URL mode
     USE_WORKER_FOR_SENDING: false,  // DISABLED: Hidden Worker Tab não funciona - usar API direta
     USE_INPUT_ENTER_METHOD: false,  // DESABILITADO: Causa reload - usar API direta ao invés
+  };
+  
+  // Performance optimization constants
+  const PERFORMANCE_LIMITS = {
+    MAX_RESPONSE_SIZE: 100 * 1024,      // 100KB - Skip network extraction for large responses
+    MAX_WEBSOCKET_SIZE: 50 * 1024,      // 50KB - Skip WebSocket extraction for large messages
+    NETWORK_EXTRACT_THROTTLE: 1000      // 1 second - Throttle network extraction interval
   };
 
   // Injetar wpp-hooks.js no contexto da página
@@ -157,11 +206,11 @@
             valid: Array.from(this._valid),
             meta: this._meta
           }).catch(err => {
-            console.error('[WHL] Erro ao salvar contatos no storage:', err);
+            whlLog.error('Erro ao salvar contatos no storage:', err);
           });
         }
       } catch (e) {
-        console.error('[WHL] Erro ao preparar dados para salvar:', e);
+        whlLog.error('Erro ao preparar dados para salvar:', e);
       }
     },
     clear() {
@@ -178,18 +227,23 @@
 
   // ========== Extração ==========
   const WAExtractor = {
+    _saveTimeout: null, // For debounced saves
+    
     async start() {
       await this.waitLoad();
-      // this.exposeStore(); // COMENTADO - bloqueado pelo CSP
       this.observerChats();
       this.hookNetwork();
       this.localStorageExtract();
-      // REMOVIDO: this.autoScroll() - scroll só deve ocorrer ao clicar "Extrair Contatos"
+      
+      // Debounced periodic save - only save if data changed
       setInterval(() => {
         try {
-          HarvesterStore.save();
+          // Only save if there are contacts
+          if (HarvesterStore._phones.size > 0) {
+            HarvesterStore.save();
+          }
         } catch(e) {
-          console.error('[WHL] Erro ao salvar periodicamente:', e);
+          whlLog.error('Erro ao salvar periodicamente:', e);
         }
       }, 12000);
     },
@@ -204,27 +258,8 @@
     },
     exposeStore() {
       // DESABILITADO: CSP do WhatsApp Web bloqueia scripts inline
-      console.log('[WHL] exposeStore desabilitado (CSP blocking)');
+      whlLog.debug('exposeStore desabilitado (CSP blocking)');
       return;
-      
-      /* Código original comentado - bloqueado pelo CSP
-      const s = document.createElement('script');
-      s.textContent = `(()=>{try{
-        if(window.webpackChunkwhatsapp_web_client)window.webpackChunkwhatsapp_web_client.push([['wa-harvester'],{},function(e){
-          let mods = [];
-          for(let k in e.m)mods.push(e(k));
-          window.Store = {};
-          let find = f => mods.find(m=>m&&f(m));
-          window.Store.Chat = find(m=>m.default&&m.default.Chat)?.default;
-          window.Store.Contact = find(m=>m.default&&m.default.Contact)?.default;
-          window.Store.GroupMetadata = find(m=>m.default&&m.default.GroupMetadata)?.default;
-          window.dispatchEvent(new CustomEvent('wa-store'));
-        }]);
-      }catch{}})();`;
-      (document.head || document.documentElement).appendChild(s);
-      s.remove();
-      window.addEventListener('wa-store', () => this.fromStore());
-      */
     },
     fromStore() {
       if (!window.Store) return;
@@ -279,14 +314,30 @@
       res.forEach(m => HarvesterStore.processPhone(m[0], origin));
     },
     hookNetwork() {
+      // Throttle phone extraction to reduce performance impact
+      let lastExtractTime = 0;
+      
+      const throttledExtract = (data, origin) => {
+        const now = Date.now();
+        if (now - lastExtractTime < PERFORMANCE_LIMITS.NETWORK_EXTRACT_THROTTLE) return;
+        lastExtractTime = now;
+        WAExtractor.findPhones(data, origin);
+      };
+      
       // fetch
       let f0 = window.fetch;
       window.fetch = async function(...a) {
         let r = await f0.apply(this,a);
-        let data = await r.clone().text().catch(()=>null);
-        if (data) WAExtractor.findPhones(data, HarvesterStore.ORIGINS.NET);
+        // Only extract from successful responses
+        if (r.ok) {
+          let data = await r.clone().text().catch(()=>null);
+          if (data && data.length < PERFORMANCE_LIMITS.MAX_RESPONSE_SIZE) {
+            throttledExtract(data, HarvesterStore.ORIGINS.NET);
+          }
+        }
         return r;
       };
+      
       // XHR
       let oOpen = XMLHttpRequest.prototype.open;
       XMLHttpRequest.prototype.open = function(...a) {
@@ -297,13 +348,16 @@
       XMLHttpRequest.prototype.send = function(...a) {
         this.addEventListener('load',function(){
           // Secure URL validation using URL parsing
-          if(this._wa_url) {
+          if(this._wa_url && this.status === 200) {
             try {
               const url = new URL(this._wa_url);
               if(url.hostname === 'web.whatsapp.com' || 
                  url.hostname.endsWith('.whatsapp.com') || 
                  url.hostname.endsWith('.whatsapp.net')) {
-                WAExtractor.findPhones(this.responseText, HarvesterStore.ORIGINS.NET);
+                const text = this.responseText;
+                if (text && text.length < PERFORMANCE_LIMITS.MAX_RESPONSE_SIZE) {
+                  throttledExtract(text, HarvesterStore.ORIGINS.NET);
+                }
               }
             } catch(e) {
               // Invalid URL, ignore
@@ -312,12 +366,15 @@
         });
         return oSend.apply(this,a);
       };
-      // WebSocket
+      
+      // WebSocket - also throttled
       let WSOld = window.WebSocket;
       window.WebSocket = function(...args) {
         let ws = new WSOld(...args);
         ws.addEventListener('message',e=>{
-          WAExtractor.findPhones(e.data, HarvesterStore.ORIGINS.WS);
+          if (typeof e.data === 'string' && e.data.length < PERFORMANCE_LIMITS.MAX_WEBSOCKET_SIZE) {
+            throttledExtract(e.data, HarvesterStore.ORIGINS.WS);
+          }
         });
         return ws;
       };
@@ -1716,14 +1773,16 @@
       processedText = processedText.substring(1);
     }
     
-    // Try to detect and fix ISO-8859-1 to UTF-8 issues
+    // Detect replacement characters indicating encoding issues
     try {
       // If text contains replacement character (�), try to decode as Latin-1
       if (processedText.includes('�')) {
-        console.warn('[WHL] Possível erro de encoding detectado no CSV');
+        whlLog.warn('Possível erro de encoding detectado no CSV - caracteres especiais podem estar corrompidos');
+        // Try to fix common encoding issues
+        processedText = processedText.normalize('NFKD');
       }
     } catch (e) {
-      console.warn('[WHL] Erro ao verificar encoding:', e);
+      whlLog.warn('Erro ao verificar encoding:', e);
     }
     
     const lines = processedText.replace(/\r/g,'').split('\n').filter(l=>l.trim().length);
@@ -1785,7 +1844,7 @@
         hintEl.style.color = '#4ade80';
       }
     } catch (err) {
-      console.error('[WHL] Erro ao exportar CSV:', err);
+      whlLog.error('Erro ao exportar CSV:', err);
       if (hintEl) {
         hintEl.textContent = '❌ Erro ao exportar CSV';
         hintEl.style.color = '#ef4444';
@@ -1832,7 +1891,7 @@
         statusEl.style.color = '#4ade80';
       }
     } catch (err) {
-      console.error('[WHL] Erro ao exportar CSV:', err);
+      whlLog.error('Erro ao exportar CSV:', err);
       if (statusEl) {
         statusEl.textContent = '❌ Erro ao exportar CSV';
         statusEl.style.color = '#ef4444';
@@ -2025,28 +2084,28 @@
    */
   async function typeMessageInField(text, humanLike = true) {
     if (!text || !text.trim()) {
-      console.log('[WHL] ⚠️ Texto vazio, pulando digitação');
+      whlLog.debug('Texto vazio, pulando digitação');
       return true;
     }
     
-    console.log('[WHL] ⌨️ Digitando texto:', text.substring(0, 50) + '...');
-    console.log('[WHL] Modo:', humanLike ? 'Humanizado 🧑' : 'Rápido ⚡');
+    whlLog.debug('Digitando texto:', text.substring(0, 50) + '...');
+    whlLog.debug('Modo:', humanLike ? 'Humanizado 🧑' : 'Rápido ⚡');
     
     // Aguardar campo com mais tentativas
     let msgInput = null;
     for (let i = 0; i < 20; i++) {
       msgInput = getMessageInputField();
       if (msgInput) break;
-      console.log(`[WHL] Aguardando campo... tentativa ${i+1}/20`);
+      whlLog.debug(`Aguardando campo... tentativa ${i+1}/20`);
       await new Promise(r => setTimeout(r, 500));
     }
     
     if (!msgInput) {
-      console.log('[WHL] ❌ Campo de mensagem não encontrado');
+      whlLog.error('Campo de mensagem não encontrado');
       return false;
     }
     
-    console.log('[WHL] ✅ Campo encontrado');
+    whlLog.debug('Campo encontrado');
     
     // Focar
     msgInput.focus();
@@ -2059,7 +2118,7 @@
     
     if (humanLike) {
       // DIGITAÇÃO HUMANIZADA - caractere por caractere com delays variáveis
-      console.log('[WHL] 🧑 Digitando com aspecto humano...');
+      whlLog.debug('Digitando com aspecto humano...');
       
       for (let i = 0; i < text.length; i++) {
         const char = text[i];
@@ -2111,10 +2170,10 @@
         await new Promise(r => setTimeout(r, delay));
       }
       
-      console.log('[WHL] ✅ Digitação humanizada concluída');
+      whlLog.debug('Digitação humanizada concluída');
     } else {
       // DIGITAÇÃO RÁPIDA - processar linha por linha para preservar \n
-      console.log('[WHL] ⚡ Digitação rápida...');
+      whlLog.debug('Digitação rápida...');
       
       // Dividir texto em linhas e processar cada uma
       const lines = text.split('\n');
@@ -2146,7 +2205,7 @@
     await new Promise(r => setTimeout(r, 300));
     
     const ok = msgInput.textContent.trim().length > 0;
-    console.log('[WHL]', ok ? '✅ Texto digitado com sucesso' : '❌ Falha na digitação');
+    whlLog.debug(ok ? 'Texto digitado com sucesso' : 'Falha na digitação');
     return ok;
   }
 
@@ -2187,15 +2246,15 @@
     const cleanNumber = String(numero).replace(/\D/g, '');
     
     if (!cleanNumber) {
-      console.log('[WHL] ❌ Número inválido');
+      whlLog.error('Número inválido');
       return { success: false, error: 'Número inválido' };
     }
     
     // URL APENAS com o número - NUNCA colocar texto na URL
     let url = `https://web.whatsapp.com/send?phone=${cleanNumber}`;
     
-    console.log('[WHL] 🔗 Navegando para:', url);
-    console.log('[WHL] Mensagem será digitada manualmente após chat abrir');
+    whlLog.debug('Navegando para:', url);
+    whlLog.debug('Mensagem será digitada manualmente após chat abrir');
     
     // Salvar estado antes de navegar (para retomar após reload)
     const st = await getState();
@@ -2229,7 +2288,7 @@
     if (okButton) {
       const messageField = getMessageInputField();
       if (!messageField) {
-        console.log('[WHL] ❌ Popup de erro detectado (botão OK sem campo de mensagem)');
+        whlLog.debug('Popup de erro detectado (botão OK sem campo de mensagem)');
         return true;
       }
     }
@@ -2250,7 +2309,7 @@
     if (okButton) {
       okButton.click();
       await new Promise(r => setTimeout(r, 500));
-      console.log('[WHL] ✅ Popup de erro fechado');
+      whlLog.debug('Popup de erro fechado');
       return true;
     }
     return false;
@@ -2261,13 +2320,13 @@
    * ATUALIZADO: Usa getMessageInputField() e lógica de erro corrigida
    */
   async function waitForChatToOpen(timeout = 15000) {
-    console.log('[WHL] Aguardando chat abrir...');
+    whlLog.debug('Aguardando chat abrir...');
     const start = Date.now();
     
     while (Date.now() - start < timeout) {
       const messageField = getMessageInputField();
       if (messageField) {
-        console.log('[WHL] ✅ Chat aberto - campo de mensagem encontrado');
+        whlLog.debug('Chat aberto - campo de mensagem encontrado');
         return true;
       }
       
@@ -2275,23 +2334,49 @@
       const okButton = [...document.querySelectorAll('button')]
         .find(b => b.innerText.trim().toUpperCase() === 'OK');
       if (okButton && !getMessageInputField()) {
-        console.log('[WHL] ❌ Popup de erro detectado');
+        whlLog.debug('Popup de erro detectado');
         return false;
       }
       
       await new Promise(r => setTimeout(r, 500));
     }
     
-    console.log('[WHL] ⚠️ Timeout aguardando chat abrir');
+    whlLog.warn('Timeout aguardando chat abrir');
     return false;
   }
 
   /**
+   * Helper: Query selector with multiple fallbacks
+   * Uses centralized WHL_SELECTORS object
+   */
+  function querySelector(selectorKey, context = document) {
+    const selectors = WHL_SELECTORS[selectorKey];
+    if (!selectors) return null;
+    
+    for (const selector of selectors) {
+      const element = context.querySelector(selector);
+      if (element) {
+        // For icon selectors, try to find the button parent
+        if (selector.includes('span[data-icon')) {
+          const button = element.closest('button') || element.closest('[role="button"]');
+          if (button) return button;
+        }
+        return element;
+      }
+    }
+    return null;
+  }
+
+  /**
    * Helper: Obtém o campo de mensagem
-   * ATUALIZADO: Usa APENAS seletores CONFIRMADOS pelo usuário
+   * ATUALIZADO: Usa seletores centralizados
    */
   function getMessageInputField() {
-    // Seletores CONFIRMADOS que funcionam:
+    // Try centralized selectors first
+    const field = querySelector('MESSAGE_INPUT');
+    if (field) return field;
+    
+    // Fallback to confirmed selectors
     return document.querySelector('div[aria-label="Digitar na conversa"][contenteditable="true"]') ||
            document.querySelector('div[data-tab="10"][contenteditable="true"]') ||
            document.querySelector('footer div[contenteditable="true"]');
@@ -2346,7 +2431,7 @@
     // FALLBACK: Clicar no botão de enviar
     const sendButton = findSendButton();
     if (sendButton) {
-      console.log('[WHL] 🔘 Clicando no botão de enviar (fallback)');
+      whlLog.debug('Clicando no botão de enviar (fallback)');
       sendButton.click();
     }
     
@@ -2359,7 +2444,7 @@
    * Nota: Nome mantido como clickSendButton() por compatibilidade, mas agora usa ENTER
    */
   async function clickSendButton() {
-    console.log('[WHL] 📤 Enviando mensagem via tecla ENTER...');
+    whlLog.debug('Enviando mensagem via tecla ENTER...');
     
     // Aguardar um pouco para garantir que o chat está carregado
     await new Promise(r => setTimeout(r, 500));
@@ -2368,24 +2453,24 @@
     const msgInput = getMessageInputField();
     
     if (msgInput) {
-      console.log('[WHL] ✅ Campo de mensagem encontrado');
+      whlLog.debug('Campo de mensagem encontrado');
       
       // Enviar tecla ENTER usando helper
       await sendEnterKey(msgInput);
-      console.log('[WHL] ✅ Tecla ENTER enviada');
+      whlLog.debug('Tecla ENTER enviada');
       
       // Verificar se mensagem foi enviada
       const checkInput = getMessageInputField();
       if (!checkInput || checkInput.textContent.trim().length === 0) {
-        console.log('[WHL] ✅ Mensagem enviada com sucesso!');
+        whlLog.debug('Mensagem enviada com sucesso!');
         return { success: true };
       }
       
-      console.log('[WHL] ⚠️ Mensagem ainda presente no campo');
+      whlLog.warn('Mensagem ainda presente no campo');
       return { success: true, warning: 'Não foi possível verificar se mensagem foi enviada' };
     }
     
-    console.log('[WHL] ❌ Campo de mensagem não encontrado');
+    whlLog.error('Campo de mensagem não encontrado');
     return { success: false, error: 'Campo de mensagem não encontrado' };
   }
 
@@ -2400,7 +2485,7 @@
 
     if (okBtn) {
       okBtn.click();
-      console.log('[WHL] ✅ Popup de número inválido fechado');
+      whlLog.debug('Popup de número inválido fechado');
       return true;
     }
     return false;
@@ -2434,7 +2519,7 @@
     }
 
     const inserted = (element.textContent || '').length > 0;
-    console.log('[WHL] Texto inserido:', inserted ? '✅' : '❌', String(text || '').substring(0, 20));
+    whlLog.debug('Texto inserido:', inserted ? '✅' : '❌', String(text || '').substring(0, 20));
     return inserted;
   }
   
@@ -2501,11 +2586,11 @@
    * Não mais usa busca via DOM
    */
   async function sendMessageViaURL(phoneNumber, message) {
-    console.log('[WHL] ████████████████████████████████████████');
-    console.log('[WHL] ███ ENVIANDO MENSAGEM VIA URL ███');
-    console.log('[WHL] ████████████████████████████████████████');
-    console.log('[WHL] Para:', phoneNumber);
-    console.log('[WHL] Mensagem:', message ? message.substring(0, 50) + '...' : '(sem texto)');
+    whlLog.debug('════════════════════════════════════════');
+    whlLog.debug('███ ENVIANDO MENSAGEM VIA URL ███');
+    whlLog.debug('════════════════════════════════════════');
+    whlLog.debug('Para:', phoneNumber);
+    whlLog.debug('Mensagem:', message ? message.substring(0, 50) + '...' : '(sem texto)');
     
     const st = await getState();
     const hasImage = !!st.imageData;
@@ -2520,10 +2605,10 @@
 
   // Função para validar que o chat aberto corresponde ao número esperado
   async function validateOpenChat(expectedPhone) {
-    console.log('[WHL] ========================================');
-    console.log('[WHL] VALIDANDO CHAT ABERTO');
-    console.log('[WHL] Número esperado:', expectedPhone);
-    console.log('[WHL] ========================================');
+    whlLog.debug('========================================');
+    whlLog.debug('VALIDANDO CHAT ABERTO');
+    whlLog.debug('Número esperado:', expectedPhone);
+    whlLog.debug('========================================');
     
     // Normalizar o número esperado
     const normalizedExpected = normalize(expectedPhone);
@@ -2548,7 +2633,7 @@
           const nums = extractNumbersFromText(dataId);
           if (nums.length > 0) {
             chatNumber = nums[0];
-            console.log('[WHL] Número do chat encontrado via data-id:', chatNumber);
+            whlLog.debug('Número do chat encontrado via data-id:', chatNumber);
             break;
           }
         }
@@ -2563,7 +2648,7 @@
           const nums = extractNumbersFromText(titleEl.getAttribute('title'));
           if (nums.length > 0) {
             chatNumber = nums[0];
-            console.log('[WHL] Número do chat encontrado via title:', chatNumber);
+            whlLog.debug('Número do chat encontrado via title:', chatNumber);
           }
         }
         
@@ -2571,7 +2656,7 @@
           const nums = extractNumbersFromText(ariaLabelEl.getAttribute('aria-label'));
           if (nums.length > 0) {
             chatNumber = nums[0];
-            console.log('[WHL] Número do chat encontrado via aria-label:', chatNumber);
+            whlLog.debug('Número do chat encontrado via aria-label:', chatNumber);
           }
         }
       }
@@ -2583,7 +2668,7 @@
       const nums = extractNumbersFromText(url);
       if (nums.length > 0) {
         chatNumber = nums[0];
-        console.log('[WHL] Número do chat encontrado via URL:', chatNumber);
+        whlLog.debug('Número do chat encontrado via URL:', chatNumber);
       }
     }
     
@@ -2600,7 +2685,7 @@
             const nums = extractNumbersFromText(dataId);
             if (nums.length > 0) {
               chatNumber = nums[0];
-              console.log('[WHL] Número do chat encontrado via main panel data-id:', chatNumber);
+              whlLog.debug('Número do chat encontrado via main panel data-id:', chatNumber);
               break;
             }
           }
@@ -2609,8 +2694,8 @@
     }
     
     if (!chatNumber) {
-      console.log('[WHL] ⚠️ VALIDAÇÃO: Não foi possível determinar o número do chat aberto');
-      console.log('[WHL] ⚠️ VALIDAÇÃO INCONCLUSIVA: Prosseguindo com o envio (não bloqueante)');
+      whlLog.warn('VALIDAÇÃO: Não foi possível determinar o número do chat aberto');
+      whlLog.warn('VALIDAÇÃO INCONCLUSIVA: Prosseguindo com o envio (não bloqueante)');
       // Se não conseguimos validar, NÃO bloqueamos o envio - continuamos
       return true;
     }
@@ -2628,12 +2713,12 @@
     
     const isValid = expectedSuffix === chatSuffix;
     
-    console.log('[WHL] Comparação de números:');
-    console.log('[WHL]   Esperado (normalizado):', normalizedExpected);
-    console.log('[WHL]   Chat (normalizado):', normalizedChat);
-    console.log('[WHL]   Sufixo esperado:', expectedSuffix);
-    console.log('[WHL]   Sufixo do chat:', chatSuffix);
-    console.log('[WHL]   Validação:', isValid ? '✅ VÁLIDO' : '❌ INVÁLIDO');
+    whlLog.debug('Comparação de números:');
+    whlLog.debug('  Esperado (normalizado):', normalizedExpected);
+    whlLog.debug('  Chat (normalizado):', normalizedChat);
+    whlLog.debug('  Sufixo esperado:', expectedSuffix);
+    whlLog.debug('  Sufixo do chat:', chatSuffix);
+    whlLog.debug('  Validação:', isValid ? '✅ VÁLIDO' : '❌ INVÁLIDO');
     
     return isValid;
   }
@@ -2666,12 +2751,12 @@
   // Função para enviar via URL (FALLBACK) - NOTA: Não usado atualmente pois causa reload
   // Mantido para referência futura
   async function sendMessageViaUrl(phoneNumber, message) {
-    console.log('[WHL] ════════════════════════════════════════');
-    console.log('[WHL] ═══ ENVIANDO VIA URL (FALLBACK) ═══');
-    console.log('[WHL] ════════════════════════════════════════');
-    console.log('[WHL] ⚠️ NOTA: URL fallback não implementado pois causa reload de página');
-    console.log('[WHL] ⚠️ Isso quebraria o fluxo da campanha automática');
-    console.log('[WHL] 💡 Use a segunda tentativa DOM ou configure retry para números que falham');
+    whlLog.debug('════════════════════════════════════════');
+    whlLog.debug('═══ ENVIANDO VIA URL (FALLBACK) ═══');
+    whlLog.debug('════════════════════════════════════════');
+    whlLog.warn('NOTA: URL fallback não implementado pois causa reload de página');
+    whlLog.warn('Isso quebraria o fluxo da campanha automática');
+    whlLog.info('Use a segunda tentativa DOM ou configure retry para números que falham');
     
     return false;
   }
@@ -2707,13 +2792,13 @@
       const sendButton = getSendButton();
       
       if (messageInput && sendButton) {
-        console.log('[WHL] ✅ Chat carregado, pronto para enviar');
+        whlLog.debug('Chat carregado, pronto para enviar');
         return true;
       }
       
       // Log de debug
       if (Date.now() - start > 5000) {
-        console.log('[WHL] Aguardando chat carregar...', {
+        whlLog.debug('Aguardando chat carregar...', {
           messageInput: !!messageInput,
           sendButton: !!sendButton
         });
@@ -2722,7 +2807,7 @@
       await new Promise(r => setTimeout(r, 500));
     }
     
-    console.log('[WHL] ⚠️ Timeout aguardando chat carregar');
+    whlLog.warn('Timeout aguardando chat carregar');
     return false;
   }
 
