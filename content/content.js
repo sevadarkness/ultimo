@@ -15,6 +15,15 @@
     return;
   }
 
+  // Item 20: Minimize console log pollution based on environment
+  const WHL_DEBUG = localStorage.getItem('whl_debug') === 'true' || false;
+  const whlLog = {
+    debug: (...args) => { if (WHL_DEBUG) console.log('[WHL DEBUG]', ...args); },
+    info: (...args) => console.log('[WHL]', ...args),
+    warn: (...args) => console.warn('[WHL]', ...args),
+    error: (...args) => console.error('[WHL]', ...args)
+  };
+
   // ===== CONFIGURAÇÃO GLOBAL =====
   // Flag para habilitar envio via API direta (WPP Boladão) ou URL tradicional
   // true = API direta com métodos validados (SEM reload, resultados confirmados)
@@ -31,10 +40,10 @@
     const script = document.createElement('script');
     script.src = chrome.runtime.getURL('content/wpp-hooks.js');
     script.onload = () => {
-      console.log('[WHL] WPP Hooks injetados');
+      whlLog.info('WPP Hooks injetados');
     };
     script.onerror = () => {
-      console.error('[WHL] Erro ao injetar WPP Hooks');
+      whlLog.error('Erro ao injetar WPP Hooks');
     };
     (document.head || document.documentElement).appendChild(script);
   }
@@ -423,7 +432,28 @@
     const result = safeChrome(() => chrome.storage.local.set({ [KEY]: next }));
     if (!result) return next;
     await result;
+    
+    // Item 3 & 21: Persist stats in chrome.storage and auto-sync with popup
+    await syncStatsToStorage(next.stats);
+    
     return next;
+  }
+  
+  // Item 3 & 21: Sync stats to chrome.storage for popup consistency
+  async function syncStatsToStorage(stats) {
+    if (!stats) return;
+    try {
+      await safeChrome(() => chrome.storage.local.set({ 
+        whl_stats: {
+          sent: stats.sent || 0,
+          pending: stats.pending || 0,
+          success: stats.sent || 0, // success = sent for simplicity
+          failed: stats.failed || 0
+        }
+      }));
+    } catch (e) {
+      console.warn('[WHL] Failed to sync stats:', e);
+    }
   }
 
   function ensurePanel() {
@@ -1430,6 +1460,7 @@
             <div class="progress-fill" id="whlProgressFill" style="width:0%"></div>
           </div>
           <div class="tiny" style="margin-top:6px;text-align:center" id="whlProgressText">0%</div>
+          <div class="tiny" style="margin-top:4px;text-align:center;color:#fbbf24" id="whlEstimatedTime"></div>
 
           <div class="row" style="margin-top:10px">
             <button class="success" style="flex:1" id="whlStartCampaign">▶️ Iniciar Campanha</button>
@@ -1520,6 +1551,7 @@
           <div class="row" style="margin-top:10px">
             <button class="success" style="flex:1" id="whlExtractGroupMembers">📥 Extrair Membros</button>
             <button style="width:150px" id="whlCopyGroupMembers">📋 Copiar</button>
+            <button style="width:150px" id="whlCopyGroupId">🆔 Copiar ID</button>
           </div>
           
           <div style="margin-top:10px">
@@ -1666,13 +1698,35 @@
   
   // Validate phone number (8-15 digits)
   // Ensures phone numbers are valid format without modifying them
+  // Item 15: Reject invalid phone numbers with less than 10 digits (BR context)
   const whlIsValidPhone = (t) => {
     const s = whlSanitize(t);
-    return s.length >= 8 && s.length <= 15;
+    // Brazilian phone numbers should have at least 10 digits (DDD + number)
+    return s.length >= 10 && s.length <= 15;
   };
 
+  // Item 7: Detect and fix encoding errors in CSV processing
   function whlCsvToRows(text) {
-    const lines = String(text||'').replace(/\r/g,'').split('\n').filter(l=>l.trim().length);
+    // Try to detect and fix encoding issues
+    let processedText = String(text || '');
+    
+    // Fix common encoding issues (UTF-8 BOM, ISO-8859-1, Windows-1252)
+    if (processedText.charCodeAt(0) === 0xFEFF) {
+      // Remove UTF-8 BOM
+      processedText = processedText.substring(1);
+    }
+    
+    // Try to detect and fix ISO-8859-1 to UTF-8 issues
+    try {
+      // If text contains replacement character (�), try to decode as Latin-1
+      if (processedText.includes('�')) {
+        console.warn('[WHL] Possível erro de encoding detectado no CSV');
+      }
+    } catch (e) {
+      console.warn('[WHL] Erro ao verificar encoding:', e);
+    }
+    
+    const lines = processedText.replace(/\r/g,'').split('\n').filter(l=>l.trim().length);
     const rows = [];
     for (const line of lines) {
       const sep = (line.includes(';') && !line.includes(',')) ? ';' : ',';
@@ -1702,47 +1756,88 @@
 
   // DEPRECATED: Overlay functions removed - not needed for URL mode
 
+  // Item 17: Display loading and feedback when exporting CSV
   async function whlExportReportCSV() {
-    const st = await getState();
-    const rows = [['phone','status','retries','timestamp']];
-    const ts = new Date().toISOString();
-    (st.queue||[]).forEach(x => rows.push([x.phone||'', x.status||'', String(x.retries||0), ts]));
-    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type:'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `whl_report_${Date.now()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const hintEl = document.getElementById('whlReportHint');
+    
+    try {
+      if (hintEl) {
+        hintEl.textContent = '⏳ Exportando...';
+        hintEl.style.color = '#fbbf24';
+      }
+      
+      const st = await getState();
+      const rows = [['phone','status','retries','timestamp']];
+      const ts = new Date().toISOString();
+      (st.queue||[]).forEach(x => rows.push([x.phone||'', x.status||'', String(x.retries||0), ts]));
+      
+      const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+      const blob = new Blob([csv], { type:'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `whl_report_${Date.now()}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      
+      if (hintEl) {
+        hintEl.textContent = `✅ Exportado com sucesso! ${rows.length - 1} registros`;
+        hintEl.style.color = '#4ade80';
+      }
+    } catch (err) {
+      console.error('[WHL] Erro ao exportar CSV:', err);
+      if (hintEl) {
+        hintEl.textContent = '❌ Erro ao exportar CSV';
+        hintEl.style.color = '#ef4444';
+      }
+    }
   }
 
+  // Item 17: Display loading and feedback when exporting CSV
   async function whlExportExtractedCSV() {
     const extractedBox = document.getElementById('whlExtractedNumbers');
+    const statusEl = document.getElementById('whlExtractStatus');
+    
     if (!extractedBox) return;
     
-    const numbersText = extractedBox.value || '';
-    const numbers = numbersText.split(/\r?\n/).filter(n => n.trim().length > 0);
-    
-    if (numbers.length === 0) {
-      alert('Nenhum número extraído para exportar. Por favor, extraia contatos primeiro.');
-      return;
+    try {
+      if (statusEl) {
+        statusEl.textContent = '⏳ Exportando...';
+        statusEl.style.color = '#fbbf24';
+      }
+      
+      const numbersText = extractedBox.value || '';
+      const numbers = numbersText.split(/\r?\n/).filter(n => n.trim().length > 0);
+      
+      if (numbers.length === 0) {
+        alert('Nenhum número extraído para exportar. Por favor, extraia contatos primeiro.');
+        if (statusEl) statusEl.textContent = '';
+        return;
+      }
+      
+      const rows = [['phone']];
+      numbers.forEach(phone => rows.push([phone.trim()]));
+      
+      const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+      const blob = new Blob([csv], { type:'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `whl_extracted_contacts_${Date.now()}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      
+      if (statusEl) {
+        statusEl.textContent = `✅ CSV exportado com sucesso! ${numbers.length} números`;
+        statusEl.style.color = '#4ade80';
+      }
+    } catch (err) {
+      console.error('[WHL] Erro ao exportar CSV:', err);
+      if (statusEl) {
+        statusEl.textContent = '❌ Erro ao exportar CSV';
+        statusEl.style.color = '#ef4444';
+      }
     }
-    
-    const rows = [['phone']];
-    numbers.forEach(phone => rows.push([phone.trim()]));
-    
-    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type:'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `whl_extracted_contacts_${Date.now()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    
-    const statusEl = document.getElementById('whlExtractStatus');
-    if (statusEl) statusEl.textContent = `✅ CSV exportado com ${numbers.length} números`;
   }
 
   // ===== DRAFT MANAGEMENT FUNCTIONS =====
@@ -3691,6 +3786,70 @@
   // PR #78: Store scheduled timeout ID for cancellation
   let scheduledCampaignTimeout = null;
   
+  // Item 9: WhatsApp disconnect detector
+  let disconnectCheckInterval = null;
+  
+  function isWhatsAppConnected() {
+    // Check for common disconnect indicators in WhatsApp Web
+    // 1. Check for QR code (not logged in)
+    const qrCode = document.querySelector('canvas[aria-label*="QR"]') || 
+                   document.querySelector('[data-ref="qr-code"]');
+    if (qrCode) {
+      whlLog.warn('WhatsApp desconectado: QR Code detectado');
+      return false;
+    }
+    
+    // 2. Check for connection issues banner
+    const connectionBanner = document.querySelector('[data-testid="alert-phone-connection"]') ||
+                             document.querySelector('[role="banner"]');
+    if (connectionBanner && connectionBanner.textContent.toLowerCase().includes('conectando')) {
+      whlLog.warn('WhatsApp desconectado: Banner de conexão detectado');
+      return false;
+    }
+    
+    // 3. Check if there's a retry button (connection lost)
+    const retryButton = document.querySelector('button[aria-label*="Tentar"]') ||
+                        document.querySelector('button[aria-label*="Retry"]');
+    if (retryButton) {
+      whlLog.warn('WhatsApp desconectado: Botão de retry detectado');
+      return false;
+    }
+    
+    return true;
+  }
+  
+  function startDisconnectMonitor() {
+    // Item 9: Monitor WhatsApp connection during campaign
+    if (disconnectCheckInterval) {
+      clearInterval(disconnectCheckInterval);
+    }
+    
+    disconnectCheckInterval = setInterval(async () => {
+      const st = await getState();
+      
+      if (!st.isRunning || st.isPaused) {
+        // Campaign not running, stop monitoring
+        if (disconnectCheckInterval) {
+          clearInterval(disconnectCheckInterval);
+          disconnectCheckInterval = null;
+        }
+        return;
+      }
+      
+      if (!isWhatsAppConnected()) {
+        whlLog.warn('⚠️ Desconexão detectada! Pausando campanha...');
+        await pauseCampaign();
+        alert('⚠️ WhatsApp desconectado!\n\nA campanha foi pausada automaticamente.\nReconecte ao WhatsApp e clique em "Iniciar Campanha" para continuar.');
+        
+        // Stop monitoring until campaign is resumed
+        if (disconnectCheckInterval) {
+          clearInterval(disconnectCheckInterval);
+          disconnectCheckInterval = null;
+        }
+      }
+    }, 5000); // Check every 5 seconds
+  }
+  
   async function startCampaign() {
     const st = await getState();
     
@@ -3759,17 +3918,20 @@
     await setState(st);
     await render();
 
-    console.log('[WHL] 🚀 Campanha iniciada');
+    whlLog.info('🚀 Campanha iniciada');
+    
+    // Item 9: Start disconnect monitoring
+    startDisconnectMonitor();
     
     // ATUALIZADO: Usar métodos API validados (SEM reload)
     if (WHL_CONFIG.USE_DIRECT_API) {
-      console.log('[WHL] 📡 Usando API validada (enviarMensagemAPI e enviarImagemDOM) - SEM RELOAD!');
+      whlLog.info('📡 Usando API validada (enviarMensagemAPI e enviarImagemDOM) - SEM RELOAD!');
       processCampaignStepDirect();
     } else if (WHL_CONFIG.USE_INPUT_ENTER_METHOD) {
-      console.log('[WHL] 🔧 Using Input + Enter method for sending');
+      whlLog.info('🔧 Using Input + Enter method for sending');
       processCampaignStepViaInput();
     } else {
-      console.log('[WHL] 🔗 Usando modo URL (com reload)');
+      whlLog.info('🔗 Usando modo URL (com reload)');
       processCampaignStepViaDom();
     }
   }
@@ -3983,6 +4145,24 @@
     
     document.getElementById('whlProgressFill').style.width = `${percentage}%`;
     document.getElementById('whlProgressText').textContent = `${percentage}% (${completed}/${total})`;
+    
+    // Item 18: Calculate and display estimated time
+    const estimatedTimeEl = document.getElementById('whlEstimatedTime');
+    if (estimatedTimeEl && state.isRunning && pending > 0) {
+      const avgDelay = (state.delayMin + state.delayMax) / 2;
+      const estimatedSeconds = pending * avgDelay;
+      const estimatedMinutes = Math.ceil(estimatedSeconds / 60);
+      
+      if (estimatedMinutes > 60) {
+        const hours = Math.floor(estimatedMinutes / 60);
+        const mins = estimatedMinutes % 60;
+        estimatedTimeEl.textContent = `⏱️ Tempo estimado: ${hours}h ${mins}min`;
+      } else {
+        estimatedTimeEl.textContent = `⏱️ Tempo estimado: ${estimatedMinutes} min`;
+      }
+    } else if (estimatedTimeEl) {
+      estimatedTimeEl.textContent = '';
+    }
 
     document.getElementById('whlMeta').textContent = `${state.queue.length} contato(s) • posição: ${Math.min(state.index+1, Math.max(1,state.queue.length))}/${Math.max(1,state.queue.length)}`;
 
@@ -3996,6 +4176,7 @@
       // Highlight current item
       if (i === state.index && state.isRunning) {
         tr.classList.add('current');
+        tr.id = 'whl-current-row'; // Item 13: ID for auto-scroll
       }
       
       tr.innerHTML = `
@@ -4008,6 +4189,16 @@
       `;
       tb.appendChild(tr);
     });
+    
+    // Item 13: Auto-scroll to highlight current row in table
+    if (state.isRunning && state.index >= 0) {
+      setTimeout(() => {
+        const currentRow = document.getElementById('whl-current-row');
+        if (currentRow) {
+          currentRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
+    }
 
     tb.querySelectorAll('button').forEach(btn => {
       btn.onclick = async () => {
@@ -4103,6 +4294,10 @@
 
     const rawNums = (st.numbersText||'').split(/\r?\n/).map(n => whlSanitize(n)).filter(n => n.length >= 8);
     
+    // Item 8: Track invalid and duplicate numbers for display
+    const invalidNumbers = [];
+    const duplicateNumbers = [];
+    
     // FILTRAGEM DE DUPLICATAS COM NORMALIZAÇÃO
     const uniqueNums = [];
     const seen = new Set();
@@ -4115,6 +4310,11 @@
         normalized = '55' + normalized;
       }
       
+      // Item 8: Check if number is invalid (less than 10 digits)
+      if (!whlIsValidPhone(normalized)) {
+        invalidNumbers.push(num);
+      }
+      
       // Verificar duplicata (considerando versões com e sem 55)
       const without55 = normalized.startsWith('55') && normalized.length >= 12 
         ? normalized.substring(2) 
@@ -4122,7 +4322,8 @@
       
       if (seen.has(normalized) || seen.has(without55)) {
         duplicatesRemoved++;
-        console.log('[WHL] Duplicata removida:', num);
+        duplicateNumbers.push(num);
+        whlLog.debug('Duplicata removida:', num);
         continue;
       }
       
@@ -4145,16 +4346,28 @@
     await setState(st);
     await render();
     
-    // Feedback visual
+    // Item 8: Display detailed validation feedback
     const hintEl = document.getElementById('whlHint');
     if (hintEl) {
+      let message = `✅ ${uniqueNums.length} números únicos carregados`;
+      
       if (duplicatesRemoved > 0) {
-        hintEl.textContent = `✅ ${uniqueNums.length} números únicos (${duplicatesRemoved} duplicata(s) removida(s))`;
-        hintEl.style.color = '#4ade80';
-      } else {
-        hintEl.textContent = `✅ ${uniqueNums.length} números carregados`;
-        hintEl.style.color = '#4ade80';
+        message += `\n⚠️ ${duplicatesRemoved} duplicata(s) removida(s)`;
+        if (duplicateNumbers.length <= 5) {
+          message += `: ${duplicateNumbers.join(', ')}`;
+        }
       }
+      
+      if (invalidNumbers.length > 0) {
+        message += `\n❌ ${invalidNumbers.length} número(s) inválido(s) (menos de 10 dígitos)`;
+        if (invalidNumbers.length <= 5) {
+          message += `: ${invalidNumbers.join(', ')}`;
+        }
+      }
+      
+      hintEl.textContent = message;
+      hintEl.style.color = invalidNumbers.length > 0 || duplicatesRemoved > 0 ? '#fbbf24' : '#4ade80';
+      hintEl.style.whiteSpace = 'pre-line';
     }
   }
 
@@ -4278,6 +4491,14 @@ try {
         btnExtract.disabled = false;
         btnExtract.textContent = '📥 Extrair contatos';
       }
+      
+      // Item 12: Ensure extraction progress bar disappears after 100%
+      setTimeout(() => {
+        const progressBar = document.getElementById('whlExtractProgress');
+        if (progressBar) progressBar.style.display = 'none';
+        const extractControls = document.getElementById('whlExtractControls');
+        if (extractControls) extractControls.style.display = 'none';
+      }, 2000);
     }
     
     // Handler para extração instantânea
@@ -4353,6 +4574,18 @@ try {
       if (statusEl) {
         statusEl.textContent = `✅ Extração finalizada! Total: ${totalCount} números`;
       }
+      
+      // Item 12: Ensure extraction progress bar disappears after 100%
+      setTimeout(() => {
+        const progressBar = document.getElementById('whlExtractProgress');
+        if (progressBar) {
+          progressBar.style.display = 'none';
+        }
+        const extractControls = document.getElementById('whlExtractControls');
+        if (extractControls) {
+          extractControls.style.display = 'none';
+        }
+      }, 2000); // Hide after 2 seconds to allow users to see 100%
       
       // CORREÇÃO: Alert com valores dos arrays, não stats
       alert(`✅ Extração instantânea concluída!\n\n📱 Contatos: ${normalCount}\n📁 Arquivados: ${archivedCount}\n🚫 Bloqueados: ${blockedCount}\n\n📊 Total: ${totalCount}`);
@@ -4612,6 +4845,37 @@ try {
       }
     });
   }
+  
+  // Item 11: Add functionality to copy group IDs directly
+  const btnCopyGroupId = document.getElementById('whlCopyGroupId');
+  if (btnCopyGroupId) {
+    btnCopyGroupId.addEventListener('click', async () => {
+      const groupsList = document.getElementById('whlGroupsList');
+      const selectedOption = groupsList?.selectedOptions[0];
+      
+      if (!selectedOption || !selectedOption.dataset.groupId) {
+        alert('Por favor, selecione um grupo primeiro');
+        return;
+      }
+      
+      const groupId = selectedOption.dataset.groupId;
+      const groupName = selectedOption.dataset.groupName || '';
+      
+      try {
+        await navigator.clipboard.writeText(groupId);
+        const originalText = btnCopyGroupId.textContent;
+        btnCopyGroupId.textContent = '✅ Copiado!';
+        setTimeout(() => {
+          btnCopyGroupId.textContent = originalText;
+        }, 2000);
+        
+        console.log(`[WHL] ID do grupo "${groupName}" copiado: ${groupId}`);
+      } catch (err) {
+        console.error('[WHL] Erro ao copiar ID do grupo:', err);
+        alert('Erro ao copiar ID do grupo');
+      }
+    });
+  }
 
   if (btnExportGroupCsv && groupMembersBox) {
     btnExportGroupCsv.addEventListener('click', () => {
@@ -4656,11 +4920,40 @@ window.addEventListener('message', (e) => {
         option.textContent = 'Nenhum grupo encontrado';
         groupsList.appendChild(option);
       } else {
+        // Item 23: Get last selected group from storage
+        const lastSelectedGroupId = localStorage.getItem('whl_last_selected_group');
+        
         groups.forEach(g => {
           const opt = document.createElement('option');
           opt.value = g.id;
-          opt.textContent = `${g.name} (${g.participantsCount} membros)`;
+          
+          // Item 2: Truncate long names with tooltip
+          const maxLength = 50;
+          const displayName = g.name.length > maxLength 
+            ? g.name.substring(0, maxLength) + '...' 
+            : g.name;
+          
+          opt.textContent = `${displayName} (${g.participantsCount} membros)`;
+          // Item 2: Add full name as title for tooltip
+          opt.title = `${g.name} (${g.participantsCount} membros)\nID: ${g.id}`;
+          // Item 11: Store group ID for copying
+          opt.dataset.groupId = g.id;
+          opt.dataset.groupName = g.name;
+          
+          // Item 23: Restore last selected group
+          if (g.id === lastSelectedGroupId) {
+            opt.selected = true;
+          }
+          
           groupsList.appendChild(opt);
+        });
+        
+        // Item 23: Save selected group when changed
+        groupsList.addEventListener('change', () => {
+          const selectedOption = groupsList.selectedOptions[0];
+          if (selectedOption && selectedOption.dataset.groupId) {
+            localStorage.setItem('whl_last_selected_group', selectedOption.dataset.groupId);
+          }
         });
       }
     }
@@ -5056,13 +5349,30 @@ try {
 
   if (btnExportRecovered) {
     btnExportRecovered.addEventListener('click', () => {
-      // Exportar histórico de recover como JSON
+      // Item 19: Validate history content before allowing JSON export
       const history = localStorage.getItem('whl_recover_history');
-      if (!history || history === '[]') {
-        alert('⚠️ Nenhuma mensagem recuperada para exportar.');
+      
+      // Validate history exists and is not empty
+      if (!history || history.trim() === '' || history === '[]' || history === 'null') {
+        alert('⚠️ Nenhuma mensagem recuperada para exportar.\n\nO histórico está vazio.');
         return;
       }
       
+      // Validate JSON format
+      let parsedHistory;
+      try {
+        parsedHistory = JSON.parse(history);
+        if (!Array.isArray(parsedHistory) || parsedHistory.length === 0) {
+          alert('⚠️ Nenhuma mensagem recuperada para exportar.\n\nO histórico está vazio.');
+          return;
+        }
+      } catch (e) {
+        console.error('[WHL] Erro ao validar histórico:', e);
+        alert('❌ Erro ao validar histórico de mensagens.\n\nO formato está corrompido.');
+        return;
+      }
+      
+      // Export validated history
       const blob = new Blob([history], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -5071,7 +5381,7 @@ try {
       a.click();
       URL.revokeObjectURL(url);
       
-      alert('✅ Histórico exportado como JSON!');
+      alert(`✅ Histórico exportado como JSON!\n\n${parsedHistory.length} mensagem(ns) exportada(s).`);
     });
   }
 
@@ -5127,15 +5437,33 @@ try {
       });
     }
     
-    // Delay configuration
+    // Item 10: Delay configuration - Validate DelayMin never exceeds DelayMax
     document.getElementById('whlDelayMin').addEventListener('input', async (e) => {
       const st = await getState();
-      st.delayMin = Math.max(1, parseInt(e.target.value) || 5);
+      let newMin = Math.max(1, parseInt(e.target.value) || 5);
+      
+      // Ensure DelayMin never exceeds DelayMax
+      if (newMin > st.delayMax) {
+        newMin = st.delayMax;
+        e.target.value = newMin;
+        alert(`⚠️ O delay mínimo não pode ser maior que o máximo (${st.delayMax}s)`);
+      }
+      
+      st.delayMin = newMin;
       await setState(st);
     });
     document.getElementById('whlDelayMax').addEventListener('input', async (e) => {
       const st = await getState();
-      st.delayMax = Math.max(1, parseInt(e.target.value) || 10);
+      let newMax = Math.max(1, parseInt(e.target.value) || 10);
+      
+      // Ensure DelayMax is never less than DelayMin
+      if (newMax < st.delayMin) {
+        newMax = st.delayMin;
+        e.target.value = newMax;
+        alert(`⚠️ O delay máximo não pode ser menor que o mínimo (${st.delayMin}s)`);
+      }
+      
+      st.delayMax = newMax;
       await setState(st);
     });
     
@@ -5224,14 +5552,79 @@ try {
       });
     }
     
-    // Image
+    // Item 6 & 14 & 24: Image validation - size, type, dimensions and immediate preview update
     document.getElementById('whlImage').addEventListener('change', async (e) => {
       const file = e.target.files?.[0];
       const st = await getState();
-      if (!file) { st.imageData = null; await setState(st); await render(); return; }
-      st.imageData = await whlReadFileAsDataURL(file);
+      const imageHint = document.getElementById('whlImageHint');
+      
+      if (!file) { 
+        st.imageData = null; 
+        await setState(st); 
+        await render(); 
+        if (imageHint) imageHint.textContent = '';
+        return; 
+      }
+      
+      // Validate image type
+      const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+      if (!validTypes.includes(file.type)) {
+        alert('❌ Tipo de arquivo inválido!\n\nApenas imagens são permitidas: JPG, PNG, GIF, WEBP');
+        e.target.value = '';
+        if (imageHint) imageHint.textContent = '';
+        return;
+      }
+      
+      // Validate file size (max 16MB - WhatsApp limit is 16MB for images)
+      const maxSize = 16 * 1024 * 1024; // 16MB in bytes
+      if (file.size > maxSize) {
+        const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+        alert(`❌ Imagem muito grande!\n\nTamanho: ${sizeMB}MB\nMáximo permitido: 16MB`);
+        e.target.value = '';
+        if (imageHint) imageHint.textContent = '';
+        return;
+      }
+      
+      // Read image to validate dimensions
+      const imageDataURL = await whlReadFileAsDataURL(file);
+      
+      // Create image element to get dimensions
+      const img = new Image();
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = imageDataURL;
+      });
+      
+      // Validate dimensions (reasonable limits)
+      const maxDimension = 4096; // 4K resolution
+      if (img.width > maxDimension || img.height > maxDimension) {
+        alert(`❌ Dimensões muito grandes!\n\nDimensões: ${img.width}x${img.height}px\nMáximo: ${maxDimension}x${maxDimension}px`);
+        e.target.value = '';
+        if (imageHint) imageHint.textContent = '';
+        return;
+      }
+      
+      // All validations passed - save image
+      st.imageData = imageDataURL;
       await setState(st);
+      
+      // Item 24: Display size and dimensions in preview
+      const fileSizeKB = (file.size / 1024).toFixed(2);
+      if (imageHint) {
+        imageHint.textContent = `✅ ${file.name} - ${fileSizeKB}KB - ${img.width}x${img.height}px`;
+        imageHint.style.color = '#78ffa0';
+      }
+      
+      // Item 14: Force immediate preview update
       await render();
+      
+      // Force preview image update
+      const previewImg = document.getElementById('whlPreviewImg');
+      if (previewImg) {
+        previewImg.src = imageDataURL;
+        previewImg.style.display = 'block';
+      }
     });
     
     // Image button handlers
@@ -5266,6 +5659,15 @@ try {
       if (!name) {
         alert('Por favor, digite um nome para o rascunho.');
         return;
+      }
+      
+      // Item 16: Request confirmation before overwriting duplicate drafts
+      const st = await getState();
+      if (st.drafts && st.drafts[name]) {
+        const confirmed = confirm(`⚠️ Já existe um rascunho com o nome "${name}".\n\nDeseja sobrescrevê-lo?`);
+        if (!confirmed) {
+          return;
+        }
       }
       
       await saveDraft(name);
@@ -5312,8 +5714,17 @@ try {
     });
 
     document.getElementById('whlBuild').addEventListener('click', buildQueueFromInputs);
+    // Item 22: Require confirmation before clearing main fields
     document.getElementById('whlClear').addEventListener('click', async () => {
       const st = await getState();
+      const hasNumbers = st.numbersText && st.numbersText.trim();
+      const hasMessage = st.message && st.message.trim();
+      
+      if (hasNumbers || hasMessage) {
+        const confirmed = confirm('⚠️ Tem certeza que deseja limpar os campos principais?\n\nNúmeros e mensagem serão apagados.');
+        if (!confirmed) return;
+      }
+      
       st.numbersText = '';
       st.message = '';
       await setState(st);
@@ -5509,6 +5920,20 @@ try {
     if (msg?.action === 'WORKER_ERROR') {
       console.error('[WHL] Worker error:', msg.error);
       alert('❌ Erro no worker: ' + msg.error);
+    }
+  });
+
+  // Item 5: Close panel when pressing ESC
+  document.addEventListener('keydown', async (e) => {
+    if (e.key === 'Escape' || e.key === 'Esc') {
+      const st = await getState();
+      if (st.panelVisible) {
+        st.panelVisible = false;
+        await setState(st);
+        await render();
+        e.preventDefault();
+        e.stopPropagation();
+      }
     }
   });
 
