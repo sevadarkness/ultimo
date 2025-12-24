@@ -775,6 +775,12 @@ window.whl_hooks_main = () => {
     // Array para armazenar histórico de mensagens recuperadas
     const historicoRecover = [];
     
+    // Constants for recover history limits
+    const MAX_STORAGE_MB = 5;
+    const MAX_STORAGE_BYTES = MAX_STORAGE_MB * 1024 * 1024;
+    const MAX_RECOVER_MESSAGES = 100; // Maximum number of messages to keep
+    const FALLBACK_RECOVER_MESSAGES = 50; // Fallback when storage is full
+    
     /**
      * CORREÇÃO BUG 4: Cachear mensagem recebida para poder recuperá-la se for apagada
      */
@@ -840,17 +846,16 @@ window.whl_hooks_main = () => {
         
         historicoRecover.push(entrada);
         
-        // Item 4: Limit Recover localStorage storage (5 MB limit)
+        // Item 4: Limit Recover localStorage storage
         let currentSize = new Blob([JSON.stringify(historicoRecover)]).size;
-        const MAX_STORAGE_BYTES = 5 * 1024 * 1024;
         
         while (currentSize > MAX_STORAGE_BYTES && historicoRecover.length > 10) {
             historicoRecover.shift();
             currentSize = new Blob([JSON.stringify(historicoRecover)]).size;
         }
         
-        if (historicoRecover.length > 100) {
-            historicoRecover = historicoRecover.slice(-100);
+        if (historicoRecover.length > MAX_RECOVER_MESSAGES) {
+            historicoRecover = historicoRecover.slice(-MAX_RECOVER_MESSAGES);
         }
         
         // Salvar no localStorage
@@ -861,7 +866,7 @@ window.whl_hooks_main = () => {
             console.log(`[WHL Recover] Histórico salvo: ${historicoRecover.length} mensagens, ${sizeKB}KB`);
         } catch(e) {
             console.error('[WHL Recover] Erro ao salvar (limite excedido?)', e);
-            historicoRecover = historicoRecover.slice(-50);
+            historicoRecover = historicoRecover.slice(-FALLBACK_RECOVER_MESSAGES);
             try {
                 localStorage.setItem('whl_recover_history', JSON.stringify(historicoRecover));
             } catch(e2) {
@@ -922,21 +927,19 @@ window.whl_hooks_main = () => {
         
         historicoRecover.push(entrada);
         
-        // Item 4: Limit Recover localStorage storage (5 MB limit)
+        // Item 4: Limit Recover localStorage storage
         // Calculate approximate size and limit storage
-        const MAX_STORAGE_MB = 5;
-        const MAX_STORAGE_BYTES = MAX_STORAGE_MB * 1024 * 1024;
+        let currentSize = new Blob([JSON.stringify(historicoRecover)]).size;
         
         // Keep trimming until under size limit
-        let currentSize = new Blob([JSON.stringify(historicoRecover)]).size;
         while (currentSize > MAX_STORAGE_BYTES && historicoRecover.length > 10) {
             historicoRecover.shift(); // Remove oldest messages
             currentSize = new Blob([JSON.stringify(historicoRecover)]).size;
         }
         
-        // Also limit by count (max 100 messages as fallback)
-        if (historicoRecover.length > 100) {
-            historicoRecover = historicoRecover.slice(-100);
+        // Also limit by count (max messages as fallback)
+        if (historicoRecover.length > MAX_RECOVER_MESSAGES) {
+            historicoRecover = historicoRecover.slice(-MAX_RECOVER_MESSAGES);
         }
         
         // Salvar no localStorage
@@ -948,7 +951,7 @@ window.whl_hooks_main = () => {
         } catch(e) {
             console.error('[WHL Recover] Erro ao salvar (limite excedido?)', e);
             // If storage fails, remove oldest half and retry
-            historicoRecover = historicoRecover.slice(-50);
+            historicoRecover = historicoRecover.slice(-FALLBACK_RECOVER_MESSAGES);
             try {
                 localStorage.setItem('whl_recover_history', JSON.stringify(historicoRecover));
             } catch(e2) {
