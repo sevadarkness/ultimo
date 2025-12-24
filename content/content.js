@@ -18,7 +18,8 @@
     return;
   }
 
-  const whlLog = {
+  // Use centralized logging from logger.js
+  const whlLog = window.whlLog || {
     debug: (...args) => { if (WHL_DEBUG) console.log('[WHL DEBUG]', ...args); },
     info: (...args) => console.log('[WHL]', ...args),
     warn: (...args) => console.warn('[WHL]', ...args),
@@ -456,7 +457,8 @@
 
   const KEY = 'whl_campaign_state_v1';
 
-  const normalize = (v) => String(v || '').replace(/\D/g, '');
+  // Use centralized phone sanitization from phone-validator.js
+  const sanitizePhone = window.WHL_PhoneValidator?.sanitizePhone || ((v) => String(v || '').replace(/\D/g, ''));
   const enc = (t) => encodeURIComponent(String(t || ''));
   const chatUrl = (phone, msg) => `https://web.whatsapp.com/send?phone=${phone}&text=${enc(msg)}`;
 
@@ -1814,14 +1816,9 @@
   // Constants
   const PROGRESS_BAR_HIDE_DELAY = 3000; // ms to wait before hiding progress bar after completion
   
-  // Sanitize phone number by removing non-digit characters
-  // This preserves the real contact phone numbers from user input
-  const whlSanitize = (t) => String(t||'').replace(/\D/g,'');
-  
-  // Validate phone number (8-15 digits)
-  // Ensures phone numbers are valid format without modifying them
-  // Item 15: Reject invalid phone numbers with less than 10 digits (BR context)
-  const whlIsValidPhone = (t) => {
+  // Use centralized phone validation from phone-validator.js
+  const whlSanitize = window.WHL_PhoneValidator?.sanitizePhone || ((t) => String(t||'').replace(/\D/g,''));
+  const whlIsValidPhone = window.WHL_PhoneValidator?.isValidPhone || function(t) {
     const s = whlSanitize(t);
     // Brazilian phone numbers should have at least 10 digits (DDD + number)
     return s.length >= 10 && s.length <= 15;
@@ -2676,7 +2673,7 @@
     whlLog.debug('========================================');
     
     // Normalizar o número esperado
-    const normalizedExpected = normalize(expectedPhone);
+    const normalizedExpected = sanitizePhone(expectedPhone);
     
     // Aguardar um pouco para o chat carregar
     await new Promise(r => setTimeout(r, 500));
@@ -2766,7 +2763,7 @@
     }
     
     // Normalizar o número do chat
-    const normalizedChat = normalize(chatNumber);
+    const normalizedChat = sanitizePhone(chatNumber);
     
     // Comparar os números (últimos 8-10 dígitos para maior flexibilidade)
     // Alguns números podem ter código do país, então comparamos a parte final
@@ -2795,7 +2792,7 @@
     const numbers = [];
     
     // Padrão para números (8-15 dígitos)
-    const normalized = normalize(str);
+    const normalized = sanitizePhone(str);
     const matches = normalized.match(/\d{8,15}/g);
     if (matches) {
       matches.forEach(num => numbers.push(num));
