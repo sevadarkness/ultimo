@@ -96,6 +96,19 @@
     NETWORK_EXTRACT_THROTTLE: 1000      // 1 second - Throttle network extraction interval
   };
 
+  // Injetar store-bridge.js no contexto da página (antes dos hooks)
+  function injectStoreBridge() {
+    const script = document.createElement('script');
+    script.src = chrome.runtime.getURL('content/store-bridge.js');
+    script.onload = () => {
+      whlLog.info('Store Bridge injetado');
+    };
+    script.onerror = () => {
+      whlLog.error('Erro ao injetar Store Bridge');
+    };
+    (document.head || document.documentElement).appendChild(script);
+  }
+
   // Injetar wpp-hooks.js no contexto da página
   function injectWppHooks() {
     const script = document.createElement('script');
@@ -109,8 +122,9 @@
     (document.head || document.documentElement).appendChild(script);
   }
   
-  // Injetar os hooks imediatamente
-  injectWppHooks();
+  // Injetar store bridge primeiro, depois os hooks
+  injectStoreBridge();
+  setTimeout(injectWppHooks, 100); // Pequeno delay para garantir ordem
 
   // Helper function to safely get icon URLs
   function getIconURL(iconName) {
@@ -158,7 +172,9 @@
         warning.textContent = '⚠️ Extensão atualizada! Recarregue a página (F5)';
         panel.prepend(warning);
       }
-    } catch {}
+    } catch (e) {
+      whlLog.warn('Erro ao verificar versão da extensão:', e.message);
+    }
   }
 
   // ======= Validador e repositório dos telefones extraídos =======

@@ -1,20 +1,20 @@
 /**
- * WhatsHybrid – EXTRATOR TURBO v7 com FILTRO ULTRA-RIGOROSO
+ * WhatsHybrid – EXTRATOR TURBO v7 com FILTRO RIGOROSO + SUPORTE INTERNACIONAL
  * 
  * ESTRATÉGIA:
  * 1. Coleta APENAS de fontes confiáveis (@c.us, data-id, data-jid)
  * 2. Validação OBRIGATÓRIA para TODOS os números
- * 3. Sistema de pontuação com score mínimo alto
+ * 3. Sistema de pontuação com score mínimo
  * 4. Detecção de falsos positivos (datas, valores, códigos)
+ * 5. SUPORTE INTERNACIONAL: Aceita números de qualquer país (10-15 dígitos)
  * 
- * VALIDAÇÕES OBRIGATÓRIAS:
- * - Tamanho: 12-13 dígitos (com 55)
- * - DDD brasileiro válido (67 DDDs)
- * - Formato celular: 9[6-9]XXXXXXX
- * - Formato fixo: [2-5]XXXXXXX
+ * VALIDAÇÕES:
+ * - Tamanho: 10-15 dígitos (internacional)
+ * - Números brasileiros recebem BÔNUS de pontuação (DDD, formato celular)
+ * - Números internacionais são validados com score base
  * - Rejeita números repetitivos e sequências
  * 
- * SCORE MÍNIMO: 10 pontos
+ * SCORE MÍNIMO: 10 pontos (brasileiro) ou 5 pontos (internacional)
  */
 
 (function () {
@@ -29,6 +29,7 @@
     scrollDelay: 400,
     scrollIncrement: 0.85,
     stabilityCount: 10,
+    maxExtractionTime: 120000,  // 2 minutos máximo (timeout absoluto)
     
     // FILTRO RIGOROSO
     minValidScore: 10,  // Score mínimo ALTO
@@ -109,58 +110,70 @@
     return !!window.WHL_Store;
   }
 
-  // ===== VALIDAÇÃO ULTRA-RIGOROSA =====
+  // ===== VALIDAÇÃO COM SUPORTE INTERNACIONAL =====
   function validatePhone(num) {
     if (!num) return { valid: false, score: 0, reason: 'vazio' };
     
     let n = String(num).replace(/\D/g, '');
     
-    // Normalizar
-    if (n.length === 10 || n.length === 11) {
-      n = '55' + n;
-    }
-    
-    // Tamanho: deve ter 12 ou 13 dígitos
-    if (n.length !== 12 && n.length !== 13) {
+    // Tamanho mínimo: 10 dígitos (internacional pode ter até 15)
+    if (n.length < 10 || n.length > 15) {
       return { valid: false, score: 0, reason: 'tamanho inválido: ' + n.length };
     }
     
-    // Deve começar com 55
-    if (!n.startsWith('55')) {
-      return { valid: false, score: 0, reason: 'não é brasileiro' };
+    let score = 0;
+    let isBrazilian = false;
+    
+    // Auto-adicionar código do Brasil se necessário (10-11 dígitos)
+    if (n.length === 10 || n.length === 11) {
+      n = '55' + n;
+      isBrazilian = true;
     }
     
-    // Verificar DDD
-    const ddd = parseInt(n.substring(2, 4), 10);
-    if (!VALID_DDDS.has(ddd)) {
-      return { valid: false, score: 0, reason: 'DDD inválido: ' + ddd };
+    // Verificar se é número brasileiro (começa com 55)
+    if (n.startsWith('55') && (n.length === 12 || n.length === 13)) {
+      isBrazilian = true;
     }
     
-    let score = CONFIG.scores.valid_ddd;
-    
-    // Número local
-    const localNumber = n.substring(4);
-    
-    // Celular (9 dígitos)
-    if (localNumber.length === 9) {
-      // DEVE começar com 9
-      if (!localNumber.startsWith('9')) {
-        return { valid: false, score: 0, reason: 'celular deve começar com 9' };
+    // VALIDAÇÃO BRASILEIRA (bônus de pontos, não obrigatória)
+    if (isBrazilian) {
+      // Verificar DDD
+      const ddd = parseInt(n.substring(2, 4), 10);
+      if (VALID_DDDS.has(ddd)) {
+        score += CONFIG.scores.valid_ddd;
+        
+        // Número local
+        const localNumber = n.substring(4);
+        
+        // Celular (9 dígitos)
+        if (localNumber.length === 9) {
+          // DEVE começar com 9
+          if (localNumber.startsWith('9')) {
+            // Segundo dígito deve ser 6, 7, 8 ou 9
+            const secondDigit = parseInt(localNumber[1], 10);
+            if (secondDigit >= 6) {
+              score += CONFIG.scores.mobile_format;
+            }
+          }
+        }
+        
+        // Fixo (8 dígitos)
+        if (localNumber.length === 8) {
+          const firstDigit = parseInt(localNumber[0], 10);
+          if (firstDigit >= 2 && firstDigit <= 5) {
+            score += 3; // Bônus pequeno para fixo válido
+          }
+        }
+      } else {
+        // DDD inválido, mas ainda pode ser válido como internacional
+        isBrazilian = false;
       }
-      // Segundo dígito deve ser 6, 7, 8 ou 9
-      const secondDigit = parseInt(localNumber[1], 10);
-      if (secondDigit < 6) {
-        return { valid: false, score: 0, reason: 'segundo dígito celular inválido: ' + secondDigit };
-      }
-      score += CONFIG.scores.mobile_format;
     }
     
-    // Fixo (8 dígitos)
-    if (localNumber.length === 8) {
-      const firstDigit = parseInt(localNumber[0], 10);
-      if (firstDigit < 2 || firstDigit > 5) {
-        return { valid: false, score: 0, reason: 'fixo deve começar com 2-5' };
-      }
+    // Validação internacional básica
+    if (!isBrazilian) {
+      // Número internacional válido - score base menor
+      score += 5;
     }
     
     // Rejeitar números muito repetitivos
@@ -169,12 +182,13 @@
       return { valid: false, score: CONFIG.scores.repeated_digits, reason: 'número muito repetitivo' };
     }
     
-    // Rejeitar sequências óbvias
+    // Rejeitar sequências óbvias (apenas para os últimos 8 dígitos)
+    const lastDigits = n.substring(Math.max(0, n.length - 8));
     const sequences = ['12345678', '87654321', '11111111', '22222222', '33333333', 
                        '44444444', '55555555', '66666666', '77777777', '88888888', 
                        '99999999', '00000000', '12341234', '56785678'];
     for (const seq of sequences) {
-      if (localNumber.includes(seq)) {
+      if (lastDigits.includes(seq)) {
         return { valid: false, score: CONFIG.scores.sequence, reason: 'sequência óbvia: ' + seq };
       }
     }
@@ -394,7 +408,9 @@
             }
           }
         }
-      } catch {}
+      } catch (e) {
+        if (CONFIG.debug) console.warn('[WHL] Erro ao extrair atributo', attr, e.message);
+      }
     });
     
     // href com wa.me
@@ -403,7 +419,9 @@
       if (href && href.includes('wa.me')) {
         count += extractFromText(href, 'wame');
       }
-    } catch {}
+    } catch (e) {
+      if (CONFIG.debug) console.warn('[WHL] Erro ao extrair href wa.me:', e.message);
+    }
     
     return count;
   }
@@ -599,7 +617,9 @@
           count += extractFromText(value, 'cus');
         }
       }
-    } catch {}
+    } catch (e) {
+      if (CONFIG.debug) console.warn('[WHL] Erro ao extrair de localStorage:', e.message);
+    }
     
     try {
       for (let i = 0; i < sessionStorage.length; i++) {
@@ -609,7 +629,9 @@
           count += extractFromText(value, 'cus');
         }
       }
-    } catch {}
+    } catch (e) {
+      if (CONFIG.debug) console.warn('[WHL] Erro ao extrair de sessionStorage:', e.message);
+    }
     
     return count;
   }
@@ -654,14 +676,20 @@
                     }
                   });
                 }
-              } catch {}
+              } catch (e) {
+                if (CONFIG.debug) console.warn('[WHL] Erro ao ler store IndexedDB:', storeName, e.message);
+              }
             }
           }
           
           db.close();
-        } catch {}
+        } catch (e) {
+          if (CONFIG.debug) console.warn('[WHL] Erro ao abrir IndexedDB:', dbInfo.name, e.message);
+        }
       }
-    } catch {}
+    } catch (e) {
+      if (CONFIG.debug) console.warn('[WHL] Erro ao listar databases IndexedDB:', e.message);
+    }
     
     return count;
   }
@@ -681,6 +709,10 @@
     extractionPaused = false;
     extractionCancelled = false;
     
+    // Timeout absoluto para evitar loops infinitos
+    const startTime = Date.now();
+    const maxTime = CONFIG.maxExtractionTime;
+    
     pane.scrollTop = 0;
     await new Promise(r => setTimeout(r, 500));
     
@@ -689,6 +721,12 @@
     let scrollCount = 0;
     
     while (stable < CONFIG.stabilityCount && scrollCount < CONFIG.maxScrolls) {
+      // Verificar timeout absoluto
+      if (Date.now() - startTime > maxTime) {
+        console.warn('[WHL] ⏱️ Timeout máximo de extração atingido (2 minutos)');
+        break;
+      }
+      
       // Verificar se foi cancelado
       if (extractionCancelled) {
         console.log('[WHL] ⛔ Extração cancelada pelo usuário');
@@ -759,7 +797,9 @@
         if (text.includes('@c.us') || text.includes('@g.us')) {
           extractFromText(text, 'cus');
         }
-      } catch {}
+      } catch (e) {
+        if (CONFIG.debug) console.warn('[WHL] Erro ao interceptar resposta fetch:', e.message);
+      }
       return response;
     };
     
@@ -773,7 +813,9 @@
               extractFromText(e.data, 'cus');
             }
           }
-        } catch {}
+        } catch (e) {
+          if (CONFIG.debug) console.warn('[WHL] Erro ao processar mensagem WebSocket:', e.message);
+        }
       });
       return ws;
     };
@@ -848,7 +890,9 @@
       localStorage.setItem('whl_extracted_numbers', JSON.stringify(byType.normal));
       localStorage.setItem('whl_extracted_archived', JSON.stringify(byType.archived));
       localStorage.setItem('whl_extracted_blocked', JSON.stringify(byType.blocked));
-    } catch {}
+    } catch (e) {
+      console.warn('[WHL] Erro ao salvar números no localStorage:', e.message);
+    }
     
     return byType;
   }
