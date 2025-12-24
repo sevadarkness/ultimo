@@ -2146,7 +2146,7 @@ window.whl_hooks_main = () => {
             if (closeBtn) closeBtn.click();
             
             const members = [...phones].map(p => ({ phone: p }));
-            return { success: true, groupName: 'Grupo', members, count: members.length, source: 'dom_drawer' };
+            return { success: true, groupName: 'Grupo', members, contacts: members, count: members.length, source: 'dom_drawer' };
         }
 
         // 4) clicar "Ver tudo" para abrir painel central
@@ -2224,7 +2224,7 @@ window.whl_hooks_main = () => {
         if (backBtn) backBtn.click();
 
         const members = [...phones].map(p => ({ phone: p }));
-        return { success: true, groupName: 'Grupo', members, count: members.length, source: 'dom_viewall' };
+        return { success: true, groupName: 'Grupo', members, contacts: members, count: members.length, source: 'dom_viewall' };
     }
 
     // ===== LISTENERS FOR SEND FUNCTIONS =====
