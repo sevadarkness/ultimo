@@ -531,6 +531,51 @@
         background:rgba(255,255,255,.06);color:#fff;outline:none;box-sizing:border-box;max-width:100%}
       #whlPanel textarea{min-height:84px;resize:vertical}
       
+      /* OTIMIZAÇÃO: Progress indicator para extração de grupos */
+      #whlPanel .extraction-progress {
+        background: linear-gradient(135deg, rgba(111,0,255,0.15), rgba(0,168,132,0.15));
+        border: 1px solid rgba(111,0,255,0.3);
+        border-radius: 12px;
+        padding: 12px;
+        margin: 10px 0;
+        display: none;
+        animation: slideInUp 0.3s ease;
+      }
+      
+      #whlPanel .extraction-progress.active {
+        display: block;
+      }
+      
+      #whlPanel .extraction-progress .progress-bar-container {
+        background: rgba(0,0,0,0.3);
+        border-radius: 8px;
+        height: 8px;
+        overflow: hidden;
+        margin: 8px 0;
+      }
+      
+      #whlPanel .extraction-progress .progress-bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #6f00ff, #00a884);
+        transition: width 0.3s ease;
+        border-radius: 8px;
+      }
+      
+      #whlPanel .extraction-progress .progress-text {
+        color: #00a884;
+        font-size: 12px;
+        font-weight: bold;
+        text-align: center;
+        margin-top: 4px;
+      }
+      
+      #whlPanel .extraction-progress .progress-count {
+        color: #fff;
+        font-size: 11px;
+        text-align: center;
+        opacity: 0.8;
+      }
+      
       /* CORREÇÃO ISSUE 04: Garantir contraste nas caixas de extração */
       #whlPanel #whlExtractedNumbers,
       #whlPanel #whlArchivedNumbers,
@@ -1613,6 +1658,16 @@
           
           <div style="margin-top:10px">
             <div class="muted">Membros extraídos: <span id="whlGroupMembersCount">0</span></div>
+            
+            <!-- OTIMIZAÇÃO: Progress indicator para extração -->
+            <div id="whlExtractionProgress" class="extraction-progress">
+              <div class="progress-text" id="whlExtractionProgressText">Iniciando...</div>
+              <div class="progress-bar-container">
+                <div class="progress-bar-fill" id="whlExtractionProgressBar" style="width: 0%"></div>
+              </div>
+              <div class="progress-count" id="whlExtractionProgressCount">0 membros</div>
+            </div>
+            
             <textarea id="whlGroupMembersNumbers" placeholder="Números dos membros..." style="min-height:200px;margin-top:6px"></textarea>
           </div>
           
@@ -4933,6 +4988,21 @@ try {
 
       btnExtractGroupMembers.disabled = true;
       btnExtractGroupMembers.textContent = '⏳ Extraindo...';
+      
+      // OTIMIZAÇÃO: Mostrar indicador de progresso e resetar
+      const progressIndicator = document.getElementById('whlExtractionProgress');
+      const progressBar = document.getElementById('whlExtractionProgressBar');
+      const progressText = document.getElementById('whlExtractionProgressText');
+      const progressCount = document.getElementById('whlExtractionProgressCount');
+      
+      if (progressIndicator && progressBar && progressText) {
+        progressIndicator.classList.add('active');
+        progressBar.style.width = '0%';
+        progressText.textContent = 'Iniciando extração...';
+        if (progressCount) {
+          progressCount.textContent = '0 membros';
+        }
+      }
 
       // CORREÇÃO: Usar o ID do grupo selecionado, NÃO o chat aberto
       const requestId = Date.now().toString();
@@ -5097,6 +5167,41 @@ window.addEventListener('message', (e) => {
   }
   
   // CORREÇÃO BUG 3: Handler para resultado de extração de membros (API e DOM)
+  
+  // OTIMIZAÇÃO: Listener para progresso da extração em tempo real
+  if (e.data.type === 'WHL_EXTRACTION_PROGRESS') {
+    const progressIndicator = document.getElementById('whlExtractionProgress');
+    const progressText = document.getElementById('whlExtractionProgressText');
+    const progressBar = document.getElementById('whlExtractionProgressBar');
+    const progressCount = document.getElementById('whlExtractionProgressCount');
+    
+    if (progressIndicator && progressText && progressBar) {
+      // Mostrar indicador de progresso
+      progressIndicator.classList.add('active');
+      
+      // Atualizar texto da fase
+      progressText.textContent = e.data.message || 'Processando...';
+      
+      // Atualizar barra de progresso
+      const progress = e.data.progress || 0;
+      progressBar.style.width = progress + '%';
+      
+      // Atualizar contador se disponível
+      if (progressCount && e.data.currentCount !== undefined) {
+        progressCount.textContent = `${e.data.currentCount} membros extraídos`;
+      }
+      
+      // Esconder indicador quando completar ou houver erro
+      if (e.data.phase === 'complete' || e.data.phase === 'error') {
+        setTimeout(() => {
+          progressIndicator.classList.remove('active');
+        }, 2000); // Esconder após 2 segundos
+      }
+      
+      console.log(`[WHL Progress] ${e.data.phase}: ${e.data.message} (${progress}%)`);
+    }
+  }
+  
   // PR #76 ULTRA: Handler com estatísticas detalhadas
   if (e.data.type === 'WHL_GROUP_MEMBERS_RESULT' || e.data.type === 'WHL_EXTRACT_GROUP_MEMBERS_RESULT') {
     console.log('[WHL] 📨 Resultado ULTRA recebido:', e.data);
