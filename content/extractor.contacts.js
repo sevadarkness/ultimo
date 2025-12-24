@@ -1,36 +1,27 @@
 /**
- * WhatsHybrid – EXTRATOR TURBO v7 com FILTRO RIGOROSO + SUPORTE INTERNACIONAL
+ * WhatsHybrid – EXTRATOR TURBO v7 com FILTRO ULTRA-RIGOROSO
  * 
  * ESTRATÉGIA:
  * 1. Coleta APENAS de fontes confiáveis (@c.us, data-id, data-jid)
  * 2. Validação OBRIGATÓRIA para TODOS os números
- * 3. Sistema de pontuação com score mínimo
+ * 3. Sistema de pontuação com score mínimo alto
  * 4. Detecção de falsos positivos (datas, valores, códigos)
- * 5. SUPORTE INTERNACIONAL: Aceita números de qualquer país (10-15 dígitos)
  * 
- * VALIDAÇÕES:
- * - Tamanho: 10-15 dígitos (internacional)
- * - Números brasileiros recebem BÔNUS de pontuação (DDD, formato celular)
- * - Números internacionais são validados com score base
+ * VALIDAÇÕES OBRIGATÓRIAS:
+ * - Tamanho: 12-13 dígitos (com 55)
+ * - DDD brasileiro válido (67 DDDs)
+ * - Formato celular: 9[6-9]XXXXXXX
+ * - Formato fixo: [2-5]XXXXXXX
  * - Rejeita números repetitivos e sequências
  * 
- * SCORE MÍNIMO: 10 pontos (brasileiro) ou 5 pontos (internacional)
+ * SCORE MÍNIMO: 10 pontos
  */
 
 (function () {
   if (window.__WHL_EXTRACTOR_TURBO_V7__) return;
   window.__WHL_EXTRACTOR_TURBO_V7__ = true;
 
-  // ===== LOGGING =====
-  const WHL_DEBUG = typeof localStorage !== 'undefined' && localStorage.getItem('whl_debug') === 'true';
-  const whlLog = {
-    debug: (...args) => { if (WHL_DEBUG) console.log('[WHL DEBUG]', ...args); },
-    info: (...args) => { if (WHL_DEBUG) console.log('[WHL]', ...args); },
-    warn: (...args) => console.warn('[WHL]', ...args),
-    error: (...args) => console.error('[WHL]', ...args)
-  };
-
-  whlLog.info('🚀 EXTRATOR TURBO v7 - FILTRO ULTRA-RIGOROSO iniciando...');
+  console.log('[WHL] 🚀 EXTRATOR TURBO v7 - FILTRO ULTRA-RIGOROSO iniciando...');
 
   // ===== CONFIGURAÇÃO =====
   const CONFIG = {
@@ -38,7 +29,6 @@
     scrollDelay: 400,
     scrollIncrement: 0.85,
     stabilityCount: 10,
-    maxExtractionTime: 120000,  // 2 minutos máximo (timeout absoluto)
     
     // FILTRO RIGOROSO
     minValidScore: 10,  // Score mínimo ALTO
@@ -98,10 +88,10 @@
   // ===== HELPER FUNCTIONS FOR WHATSAPP STORE =====
   function waitForWA() {
     return new Promise(resolve => {
-      // Aguardar WHL_Store do bridge (não window.Store diretamente devido ao CSP)
+      // Wait for WHL_Store from bridge (not window.Store directly due to CSP)
       if (window.WHL_Store) return resolve();
       
-      // Escutar evento de bridge pronto
+      // Listen for bridge ready event
       const handleBridgeReady = () => {
         window.removeEventListener('WHL_STORE_READY', handleBridgeReady);
         resolve();
@@ -119,70 +109,58 @@
     return !!window.WHL_Store;
   }
 
-  // ===== VALIDAÇÃO COM SUPORTE INTERNACIONAL =====
+  // ===== VALIDAÇÃO ULTRA-RIGOROSA =====
   function validatePhone(num) {
     if (!num) return { valid: false, score: 0, reason: 'vazio' };
     
     let n = String(num).replace(/\D/g, '');
     
-    // Tamanho mínimo: 10 dígitos (internacional pode ter até 15)
-    if (n.length < 10 || n.length > 15) {
+    // Normalizar
+    if (n.length === 10 || n.length === 11) {
+      n = '55' + n;
+    }
+    
+    // Tamanho: deve ter 12 ou 13 dígitos
+    if (n.length !== 12 && n.length !== 13) {
       return { valid: false, score: 0, reason: 'tamanho inválido: ' + n.length };
     }
     
-    let score = 0;
-    let isBrazilian = false;
-    
-    // Auto-adicionar código do Brasil se necessário (10-11 dígitos)
-    if (n.length === 10 || n.length === 11) {
-      n = '55' + n;
-      isBrazilian = true;
+    // Deve começar com 55
+    if (!n.startsWith('55')) {
+      return { valid: false, score: 0, reason: 'não é brasileiro' };
     }
     
-    // Verificar se é número brasileiro (começa com 55)
-    if (n.startsWith('55') && (n.length === 12 || n.length === 13)) {
-      isBrazilian = true;
+    // Verificar DDD
+    const ddd = parseInt(n.substring(2, 4), 10);
+    if (!VALID_DDDS.has(ddd)) {
+      return { valid: false, score: 0, reason: 'DDD inválido: ' + ddd };
     }
     
-    // VALIDAÇÃO BRASILEIRA (bônus de pontos, não obrigatória)
-    if (isBrazilian) {
-      // Verificar DDD
-      const ddd = parseInt(n.substring(2, 4), 10);
-      if (VALID_DDDS.has(ddd)) {
-        score += CONFIG.scores.valid_ddd;
-        
-        // Número local
-        const localNumber = n.substring(4);
-        
-        // Celular (9 dígitos)
-        if (localNumber.length === 9) {
-          // DEVE começar com 9
-          if (localNumber.startsWith('9')) {
-            // Segundo dígito deve ser 6, 7, 8 ou 9
-            const secondDigit = parseInt(localNumber[1], 10);
-            if (secondDigit >= 6) {
-              score += CONFIG.scores.mobile_format;
-            }
-          }
-        }
-        
-        // Fixo (8 dígitos)
-        if (localNumber.length === 8) {
-          const firstDigit = parseInt(localNumber[0], 10);
-          if (firstDigit >= 2 && firstDigit <= 5) {
-            score += 3; // Bônus pequeno para fixo válido
-          }
-        }
-      } else {
-        // DDD inválido, mas ainda pode ser válido como internacional
-        isBrazilian = false;
+    let score = CONFIG.scores.valid_ddd;
+    
+    // Número local
+    const localNumber = n.substring(4);
+    
+    // Celular (9 dígitos)
+    if (localNumber.length === 9) {
+      // DEVE começar com 9
+      if (!localNumber.startsWith('9')) {
+        return { valid: false, score: 0, reason: 'celular deve começar com 9' };
       }
+      // Segundo dígito deve ser 6, 7, 8 ou 9
+      const secondDigit = parseInt(localNumber[1], 10);
+      if (secondDigit < 6) {
+        return { valid: false, score: 0, reason: 'segundo dígito celular inválido: ' + secondDigit };
+      }
+      score += CONFIG.scores.mobile_format;
     }
     
-    // Validação internacional básica
-    if (!isBrazilian) {
-      // Número internacional válido - score base menor
-      score += 5;
+    // Fixo (8 dígitos)
+    if (localNumber.length === 8) {
+      const firstDigit = parseInt(localNumber[0], 10);
+      if (firstDigit < 2 || firstDigit > 5) {
+        return { valid: false, score: 0, reason: 'fixo deve começar com 2-5' };
+      }
     }
     
     // Rejeitar números muito repetitivos
@@ -191,13 +169,12 @@
       return { valid: false, score: CONFIG.scores.repeated_digits, reason: 'número muito repetitivo' };
     }
     
-    // Rejeitar sequências óbvias (apenas para os últimos 8 dígitos)
-    const lastDigits = n.substring(Math.max(0, n.length - 8));
+    // Rejeitar sequências óbvias
     const sequences = ['12345678', '87654321', '11111111', '22222222', '33333333', 
                        '44444444', '55555555', '66666666', '77777777', '88888888', 
                        '99999999', '00000000', '12341234', '56785678'];
     for (const seq of sequences) {
-      if (lastDigits.includes(seq)) {
+      if (localNumber.includes(seq)) {
         return { valid: false, score: CONFIG.scores.sequence, reason: 'sequência óbvia: ' + seq };
       }
     }
@@ -228,7 +205,7 @@
       const validation = validatePhone(num);
       if (!validation.valid) {
         if (CONFIG.debug && validation.reason !== 'vazio') {
-          // whlLog.debug('❌ Rejeitado:', num, '-', validation.reason);
+          // console.log('[WHL] ❌ Rejeitado:', num, '-', validation.reason);
         }
         return null;
       }
@@ -238,7 +215,7 @@
       // Verificar contexto negativo
       if (hasNegativeContext(context)) {
         if (CONFIG.debug) {
-          whlLog.warn('⚠️ Contexto negativo:', normalized);
+          console.log('[WHL] ⚠️ Contexto negativo:', normalized);
         }
         return null; // Rejeitar completamente se contexto negativo
       }
@@ -417,9 +394,7 @@
             }
           }
         }
-      } catch (e) {
-        if (CONFIG.debug) whlLog.warn('Erro ao extrair atributo', attr, e.message);
-      }
+      } catch {}
     });
     
     // href com wa.me
@@ -428,9 +403,7 @@
       if (href && href.includes('wa.me')) {
         count += extractFromText(href, 'wame');
       }
-    } catch (e) {
-      if (CONFIG.debug) whlLog.warn('Erro ao extrair href wa.me:', e.message);
-    }
+    } catch {}
     
     return count;
   }
@@ -493,7 +466,7 @@
                               document.querySelector('[aria-label*="Archived"]');
       
       if (archivedSection) {
-        whlLog.info('📁 Seção de arquivados encontrada');
+        console.log('[WHL] 📁 Seção de arquivados encontrada');
         // Extrair números desta seção marcando como arquivados
         archivedSection.querySelectorAll('[data-id*="@c.us"]').forEach(el => {
           const dataId = el.getAttribute('data-id');
@@ -525,9 +498,9 @@
         }
       }
       
-      whlLog.info(`📁 Contatos arquivados encontrados: ${count}`);
+      console.log(`[WHL] 📁 Contatos arquivados encontrados: ${count}`);
     } catch (e) {
-      whlLog.error('Erro ao extrair arquivados:', e);
+      console.error('[WHL] Erro ao extrair arquivados:', e);
     }
     
     return count;
@@ -606,9 +579,9 @@
         }
       });
       
-      whlLog.info(`🚫 Contatos bloqueados encontrados: ${count}`);
+      console.log(`[WHL] 🚫 Contatos bloqueados encontrados: ${count}`);
     } catch (e) {
-      whlLog.error('Erro ao extrair bloqueados:', e);
+      console.error('[WHL] Erro ao extrair bloqueados:', e);
     }
     
     return count;
@@ -626,9 +599,7 @@
           count += extractFromText(value, 'cus');
         }
       }
-    } catch (e) {
-      if (CONFIG.debug) whlLog.warn('Erro ao extrair de localStorage:', e.message);
-    }
+    } catch {}
     
     try {
       for (let i = 0; i < sessionStorage.length; i++) {
@@ -638,9 +609,7 @@
           count += extractFromText(value, 'cus');
         }
       }
-    } catch (e) {
-      if (CONFIG.debug) whlLog.warn('Erro ao extrair de sessionStorage:', e.message);
-    }
+    } catch {}
     
     return count;
   }
@@ -685,20 +654,14 @@
                     }
                   });
                 }
-              } catch (e) {
-                if (CONFIG.debug) whlLog.warn('Erro ao ler store IndexedDB:', storeName, e.message);
-              }
+              } catch {}
             }
           }
           
           db.close();
-        } catch (e) {
-          if (CONFIG.debug) whlLog.warn('Erro ao abrir IndexedDB:', dbInfo.name, e.message);
-        }
+        } catch {}
       }
-    } catch (e) {
-      if (CONFIG.debug) whlLog.warn('Erro ao listar databases IndexedDB:', e.message);
-    }
+    } catch {}
     
     return count;
   }
@@ -712,15 +675,11 @@
     const pane = document.querySelector('#pane-side');
     if (!pane) return;
     
-    whlLog.info('📜 Iniciando scroll...');
+    console.log('[WHL] 📜 Iniciando scroll...');
     
     // Resetar flags de controle
     extractionPaused = false;
     extractionCancelled = false;
-    
-    // Timeout absoluto para evitar loops infinitos
-    const startTime = Date.now();
-    const maxTime = CONFIG.maxExtractionTime;
     
     pane.scrollTop = 0;
     await new Promise(r => setTimeout(r, 500));
@@ -730,15 +689,9 @@
     let scrollCount = 0;
     
     while (stable < CONFIG.stabilityCount && scrollCount < CONFIG.maxScrolls) {
-      // Verificar timeout absoluto
-      if (Date.now() - startTime > maxTime) {
-        whlLog.warn('⏱️ Timeout máximo de extração atingido (2 minutos)');
-        break;
-      }
-      
       // Verificar se foi cancelado
       if (extractionCancelled) {
-        whlLog.info('⛔ Extração cancelada pelo usuário');
+        console.log('[WHL] ⛔ Extração cancelada pelo usuário');
         break;
       }
       
@@ -749,7 +702,7 @@
       
       // Se cancelou durante a pausa, sair
       if (extractionCancelled) {
-        whlLog.info('⛔ Extração cancelada durante pausa');
+        console.log('[WHL] ⛔ Extração cancelada durante pausa');
         break;
       }
       
@@ -780,7 +733,7 @@
       
       if (scrollCount % 30 === 0) {
         const stats = PhoneStore.getStats();
-        whlLog.info(`Scroll ${scrollCount}/${CONFIG.maxScrolls}, válidos: ${stats.valid}`);
+        console.log(`[WHL] Scroll ${scrollCount}/${CONFIG.maxScrolls}, válidos: ${stats.valid}`);
       }
     }
     
@@ -789,9 +742,9 @@
     extractFromDOM();
     
     if (extractionCancelled) {
-      whlLog.info(`⛔ Extração cancelada: ${scrollCount} scrolls executados`);
+      console.log(`[WHL] ⛔ Extração cancelada: ${scrollCount} scrolls executados`);
     } else {
-      whlLog.info(`✅ Scroll concluído: ${scrollCount} scrolls`);
+      console.log(`[WHL] ✅ Scroll concluído: ${scrollCount} scrolls`);
     }
   }
 
@@ -806,39 +759,33 @@
         if (text.includes('@c.us') || text.includes('@g.us')) {
           extractFromText(text, 'cus');
         }
-      } catch (e) {
-        if (CONFIG.debug) whlLog.warn('Erro ao interceptar resposta fetch:', e.message);
-      }
+      } catch {}
       return response;
     };
     
-    // Usar Proxy ao invés de sobrescrever prototype
     const OriginalWebSocket = window.WebSocket;
-    window.WebSocket = new Proxy(OriginalWebSocket, {
-      construct(target, args) {
-        const ws = new target(...args);
-        ws.addEventListener('message', function(e) {
-          try {
-            if (e.data && typeof e.data === 'string') {
-              if (e.data.includes('@c.us') || e.data.includes('@g.us')) {
-                extractFromText(e.data, 'cus');
-              }
+    window.WebSocket = function(...args) {
+      const ws = new OriginalWebSocket(...args);
+      ws.addEventListener('message', function(e) {
+        try {
+          if (e.data && typeof e.data === 'string') {
+            if (e.data.includes('@c.us') || e.data.includes('@g.us')) {
+              extractFromText(e.data, 'cus');
             }
-          } catch (err) {
-            whlLog.warn('Erro ao processar mensagem WebSocket:', err.message);
           }
-        });
-        return ws;
-      }
-    });
+        } catch {}
+      });
+      return ws;
+    };
+    window.WebSocket.prototype = OriginalWebSocket.prototype;
     
-    whlLog.info('🔌 Network hooks instalados');
+    console.log('[WHL] 🔌 Network hooks instalados');
   }
 
   // ===== FUNÇÃO PRINCIPAL =====
   async function extractAll() {
-    whlLog.info('🚀🚀🚀 EXTRAÇÃO TURBO v7 - FILTRO ULTRA-RIGOROSO 🚀🚀🚀');
-    whlLog.info('Score mínimo:', CONFIG.minValidScore);
+    console.log('[WHL] 🚀🚀🚀 EXTRAÇÃO TURBO v7 - FILTRO ULTRA-RIGOROSO 🚀🚀🚀');
+    console.log('[WHL] Score mínimo:', CONFIG.minValidScore);
     
     PhoneStore.clear();
     
@@ -851,32 +798,32 @@
     installNetworkHooks();
     
     // Fase 1: DOM
-    whlLog.info('📱 Fase 1: DOM...');
+    console.log('[WHL] 📱 Fase 1: DOM...');
     extractFromDOM();
     window.postMessage({ type: 'WHL_EXTRACT_PROGRESS', progress: 10, count: PhoneStore.getFiltered().length }, '*');
     
     // Fase 2: Storage
-    whlLog.info('💾 Fase 2: Storage...');
+    console.log('[WHL] 💾 Fase 2: Storage...');
     extractFromStorage();
     window.postMessage({ type: 'WHL_EXTRACT_PROGRESS', progress: 15, count: PhoneStore.getFiltered().length }, '*');
     
     // Fase 3: IndexedDB
-    whlLog.info('🗄️ Fase 3: IndexedDB...');
+    console.log('[WHL] 🗄️ Fase 3: IndexedDB...');
     await extractFromIndexedDB();
     window.postMessage({ type: 'WHL_EXTRACT_PROGRESS', progress: 18, count: PhoneStore.getFiltered().length }, '*');
     
     // Fase 3.5: Arquivados e Bloqueados
-    whlLog.info('📁 Fase 3.5: Contatos arquivados e bloqueados...');
+    console.log('[WHL] 📁 Fase 3.5: Contatos arquivados e bloqueados...');
     extractArchivedContacts();
     extractBlockedContacts();
     window.postMessage({ type: 'WHL_EXTRACT_PROGRESS', progress: 20, count: PhoneStore.getFiltered().length }, '*');
     
     // Fase 4: Scroll
-    whlLog.info('📜 Fase 4: Scroll...');
+    console.log('[WHL] 📜 Fase 4: Scroll...');
     await turboScroll();
     
     // Fase 5: Final
-    whlLog.info('🔍 Fase 5: Extração final...');
+    console.log('[WHL] 🔍 Fase 5: Extração final...');
     extractFromDOM();
     extractFromStorage();
     extractArchivedContacts();
@@ -891,19 +838,17 @@
     const byType = PhoneStore.getAllByType();
     const stats = PhoneStore.getStats();
     
-    whlLog.info('✅✅✅ EXTRAÇÃO v7 CONCLUÍDA ✅✅✅');
-    whlLog.info('Estatísticas:', stats);
-    whlLog.info('Números normais:', byType.normal.length);
-    whlLog.info('Números arquivados:', byType.archived.length);
-    whlLog.info('Números bloqueados:', byType.blocked.length);
+    console.log('[WHL] ✅✅✅ EXTRAÇÃO v7 CONCLUÍDA ✅✅✅');
+    console.log('[WHL] Estatísticas:', stats);
+    console.log('[WHL] Números normais:', byType.normal.length);
+    console.log('[WHL] Números arquivados:', byType.archived.length);
+    console.log('[WHL] Números bloqueados:', byType.blocked.length);
     
     try {
       localStorage.setItem('whl_extracted_numbers', JSON.stringify(byType.normal));
       localStorage.setItem('whl_extracted_archived', JSON.stringify(byType.archived));
       localStorage.setItem('whl_extracted_blocked', JSON.stringify(byType.blocked));
-    } catch (e) {
-      whlLog.warn('Erro ao salvar números no localStorage:', e.message);
-    }
+    } catch {}
     
     return byType;
   }
@@ -924,26 +869,26 @@
           numbers: byType.normal  // backward compatibility
         }, '*');
       } catch (e) {
-        whlLog.error('Erro:', e);
+        console.error('[WHL] Erro:', e);
         window.postMessage({ type: 'WHL_EXTRACT_ERROR', error: String(e) }, '*');
       }
     }
     
     if (ev.data.type === 'WHL_PAUSE_EXTRACTION') {
       extractionPaused = true;
-      whlLog.info('⏸️ Extração pausada');
+      console.log('[WHL] ⏸️ Extração pausada');
       window.postMessage({ type: 'WHL_EXTRACTION_PAUSED' }, '*');
     }
     
     if (ev.data.type === 'WHL_RESUME_EXTRACTION') {
       extractionPaused = false;
-      whlLog.info('▶️ Extração retomada');
+      console.log('[WHL] ▶️ Extração retomada');
       window.postMessage({ type: 'WHL_EXTRACTION_RESUMED' }, '*');
     }
     
     if (ev.data.type === 'WHL_CANCEL_EXTRACTION') {
       extractionCancelled = true;
-      whlLog.info('⛔ Extração cancelada');
+      console.log('[WHL] ⛔ Extração cancelada');
       const byType = PhoneStore.getAllByType();
       window.postMessage({ 
         type: 'WHL_EXTRACT_RESULT', 
@@ -965,9 +910,9 @@
     getFiltered: () => PhoneStore.getFiltered(),
     getAll: () => PhoneStore.getAllWithDetails(),
     getStats: () => PhoneStore.getStats(),
-    setMinScore: (s) => { CONFIG.minValidScore = s; whlLog.info('Score mínimo:', s); }
+    setMinScore: (s) => { CONFIG.minValidScore = s; console.log('[WHL] Score mínimo:', s); }
   };
 
-  whlLog.info('✅ EXTRATOR TURBO v7 - FILTRO ULTRA-RIGOROSO carregado!');
-  whlLog.info('📊 Debug: window.__WHL_TURBO_V7__.getStats()');
+  console.log('[WHL] ✅ EXTRATOR TURBO v7 - FILTRO ULTRA-RIGOROSO carregado!');
+  console.log('[WHL] 📊 Debug: window.__WHL_TURBO_V7__.getStats()');
 })();

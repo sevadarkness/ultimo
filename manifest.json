@@ -46,7 +46,6 @@
       "resources": [
         "content/extractor.contacts.js",
         "content/wpp-hooks.js",
-        "content/store-bridge.js",
         "icons/*.png",
         "icons/16.png",
         "icons/48.png",
