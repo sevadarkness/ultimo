@@ -24,9 +24,9 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       await chrome.tabs.sendMessage(tab.id, { type: 'WHL_TOGGLE_PANEL' }).catch(() => {});
-      // Give it time to open, then switch to extract tab
+      // Give it time to open, then switch to extrator tab
       setTimeout(async () => {
-        await chrome.tabs.sendMessage(tab.id, { type: 'WHL_SWITCH_TAB', tab: 'extract' }).catch(() => {});
+        await chrome.tabs.sendMessage(tab.id, { type: 'WHL_SWITCH_TAB', tab: 'extrator' }).catch(() => {});
       }, 300);
     };
   }
@@ -62,15 +62,6 @@ document.addEventListener('DOMContentLoaded', () => {
       setTimeout(async () => {
         await chrome.tabs.sendMessage(tab.id, { type: 'WHL_SWITCH_TAB', tab: 'config' }).catch(() => {});
       }, 300);
-    };
-  }
-
-  // Help link
-  const helpLink = document.getElementById('helpLink');
-  if (helpLink) {
-    helpLink.onclick = (e) => {
-      e.preventDefault();
-      chrome.tabs.create({ url: 'https://github.com/sevadarkness/ultimo' });
     };
   }
 

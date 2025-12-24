@@ -1404,10 +1404,6 @@
             <div style="display:grid;grid-template-columns:repeat(8,1fr);gap:6px;max-height:200px;overflow-y:auto"></div>
           </div>
           
-          <button id="whlSaveMessage" class="iconbtn primary" style="width:100%; margin-top:8px;">
-            💾 Salvar Mensagem
-          </button>
-
           <div style="margin-top:10px">
             <div class="muted">📸 Selecionar imagem (será enviada automaticamente)</div>
             <div class="row" style="margin-top:6px">
@@ -1417,6 +1413,10 @@
             <input id="whlImage" type="file" accept="image/*" style="display:none" />
             <div class="tiny" id="whlImageHint" style="margin-top:6px"></div>
           </div>
+          
+          <button id="whlSaveMessage" class="iconbtn primary" style="width:100%; margin-top:8px;">
+            💾 Salvar Mensagem
+          </button>
 
           <div class="card" style="margin-top:10px">
             <div class="title" style="font-size:13px">📱 Preview (WhatsApp)</div>
@@ -3183,6 +3183,11 @@
     // ATUALIZADO: Usar métodos testados e validados (WHL_SEND_MESSAGE_API e WHL_SEND_IMAGE_DOM)
     const requestId = Date.now().toString();
     
+    // CORREÇÃO CRÍTICA: Armazenar requestId e phone no contato para validação posterior
+    cur.requestId = requestId;
+    cur.targetPhone = cur.phone;
+    await setState(st);
+    
     if (st.imageData) {
       // CORREÇÃO BUG 2: Quando há imagem, usar a nova função que abre o chat primeiro
       console.log('[WHL] 📸 Enviando imagem para número específico (via WHL_SEND_IMAGE_TO_NUMBER)...');
@@ -3342,6 +3347,16 @@
       
       const cur = st.queue[st.index];
       
+      // CORREÇÃO CRÍTICA: Validar requestId para evitar processar resultado de envio antigo
+      if (cur && cur.requestId && e.data.requestId && cur.requestId !== e.data.requestId) {
+        console.warn('[WHL] ⚠️ RequestId não corresponde - ignorando resultado antigo', {
+          expected: cur.requestId,
+          received: e.data.requestId,
+          currentPhone: cur.phone
+        });
+        return;
+      }
+      
       if (cur) {
         if (e.data.success) {
           // NOVO: Aguardar confirmação visual antes de avançar
@@ -3415,6 +3430,16 @@
       if (!st.isRunning) return;
       
       const cur = st.queue[st.index];
+      
+      // CORREÇÃO CRÍTICA: Validar requestId para evitar processar resultado de envio antigo
+      if (cur && cur.requestId && e.data.requestId && cur.requestId !== e.data.requestId) {
+        console.warn('[WHL] ⚠️ RequestId não corresponde - ignorando resultado antigo de imagem', {
+          expected: cur.requestId,
+          received: e.data.requestId,
+          currentPhone: cur.phone
+        });
+        return;
+      }
       
       if (cur) {
         if (e.data.success) {
@@ -3492,6 +3517,16 @@
       if (!st.isRunning) return;
       
       const cur = st.queue[st.index];
+      
+      // CORREÇÃO CRÍTICA: Validar requestId para evitar processar resultado de envio antigo
+      if (cur && cur.requestId && e.data.requestId && cur.requestId !== e.data.requestId) {
+        console.warn('[WHL] ⚠️ RequestId não corresponde - ignorando resultado antigo de imagem específica', {
+          expected: cur.requestId,
+          received: e.data.requestId,
+          currentPhone: cur.phone
+        });
+        return;
+      }
       
       if (cur) {
         if (e.data.success) {
@@ -4110,7 +4145,7 @@
     }
     // Selector health
     const sh = document.getElementById('whlSelectorHealth');
-    if (sh) sh.innerHTML = state.selectorHealth?.ok ? '✅ Seletores OK' : `⚠️ Seletores: ${(state.selectorHealth?.issues||[]).join(', ')}`;
+    if (sh) sh.innerHTML = '';
 
 
     // Update status badge
@@ -4987,11 +5022,14 @@ window.addEventListener('message', (e) => {
     
     if (btnExtractMembers) {
       btnExtractMembers.disabled = false;
-      btnExtractMembers.textContent = '💥 Extrair Membros';
+      btnExtractMembers.textContent = '📥 Extrair Membros';
     }
     
     if (e.data.success || e.data.members) {
       let members = e.data.members || [];
+      
+      console.log('[WHL] 📊 Membros recebidos da API:', members);
+      console.log('[WHL] 📊 Tipo:', typeof members, 'Comprimento:', members.length);
       
       // VALIDAÇÃO FINAL: Filtrar LIDs
       const validMembers = members.filter(num => {
@@ -5000,10 +5038,15 @@ window.addEventListener('message', (e) => {
           return false;
         }
         const clean = String(num).replace(/\D/g, '');
-        return /^\d{10,15}$/.test(clean);
+        const isValid = /^\d{10,15}$/.test(clean);
+        if (!isValid) {
+          console.warn('[WHL] ❌ Número inválido rejeitado:', num, 'clean:', clean);
+        }
+        return isValid;
       });
       
       console.log('[WHL] ✅ Números válidos:', validMembers.length);
+      console.log('[WHL] ✅ Números válidos lista:', validMembers);
       
       if (membersBox) membersBox.value = validMembers.join('\n');
       if (membersCount) membersCount.textContent = validMembers.length;
@@ -5012,6 +5055,8 @@ window.addEventListener('message', (e) => {
       if (e.data.stats) {
         const { apiDirect, lidResolved, domFallback, duplicates, failed } = e.data.stats;
         const total = apiDirect + lidResolved + domFallback;
+        
+        const successRate = total + failed > 0 ? Math.round((validMembers.length / (total + failed)) * 100) : 0;
         
         alert(
           `✅ ${validMembers.length} NÚMEROS REAIS extraídos!\n\n` +
@@ -5022,12 +5067,13 @@ window.addEventListener('message', (e) => {
           `♻️ Duplicatas: ${duplicates}\n` +
           `❌ Falhas: ${failed}\n` +
           `━━━━━━━━━━━━━━━━━━\n` +
-          `✅ Taxa: ${Math.round((validMembers.length / (total + failed)) * 100)}%`
+          `✅ Taxa: ${successRate}%`
         );
       } else {
         alert(`✅ ${validMembers.length} membros extraídos!`);
       }
     } else {
+      console.error('[WHL] ❌ Erro na extração:', e.data);
       alert('❌ Erro: ' + (e.data.error || 'Desconhecido'));
     }
   }
@@ -5206,15 +5252,21 @@ window.addEventListener('message', (e) => {
       const timeStr = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       const dateStr = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
       
+      // CORREÇÃO ISSUE 05: Diferenciar entre mensagens apagadas e editadas
+      const isEdited = msg.type === 'edited';
+      const typeClass = isEdited ? 'edited' : 'deleted';
+      const typeIcon = isEdited ? '✏️' : '🗑️';
+      const typeLabel = isEdited ? 'Editada' : 'Apagada';
+      
       // Criar elemento de timeline
       const timelineItem = document.createElement('div');
-      timelineItem.className = 'timeline-item deleted';
+      timelineItem.className = `timeline-item ${typeClass}`;
       timelineItem.innerHTML = `
         <div class="timeline-dot"></div>
         <div class="timeline-card">
           <div class="card-header">
             <span class="contact-name">📱 ${phone}</span>
-            <span class="message-type deleted">🗑️ Apagada</span>
+            <span class="message-type ${typeClass}">${typeIcon} ${typeLabel}</span>
             <span class="timestamp">${timeStr}</span>
           </div>
           <div class="card-body">
@@ -5276,15 +5328,21 @@ window.addEventListener('message', (e) => {
           const timeStr = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
           const dateStr = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
           
+          // CORREÇÃO ISSUE 05: Diferenciar entre mensagens apagadas e editadas
+          const isEdited = msg.type === 'edited';
+          const typeClass = isEdited ? 'edited' : 'deleted';
+          const typeIcon = isEdited ? '✏️' : '🗑️';
+          const typeLabel = isEdited ? 'Editada' : 'Apagada';
+          
           const timelineItem = document.createElement('div');
-          timelineItem.className = 'timeline-item deleted';
+          timelineItem.className = `timeline-item ${typeClass}`;
           timelineItem.style.setProperty('--card-index', index);
           timelineItem.innerHTML = `
             <div class="timeline-dot"></div>
             <div class="timeline-card">
               <div class="card-header">
                 <span class="contact-name">📱 ${phone}</span>
-                <span class="message-type deleted">🗑️ Apagada</span>
+                <span class="message-type ${typeClass}">${typeIcon} ${typeLabel}</span>
                 <span class="timestamp">${timeStr}</span>
               </div>
               <div class="card-body">
