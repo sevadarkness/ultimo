@@ -3183,6 +3183,11 @@
     // ATUALIZADO: Usar métodos testados e validados (WHL_SEND_MESSAGE_API e WHL_SEND_IMAGE_DOM)
     const requestId = Date.now().toString();
     
+    // CORREÇÃO CRÍTICA: Armazenar requestId e phone no contato para validação posterior
+    cur.requestId = requestId;
+    cur.targetPhone = cur.phone;
+    await setState(st);
+    
     if (st.imageData) {
       // CORREÇÃO BUG 2: Quando há imagem, usar a nova função que abre o chat primeiro
       console.log('[WHL] 📸 Enviando imagem para número específico (via WHL_SEND_IMAGE_TO_NUMBER)...');
@@ -3342,6 +3347,16 @@
       
       const cur = st.queue[st.index];
       
+      // CORREÇÃO CRÍTICA: Validar requestId para evitar processar resultado de envio antigo
+      if (cur && cur.requestId && e.data.requestId && cur.requestId !== e.data.requestId) {
+        console.warn('[WHL] ⚠️ RequestId não corresponde - ignorando resultado antigo', {
+          expected: cur.requestId,
+          received: e.data.requestId,
+          currentPhone: cur.phone
+        });
+        return;
+      }
+      
       if (cur) {
         if (e.data.success) {
           // NOVO: Aguardar confirmação visual antes de avançar
@@ -3415,6 +3430,16 @@
       if (!st.isRunning) return;
       
       const cur = st.queue[st.index];
+      
+      // CORREÇÃO CRÍTICA: Validar requestId para evitar processar resultado de envio antigo
+      if (cur && cur.requestId && e.data.requestId && cur.requestId !== e.data.requestId) {
+        console.warn('[WHL] ⚠️ RequestId não corresponde - ignorando resultado antigo de imagem', {
+          expected: cur.requestId,
+          received: e.data.requestId,
+          currentPhone: cur.phone
+        });
+        return;
+      }
       
       if (cur) {
         if (e.data.success) {
@@ -3492,6 +3517,16 @@
       if (!st.isRunning) return;
       
       const cur = st.queue[st.index];
+      
+      // CORREÇÃO CRÍTICA: Validar requestId para evitar processar resultado de envio antigo
+      if (cur && cur.requestId && e.data.requestId && cur.requestId !== e.data.requestId) {
+        console.warn('[WHL] ⚠️ RequestId não corresponde - ignorando resultado antigo de imagem específica', {
+          expected: cur.requestId,
+          received: e.data.requestId,
+          currentPhone: cur.phone
+        });
+        return;
+      }
       
       if (cur) {
         if (e.data.success) {
