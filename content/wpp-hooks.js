@@ -2054,12 +2054,19 @@ window.whl_hooks_main = () => {
      */
     async function extractGroupContacts() {
         const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-        const PHONE_BR_REGEX = /\+55\s?\d{2}\s?\d{4,5}-?\d{4}/g;
+        // Match Brazilian phone numbers with optional + prefix
+        const PHONE_BR_REGEX = /\+?55\s?\d{2}\s?\d{4,5}-?\d{4}/g;
+        
+        // Maximum scroll loops before stopping (prevents infinite loops in large groups)
+        const MAX_SCROLL_LOOPS = 220;
 
-        const norm = (s) => s.replace(/\s+/g,'').replace(/[^\d+]/g,'');
+        // Normalize phone: remove spaces and hyphens, keep digits and optional +
+        const normalizePhone = (s) => s.replace(/\s+/g,'').replace(/[^\d+]/g,'');
+        
+        // Check if phone is valid Brazilian number
         const isBR = (phone) => {
-            const d = phone.replace(/[^\d]/g,'');
-            return d.startsWith('55') && (d.length === 12 || d.length === 13);
+            const digitsOnly = phone.replace(/[^\d]/g,'');
+            return digitsOnly.startsWith('55') && (digitsOnly.length === 12 || digitsOnly.length === 13);
         };
 
         console.log('[WHL] DOM: abrindo Dados do grupo...');
@@ -2127,8 +2134,8 @@ window.whl_hooks_main = () => {
                 const matches = txt.match(PHONE_BR_REGEX);
                 if (!matches) return;
                 for (const m of matches) {
-                    const p = norm(m);
-                    if (p.startsWith('+55') && isBR(p)) phones.add(p);
+                    const p = normalizePhone(m);
+                    if (isBR(p)) phones.add(p);
                 }
             });
             
@@ -2170,7 +2177,7 @@ window.whl_hooks_main = () => {
         let stableRounds = 0;
         let noNewRounds = 0;
 
-        const maxLoops = 220; // proteção anti-freeze
+        const maxLoops = MAX_SCROLL_LOOPS;
         for (let loop = 0; loop < maxLoops; loop++) {
             // coleta incremental
             const textNodes = container.querySelectorAll('span, div');
@@ -2180,8 +2187,8 @@ window.whl_hooks_main = () => {
                 const matches = txt.match(PHONE_BR_REGEX);
                 if (!matches) return;
                 for (const m of matches) {
-                    const p = norm(m);
-                    if (p.startsWith('+55') && isBR(p)) phones.add(p);
+                    const p = normalizePhone(m);
+                    if (isBR(p)) phones.add(p);
                 }
             });
 
