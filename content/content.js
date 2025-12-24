@@ -5206,15 +5206,21 @@ window.addEventListener('message', (e) => {
       const timeStr = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       const dateStr = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
       
+      // CORREÇÃO ISSUE 05: Diferenciar entre mensagens apagadas e editadas
+      const isEdited = msg.type === 'edited';
+      const typeClass = isEdited ? 'edited' : 'deleted';
+      const typeIcon = isEdited ? '✏️' : '🗑️';
+      const typeLabel = isEdited ? 'Editada' : 'Apagada';
+      
       // Criar elemento de timeline
       const timelineItem = document.createElement('div');
-      timelineItem.className = 'timeline-item deleted';
+      timelineItem.className = `timeline-item ${typeClass}`;
       timelineItem.innerHTML = `
         <div class="timeline-dot"></div>
         <div class="timeline-card">
           <div class="card-header">
             <span class="contact-name">📱 ${phone}</span>
-            <span class="message-type deleted">🗑️ Apagada</span>
+            <span class="message-type ${typeClass}">${typeIcon} ${typeLabel}</span>
             <span class="timestamp">${timeStr}</span>
           </div>
           <div class="card-body">
@@ -5276,15 +5282,21 @@ window.addEventListener('message', (e) => {
           const timeStr = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
           const dateStr = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
           
+          // CORREÇÃO ISSUE 05: Diferenciar entre mensagens apagadas e editadas
+          const isEdited = msg.type === 'edited';
+          const typeClass = isEdited ? 'edited' : 'deleted';
+          const typeIcon = isEdited ? '✏️' : '🗑️';
+          const typeLabel = isEdited ? 'Editada' : 'Apagada';
+          
           const timelineItem = document.createElement('div');
-          timelineItem.className = 'timeline-item deleted';
+          timelineItem.className = `timeline-item ${typeClass}`;
           timelineItem.style.setProperty('--card-index', index);
           timelineItem.innerHTML = `
             <div class="timeline-dot"></div>
             <div class="timeline-card">
               <div class="card-header">
                 <span class="contact-name">📱 ${phone}</span>
-                <span class="message-type deleted">🗑️ Apagada</span>
+                <span class="message-type ${typeClass}">${typeIcon} ${typeLabel}</span>
                 <span class="timestamp">${timeStr}</span>
               </div>
               <div class="card-body">

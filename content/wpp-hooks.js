@@ -817,6 +817,68 @@ window.whl_hooks_main = () => {
     /**
      * CORREÇÃO BUG 4: Função para salvar mensagem recuperada
      */
+    /**
+     * CORREÇÃO ISSUE 05: Salvar mensagem editada no histórico
+     */
+    function salvarMensagemEditada(message) {
+        const messageContent = message?.body || message?.caption || '[sem conteúdo]';
+        let from = message?.from?._serialized || message?.from?.user || message?.author?._serialized || message?.id?.remote?._serialized || '';
+        
+        // Formatar
+        from = (from || '').replace('@c.us', '').replace('@s.whatsapp.net', '');
+        if (!from) from = 'Número desconhecido';
+        
+        const entrada = {
+            id: message.id?.id || Date.now().toString(),
+            from: from,
+            body: messageContent,
+            type: 'edited',
+            timestamp: Date.now()
+        };
+        
+        console.log('[WHL Recover] ✏️ Salvando mensagem editada:', entrada);
+        
+        historicoRecover.push(entrada);
+        
+        // Item 4: Limit Recover localStorage storage (5 MB limit)
+        let currentSize = new Blob([JSON.stringify(historicoRecover)]).size;
+        const MAX_STORAGE_BYTES = 5 * 1024 * 1024;
+        
+        while (currentSize > MAX_STORAGE_BYTES && historicoRecover.length > 10) {
+            historicoRecover.shift();
+            currentSize = new Blob([JSON.stringify(historicoRecover)]).size;
+        }
+        
+        if (historicoRecover.length > 100) {
+            historicoRecover = historicoRecover.slice(-100);
+        }
+        
+        // Salvar no localStorage
+        try {
+            const dataToSave = JSON.stringify(historicoRecover);
+            const sizeKB = (new Blob([dataToSave]).size / 1024).toFixed(2);
+            localStorage.setItem('whl_recover_history', dataToSave);
+            console.log(`[WHL Recover] Histórico salvo: ${historicoRecover.length} mensagens, ${sizeKB}KB`);
+        } catch(e) {
+            console.error('[WHL Recover] Erro ao salvar (limite excedido?)', e);
+            historicoRecover = historicoRecover.slice(-50);
+            try {
+                localStorage.setItem('whl_recover_history', JSON.stringify(historicoRecover));
+            } catch(e2) {
+                console.error('[WHL Recover] Falha crítica ao salvar histórico', e2);
+            }
+        }
+        
+        // Notificar UI
+        window.postMessage({
+            type: 'WHL_RECOVER_NEW_MESSAGE',
+            message: entrada,
+            total: historicoRecover.length
+        }, '*');
+        
+        console.log(`[WHL Recover] Mensagem editada de ${entrada.from}: ${entrada.body.substring(0, 50)}...`);
+    }
+
     function salvarMensagemRecuperada(msg) {
         // CORREÇÃO BUG 4: Tentar múltiplas fontes para o body
         let body = msg.body || msg.caption || msg.text || '';
@@ -1022,6 +1084,9 @@ window.whl_hooks_main = () => {
         }
         
         static handle_edited_message(message, arg1, arg2) {
+            // CORREÇÃO ISSUE 05: Salvar mensagem editada no histórico ANTES de modificar
+            salvarMensagemEditada(message);
+            
             // Extract message content - body for text, caption for media
             const messageContent = message?.body || message?.caption || '[sem conteúdo]';
             message.type = 'chat';
