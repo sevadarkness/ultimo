@@ -1572,17 +1572,31 @@ window.whl_hooks_main = () => {
      * @param {string} groupId - ID do grupo (_serialized)
      * @returns {Promise<Object>} Resultado com membros extraídos e estatísticas
      */
+    /**
+     * OTIMIZADO: Extração de membros de grupo com timeout agressivo e feedback visual
+     * Timeout reduzido de 30s para 15s para evitar congelamento do navegador
+     * Inclui notificações de progresso em tempo real
+     */
     async function extractGroupMembersUltra(groupId) {
         console.log('[WHL] ═══════════════════════════════════════════');
         console.log('[WHL] 🚀 ULTRA MODE: Iniciando extração híbrida');
         console.log('[WHL] 📱 Grupo:', groupId);
         console.log('[WHL] ═══════════════════════════════════════════');
         
-        // PR #78: Timeout de 30 segundos
-        const TIMEOUT = 30000;
+        // OTIMIZAÇÃO: Timeout agressivo de 15 segundos (reduzido de 30s)
+        const TIMEOUT = 15000;
         const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Timeout: extração demorou muito')), TIMEOUT)
+            setTimeout(() => reject(new Error('Timeout: extração demorou muito (15s)')), TIMEOUT)
         );
+        
+        // Notificar início da extração
+        window.postMessage({
+            type: 'WHL_EXTRACTION_PROGRESS',
+            groupId: groupId,
+            phase: 'starting',
+            message: 'Iniciando extração...',
+            progress: 0
+        }, '*');
         
         try {
             return await Promise.race([
@@ -1591,6 +1605,16 @@ window.whl_hooks_main = () => {
             ]);
         } catch (e) {
             console.error('[WHL] Erro na extração (timeout ou exceção):', e.message);
+            
+            // Notificar erro
+            window.postMessage({
+                type: 'WHL_EXTRACTION_PROGRESS',
+                groupId: groupId,
+                phase: 'error',
+                message: 'Erro: ' + e.message,
+                progress: 100
+            }, '*');
+            
             return { 
                 success: false, 
                 error: e.message, 
@@ -1608,7 +1632,7 @@ window.whl_hooks_main = () => {
     }
     
     /**
-     * PR #78: Função interna separada para permitir timeout
+     * OTIMIZADO: Função interna com progress tracking e prevenção de loops infinitos
      */
     async function extractGroupMembersUltraInternal(groupId) {
         console.log('[WHL] Iniciando extração interna...');
@@ -1623,6 +1647,10 @@ window.whl_hooks_main = () => {
                 failed: 0
             }
         };
+        
+        // OTIMIZAÇÃO: Track para prevenir loops infinitos em resolução de LID
+        const lidAttempts = new Map(); // Map<participantId, attemptCount>
+        const MAX_LID_ATTEMPTS = 3; // Máximo 3 tentativas por LID
 
         // Função para adicionar membro com scoring
         const addMember = (num, source, confidence) => {
@@ -1647,11 +1675,30 @@ window.whl_hooks_main = () => {
             } else {
                 results.members.set(clean, { source, confidence, attempts: 1 });
                 results.stats[source]++;
+                
+                // OTIMIZAÇÃO: Notificar progresso a cada novo membro
+                window.postMessage({
+                    type: 'WHL_EXTRACTION_PROGRESS',
+                    groupId: groupId,
+                    phase: 'extracting',
+                    message: `Extraídos: ${results.members.size} membros`,
+                    progress: 50,
+                    currentCount: results.members.size
+                }, '*');
+                
                 return true;
             }
         };
 
         // FASE 1: API INTERNA + METADATA
+        window.postMessage({
+            type: 'WHL_EXTRACTION_PROGRESS',
+            groupId: groupId,
+            phase: 'phase1',
+            message: 'Fase 1: Carregando API interna...',
+            progress: 10
+        }, '*');
+        
         try {
             const cols = await waitForCollections();
             if (!cols) throw new Error('API interna indisponível');
@@ -1689,8 +1736,16 @@ window.whl_hooks_main = () => {
             } else if (meta.participants?._models) {
                 participants = Object.values(meta.participants._models);
             }
+            
+            window.postMessage({
+                type: 'WHL_EXTRACTION_PROGRESS',
+                groupId: groupId,
+                phase: 'phase2',
+                message: `Fase 2: Processando ${participants.length} participantes...`,
+                progress: 25
+            }, '*');
 
-            // FASE 2: PROCESSAR CADA PARTICIPANTE (5 MÉTODOS)
+            // FASE 2: PROCESSAR CADA PARTICIPANTE (5 MÉTODOS + LID PREVENTION)
             for (const p of participants) {
                 const id = p.id;
                 if (!id) continue;
@@ -1732,8 +1787,20 @@ window.whl_hooks_main = () => {
                     }
                 }
 
-                // MÉTODO 5: ContactCollection - RESOLVE LID!
+                // MÉTODO 5: ContactCollection - RESOLVE LID (COM PREVENÇÃO DE LOOPS)
                 if (!found || id._serialized?.includes('@lid') || String(id.user).includes(':')) {
+                    // OTIMIZAÇÃO: Verificar quantas tentativas já foram feitas para este LID
+                    const lidKey = id._serialized || String(id);
+                    const currentAttempts = lidAttempts.get(lidKey) || 0;
+                    
+                    if (currentAttempts >= MAX_LID_ATTEMPTS) {
+                        console.warn(`[WHL] ⚠️ Máximo de tentativas atingido para LID: ${lidKey.substring(0, 30)}...`);
+                        results.stats.failed++;
+                        continue;
+                    }
+                    
+                    lidAttempts.set(lidKey, currentAttempts + 1);
+                    
                     const resolved = await resolveContactPhoneUltra(id._serialized || id, cols);
                     if (resolved) {
                         addMember(resolved, 'lidResolved', 5);
@@ -1750,6 +1817,14 @@ window.whl_hooks_main = () => {
 
         // FASE 3: DOM FALLBACK (se poucos números)
         if (results.members.size < 3) {
+            window.postMessage({
+                type: 'WHL_EXTRACTION_PROGRESS',
+                groupId: groupId,
+                phase: 'phase3',
+                message: 'Fase 3: Ativando fallback DOM...',
+                progress: 75
+            }, '*');
+            
             try {
                 console.log('[WHL] 📄 FASE 3: Ativando fallback DOM...');
                 const domResult = await extractGroupContacts();
@@ -1764,6 +1839,14 @@ window.whl_hooks_main = () => {
         }
 
         // RESULTADO FINAL
+        window.postMessage({
+            type: 'WHL_EXTRACTION_PROGRESS',
+            groupId: groupId,
+            phase: 'finalizing',
+            message: 'Finalizando extração...',
+            progress: 90
+        }, '*');
+        
         const finalMembers = [...results.members.entries()]
             .sort((a, b) => b[1].confidence - a[1].confidence)
             .map(([num]) => num);
@@ -1776,6 +1859,16 @@ window.whl_hooks_main = () => {
         console.log(`[WHL] 🔹 DOM: ${results.stats.domFallback}`);
         console.log(`[WHL] ❌ Falhas: ${results.stats.failed}`);
         console.log('[WHL] ═══════════════════════════════════════════');
+        
+        // Notificar conclusão
+        window.postMessage({
+            type: 'WHL_EXTRACTION_PROGRESS',
+            groupId: groupId,
+            phase: 'complete',
+            message: `Concluído: ${finalMembers.length} membros extraídos`,
+            progress: 100,
+            currentCount: finalMembers.length
+        }, '*');
 
         return {
             success: true,
