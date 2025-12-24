@@ -24,6 +24,47 @@
     error: (...args) => console.error('[WHL]', ...args)
   };
 
+  // ===== DOM SELECTORS =====
+  // Centralized selector constants for better maintainability
+  const WHL_SELECTORS = {
+    // Message input
+    MESSAGE_INPUT: [
+      '[data-testid="conversation-compose-box-input"]',
+      'footer div[contenteditable="true"][role="textbox"]',
+      'div[contenteditable="true"][role="textbox"]'
+    ],
+    // Send button
+    SEND_BUTTON: [
+      '[data-testid="send"]',
+      '[data-testid="compose-btn-send"]',
+      '[aria-label="Enviar"]',
+      'button[aria-label*="Send"]',
+      'span[data-icon="send"]'
+    ],
+    // Attach menu
+    ATTACH_BUTTON: [
+      '[data-testid="attach-clip"]',
+      '[data-testid="clip"]',
+      'span[data-icon="attach-menu-plus"]',
+      'span[data-icon="clip"]',
+      '[aria-label="Anexar"]'
+    ],
+    // Media attach
+    ATTACH_IMAGE: [
+      '[data-testid="attach-image"]',
+      '[data-testid="mi-attach-media"]',
+      '[data-testid="attach-photo"]'
+    ],
+    // Caption input
+    CAPTION_INPUT: [
+      '[data-testid="media-caption-input"]',
+      'div[aria-label*="legenda"][contenteditable="true"]',
+      'div[aria-label*="Legenda"][contenteditable="true"]',
+      'div[aria-label*="caption"][contenteditable="true"]',
+      'div[contenteditable="true"][data-lexical-editor="true"]'
+    ]
+  };
+
   // ===== CONFIGURAÇÃO GLOBAL =====
   // Flag para habilitar envio via API direta (WPP Boladão) ou URL tradicional
   // true = API direta com métodos validados (SEM reload, resultados confirmados)
@@ -204,27 +245,8 @@
     },
     exposeStore() {
       // DESABILITADO: CSP do WhatsApp Web bloqueia scripts inline
-      console.log('[WHL] exposeStore desabilitado (CSP blocking)');
+      whlLog.debug('exposeStore desabilitado (CSP blocking)');
       return;
-      
-      /* Código original comentado - bloqueado pelo CSP
-      const s = document.createElement('script');
-      s.textContent = `(()=>{try{
-        if(window.webpackChunkwhatsapp_web_client)window.webpackChunkwhatsapp_web_client.push([['wa-harvester'],{},function(e){
-          let mods = [];
-          for(let k in e.m)mods.push(e(k));
-          window.Store = {};
-          let find = f => mods.find(m=>m&&f(m));
-          window.Store.Chat = find(m=>m.default&&m.default.Chat)?.default;
-          window.Store.Contact = find(m=>m.default&&m.default.Contact)?.default;
-          window.Store.GroupMetadata = find(m=>m.default&&m.default.GroupMetadata)?.default;
-          window.dispatchEvent(new CustomEvent('wa-store'));
-        }]);
-      }catch{}})();`;
-      (document.head || document.documentElement).appendChild(s);
-      s.remove();
-      window.addEventListener('wa-store', () => this.fromStore());
-      */
     },
     fromStore() {
       if (!window.Store) return;
@@ -2287,11 +2309,39 @@
   }
 
   /**
+   * Helper: Query selector with multiple fallbacks
+   * Uses centralized WHL_SELECTORS object
+   */
+  function querySelector(selectorKey, context = document) {
+    const selectors = WHL_SELECTORS[selectorKey];
+    if (!selectors) return null;
+    
+    for (const selector of selectors) {
+      const element = context.querySelector(selector);
+      if (element) return element;
+      
+      // Try closest for button/icon selectors
+      if (selector.includes('span[data-icon')) {
+        const icon = context.querySelector(selector);
+        if (icon) {
+          const button = icon.closest('button') || icon.closest('[role="button"]');
+          if (button) return button;
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
    * Helper: Obtém o campo de mensagem
-   * ATUALIZADO: Usa APENAS seletores CONFIRMADOS pelo usuário
+   * ATUALIZADO: Usa seletores centralizados
    */
   function getMessageInputField() {
-    // Seletores CONFIRMADOS que funcionam:
+    // Try centralized selectors first
+    const field = querySelector('MESSAGE_INPUT');
+    if (field) return field;
+    
+    // Fallback to confirmed selectors
     return document.querySelector('div[aria-label="Digitar na conversa"][contenteditable="true"]') ||
            document.querySelector('div[data-tab="10"][contenteditable="true"]') ||
            document.querySelector('footer div[contenteditable="true"]');
