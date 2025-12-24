@@ -9,14 +9,15 @@
   const urlParams = new URLSearchParams(window.location.search);
   const isWorkerTab = urlParams.has('whl_worker') || window.location.href.includes('whl_worker=true');
   
+  // Item 20: Minimize console log pollution based on environment
+  const WHL_DEBUG = localStorage.getItem('whl_debug') === 'true' || false;
+  
   if (isWorkerTab) {
     if (WHL_DEBUG) console.log('[WHL] This is the worker tab, UI disabled');
     // Worker content script will handle this tab
     return;
   }
 
-  // Item 20: Minimize console log pollution based on environment
-  const WHL_DEBUG = localStorage.getItem('whl_debug') === 'true' || false;
   const whlLog = {
     debug: (...args) => { if (WHL_DEBUG) console.log('[WHL DEBUG]', ...args); },
     info: (...args) => console.log('[WHL]', ...args),
@@ -74,6 +75,13 @@
     API_RETRY_ON_FAIL: true,  // Se API falhar, tentar URL mode
     USE_WORKER_FOR_SENDING: false,  // DISABLED: Hidden Worker Tab não funciona - usar API direta
     USE_INPUT_ENTER_METHOD: false,  // DESABILITADO: Causa reload - usar API direta ao invés
+  };
+  
+  // Performance optimization constants
+  const PERFORMANCE_LIMITS = {
+    MAX_RESPONSE_SIZE: 100000,      // Skip network extraction for responses >100KB
+    MAX_WEBSOCKET_SIZE: 50000,      // Skip WebSocket extraction for messages >50KB
+    NETWORK_EXTRACT_THROTTLE: 1000  // Throttle network extraction to once per second
   };
 
   // Injetar wpp-hooks.js no contexto da página
@@ -308,11 +316,10 @@
     hookNetwork() {
       // Throttle phone extraction to reduce performance impact
       let lastExtractTime = 0;
-      const EXTRACT_THROTTLE = 1000; // Only extract every 1 second
       
       const throttledExtract = (data, origin) => {
         const now = Date.now();
-        if (now - lastExtractTime < EXTRACT_THROTTLE) return;
+        if (now - lastExtractTime < PERFORMANCE_LIMITS.NETWORK_EXTRACT_THROTTLE) return;
         lastExtractTime = now;
         WAExtractor.findPhones(data, origin);
       };
@@ -324,7 +331,7 @@
         // Only extract from successful responses
         if (r.ok) {
           let data = await r.clone().text().catch(()=>null);
-          if (data && data.length < 100000) { // Skip very large responses
+          if (data && data.length < PERFORMANCE_LIMITS.MAX_RESPONSE_SIZE) {
             throttledExtract(data, HarvesterStore.ORIGINS.NET);
           }
         }
@@ -348,7 +355,7 @@
                  url.hostname.endsWith('.whatsapp.com') || 
                  url.hostname.endsWith('.whatsapp.net')) {
                 const text = this.responseText;
-                if (text && text.length < 100000) { // Skip very large responses
+                if (text && text.length < PERFORMANCE_LIMITS.MAX_RESPONSE_SIZE) {
                   throttledExtract(text, HarvesterStore.ORIGINS.NET);
                 }
               }
@@ -365,7 +372,7 @@
       window.WebSocket = function(...args) {
         let ws = new WSOld(...args);
         ws.addEventListener('message',e=>{
-          if (typeof e.data === 'string' && e.data.length < 50000) {
+          if (typeof e.data === 'string' && e.data.length < PERFORMANCE_LIMITS.MAX_WEBSOCKET_SIZE) {
             throttledExtract(e.data, HarvesterStore.ORIGINS.WS);
           }
         });
@@ -2346,15 +2353,13 @@
     
     for (const selector of selectors) {
       const element = context.querySelector(selector);
-      if (element) return element;
-      
-      // Try closest for button/icon selectors
-      if (selector.includes('span[data-icon')) {
-        const icon = context.querySelector(selector);
-        if (icon) {
-          const button = icon.closest('button') || icon.closest('[role="button"]');
+      if (element) {
+        // For icon selectors, try to find the button parent
+        if (selector.includes('span[data-icon')) {
+          const button = element.closest('button') || element.closest('[role="button"]');
           if (button) return button;
         }
+        return element;
       }
     }
     return null;
