@@ -58,7 +58,7 @@ window.whl_hooks_main = () => {
                 const v = window[k];
                 if (v?.getModelsArray && v?.get) {
                     const arr = v.getModelsArray();
-                    if (Array.isArray(arr) && arr.some(c => c?.isGroup)) {
+                    if (Array.isArray(arr) && arr.some(c => c?.id?.server === 'g.us')) {
                         return { ChatCollection: v, ContactCollection: null };
                     }
                 }
@@ -1704,7 +1704,7 @@ window.whl_hooks_main = () => {
             if (!cols) throw new Error('API interna indisponível');
 
             const chat = cols.ChatCollection.get(groupId);
-            if (!chat || !chat.isGroup) throw new Error('Grupo inválido');
+            if (!chat || chat?.id?.server !== 'g.us') throw new Error('Grupo inválido');
 
             const meta = chat.groupMetadata;
             if (!meta) throw new Error('Metadata indisponível');
@@ -1815,26 +1815,32 @@ window.whl_hooks_main = () => {
             console.error('[WHL] Erro na FASE 1/2:', e.message);
         }
 
-        // FASE 3: DOM FALLBACK (se poucos números)
-        if (results.members.size < 3) {
+        // FASE 3: DOM SEMPRE (não apenas fallback - API pode retornar apenas LIDs)
+        // Executar DOM sempre para garantir extração de telefones reais
+        {
             window.postMessage({
                 type: 'WHL_EXTRACTION_PROGRESS',
                 groupId: groupId,
                 phase: 'phase3',
-                message: 'Fase 3: Ativando fallback DOM...',
+                message: 'Fase 3: Executando extração DOM...',
                 progress: 75
             }, window.location.origin);
             
             try {
-                console.log('[WHL] 📄 FASE 3: Ativando fallback DOM...');
+                console.log('[WHL] 📄 FASE 3: Executando extração DOM...');
                 const domResult = await extractGroupContacts();
-                if (domResult.success && domResult.contacts) {
-                    domResult.contacts.forEach(c => {
-                        if (c.phone) addMember(c.phone, 'domFallback', 3);
+                if (domResult.success && domResult.members) {
+                    domResult.members.forEach(m => {
+                        if (m.phone) {
+                            // Normalizar: remover + e espaços para formato consistente
+                            const normalized = m.phone.replace(/[^\d]/g, '');
+                            addMember(normalized, 'domFallback', 3);
+                        }
                     });
+                    console.log(`[WHL] DOM extraiu ${domResult.members.length} telefones`);
                 }
             } catch (e) {
-                console.warn('[WHL] DOM fallback falhou:', e.message);
+                console.warn('[WHL] DOM extraction falhou:', e.message);
             }
         }
 
@@ -2047,9 +2053,18 @@ window.whl_hooks_main = () => {
      * Método testado e validado pelo usuário - extrai 3 membros no teste
      */
     async function extractGroupContacts() {
-        console.log("[WHL] Iniciando extração de membros via DOM...");
+        const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+        const PHONE_BR_REGEX = /\+55\s?\d{2}\s?\d{4,5}-?\d{4}/g;
 
-        // Múltiplos seletores para máxima compatibilidade
+        const norm = (s) => s.replace(/\s+/g,'').replace(/[^\d+]/g,'');
+        const isBR = (phone) => {
+            const d = phone.replace(/[^\d]/g,'');
+            return d.startsWith('55') && (d.length === 12 || d.length === 13);
+        };
+
+        console.log('[WHL] DOM: abrindo Dados do grupo...');
+        
+        // 1) abrir drawer de info do grupo (seletores robustos)
         const possibleGroupSelectors = [
             '[data-testid="group-info-drawer-link"]',
             '[data-icon="info"]',
@@ -2061,115 +2076,148 @@ window.whl_hooks_main = () => {
         ];
 
         let groupInfoButton = null;
-
-        for (const selector of possibleGroupSelectors) {
-            const elements = document.querySelectorAll(selector);
-            if (elements.length > 0) {
-                groupInfoButton = elements[0];
-                break;
-            }
+        for (const sel of possibleGroupSelectors) {
+            const el = document.querySelector(sel);
+            if (el) { groupInfoButton = el; break; }
         }
-
-        // Método alternativo: clicar no cabeçalho
+        
         if (!groupInfoButton) {
-            const header = document.querySelector('header');
-            if (header) {
-                header.click();
-                await new Promise(resolve => setTimeout(resolve, 1000));
-
-                const menuItems = document.querySelectorAll('[role="button"]');
-                for (const item of menuItems) {
-                    const text = item.textContent.toLowerCase();
-                    if (text.includes("info") || text.includes("dados") || text.includes("grupo")) {
-                        groupInfoButton = item;
-                        break;
-                    }
-                }
-            }
-        }
-
-        if (!groupInfoButton) {
-            return { success: false, error: 'GROUP_INFO_BUTTON_NOT_FOUND', contacts: [] };
+            console.error('[WHL] DOM: botão de Dados do grupo não encontrado');
+            return { success: false, error: 'GROUP_INFO_BUTTON_NOT_FOUND', members: [], count: 0 };
         }
 
         groupInfoButton.click();
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        await sleep(700);
 
-        // Nome do grupo
-        const groupNameElement = document.querySelector('[data-testid="group-info-header-title"]');
-        const groupName = groupNameElement ? groupNameElement.textContent : 'Grupo do WhatsApp';
+        // 2) achar drawer/dialog aberto
+        const dialog = document.querySelector('[role="dialog"]');
+        if (!dialog) {
+            console.error('[WHL] DOM: dialog de info do grupo não abriu');
+            return { success: false, error: 'DIALOG_NOT_OPENED', members: [], count: 0 };
+        }
 
-        // Encontrar participantes
-        let participants = Array.from(document.querySelectorAll('[data-testid="cell-frame-container"]'));
+        // 3) rolar dentro do drawer até encontrar "Ver tudo"
+        const drawerScroller = [...dialog.querySelectorAll('div')]
+            .find(el => el.scrollHeight > el.clientHeight);
 
-        if (participants.length === 0) {
-            const alternativeSelectors = ['div[role="listitem"]', 'div[tabindex="-1"]', 'div[data-testid*="cell"]'];
-            for (const selector of alternativeSelectors) {
-                const elements = document.querySelectorAll(selector);
-                if (elements.length > 0) {
-                    participants = Array.from(elements);
-                    break;
+        if (!drawerScroller) {
+            console.warn('[WHL] DOM: scroller do drawer não encontrado');
+            return { success: false, error: 'DRAWER_SCROLLER_NOT_FOUND', members: [], count: 0 };
+        }
+
+        let verTudo = null;
+        for (let i = 0; i < 12; i++) {
+            verTudo = [...dialog.querySelectorAll('div, span')]
+                .find(el => el.innerText?.trim().toLowerCase() === 'ver tudo');
+
+            if (verTudo) break;
+
+            drawerScroller.scrollTop = drawerScroller.scrollHeight;
+            await sleep(500);
+        }
+
+        if (!verTudo) {
+            console.warn('[WHL] DOM: "Ver tudo" não encontrado (grupo pode ser pequeno ou layout mudou)');
+            // Para grupos pequenos, tentar extrair do drawer atual
+            const phones = new Set();
+            const textNodes = dialog.querySelectorAll('span, div');
+            textNodes.forEach(el => {
+                const txt = el.innerText;
+                if (!txt) return;
+                const matches = txt.match(PHONE_BR_REGEX);
+                if (!matches) return;
+                for (const m of matches) {
+                    const p = norm(m);
+                    if (p.startsWith('+55') && isBR(p)) phones.add(p);
                 }
+            });
+            
+            // Fechar drawer
+            const closeBtn = document.querySelector('[data-testid="btn-closer-drawer"]') ||
+                             document.querySelector('[data-icon="back"]') ||
+                             document.querySelector('span[data-icon="back"]');
+            if (closeBtn) closeBtn.click();
+            
+            const members = [...phones].map(p => ({ phone: p }));
+            return { success: true, groupName: 'Grupo', members, count: members.length, source: 'dom_drawer' };
+        }
+
+        // 4) clicar "Ver tudo" para abrir painel central
+        console.log('[WHL] DOM: clicando "Ver tudo"...');
+        verTudo.click();
+        await sleep(900);
+
+        // 5) encontrar container central correto (preferir _ak9y; fallback = maior scrollHeight)
+        let container = [...document.querySelectorAll('div')]
+            .find(el => el.scrollHeight > el.clientHeight && el.className.includes('_ak9y'));
+
+        if (!container) {
+            const candidates = [...document.querySelectorAll('div')]
+                .filter(el => el.scrollHeight > el.clientHeight);
+            container = candidates.sort((a,b) => (b.scrollHeight - a.scrollHeight))[0];
+        }
+
+        if (!container) {
+            console.error('[WHL] DOM: container central não encontrado');
+            return { success: false, error: 'CONTAINER_NOT_FOUND', members: [], count: 0 };
+        }
+
+        console.log('[WHL] DOM: container encontrado, scrollHeight:', container.scrollHeight);
+
+        // 6) scroll REAL com coleta incremental (evita virtualização perder itens)
+        const phones = new Set();
+        let lastHeight = 0;
+        let stableRounds = 0;
+        let noNewRounds = 0;
+
+        const maxLoops = 220; // proteção anti-freeze
+        for (let loop = 0; loop < maxLoops; loop++) {
+            // coleta incremental
+            const textNodes = container.querySelectorAll('span, div');
+            textNodes.forEach(el => {
+                const txt = el.innerText;
+                if (!txt) return;
+                const matches = txt.match(PHONE_BR_REGEX);
+                if (!matches) return;
+                for (const m of matches) {
+                    const p = norm(m);
+                    if (p.startsWith('+55') && isBR(p)) phones.add(p);
+                }
+            });
+
+            const before = phones.size;
+
+            // scroll
+            container.scrollTop = container.scrollHeight;
+            await sleep(450);
+
+            // critério de parada
+            if (container.scrollHeight === lastHeight) stableRounds++;
+            else { stableRounds = 0; lastHeight = container.scrollHeight; }
+
+            if (phones.size === before) noNewRounds++;
+            else noNewRounds = 0;
+
+            if (stableRounds >= 3 && noNewRounds >= 3) break;
+            
+            // Log de progresso a cada 20 loops
+            if (loop % 20 === 0 && loop > 0) {
+                console.log(`[WHL] DOM: scroll ${loop}/${maxLoops}, telefones: ${phones.size}`);
             }
         }
 
-        if (participants.length === 0) {
-            return { success: false, error: 'PARTICIPANTS_NOT_FOUND', contacts: [] };
-        }
+        console.log('[WHL] DOM: telefones BR extraídos:', phones.size);
 
-        // Extrair informações
-        const contactList = participants.map(participant => {
-            let nameElement = participant.querySelector('[data-testid="cell-frame-title"]')
-                || participant.querySelector('span[title]')
-                || participant.querySelector('span[dir="auto"]');
+        // Fechar painel (tentar voltar)
+        const backBtn = document.querySelector('[data-testid="btn-closer-drawer"]') ||
+                        document.querySelector('[data-icon="back"]') ||
+                        document.querySelector('span[data-icon="back"]') ||
+                        document.querySelector('[aria-label="Voltar"]') ||
+                        document.querySelector('[aria-label="Fechar"]');
+        if (backBtn) backBtn.click();
 
-            const name = nameElement ? nameElement.textContent.trim() : 'Desconhecido';
-
-            let phoneElement = participant.querySelector('[data-testid="cell-frame-secondary"]')
-                || participant.querySelector('span[dir="auto"]:not(:first-child)');
-
-            let phone = phoneElement ? phoneElement.textContent.trim() : '';
-
-            if (!phone && nameElement && nameElement.getAttribute('title')) {
-                phone = nameElement.getAttribute('title');
-            }
-
-            if (phone) {
-                phone = phone.replace(/~.*$/, '').trim();
-                const cleanPhone = phone.replace(/[^\d+]/g, '');
-                if (cleanPhone) phone = cleanPhone;
-            }
-
-            return { name, phone };
-        });
-
-        // Filtrar entradas válidas
-        const filteredContacts = contactList.filter(contact =>
-            contact.name && contact.name !== 'Desconhecido' && contact.phone
-        );
-
-        // Fechar painel
-        const closeButtons = [
-            document.querySelector('[data-testid="btn-closer-drawer"]'),
-            document.querySelector('[data-icon="back"]'),
-            document.querySelector('span[data-icon="back"]'),
-            document.querySelector('[aria-label="Voltar"]'),
-            document.querySelector('[aria-label="Fechar"]')
-        ];
-
-        for (const btn of closeButtons) {
-            if (btn) {
-                btn.click();
-                break;
-            }
-        }
-
-        return {
-            success: true,
-            groupName: groupName,
-            contacts: filteredContacts.length > 0 ? filteredContacts : contactList,
-            total: (filteredContacts.length > 0 ? filteredContacts : contactList).length
-        };
+        const members = [...phones].map(p => ({ phone: p }));
+        return { success: true, groupName: 'Grupo', members, count: members.length, source: 'dom_viewall' };
     }
 
     // ===== LISTENERS FOR SEND FUNCTIONS =====
