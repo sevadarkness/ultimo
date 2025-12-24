@@ -20,7 +20,9 @@ window.whl_hooks_main = () => {
             if (typeof require === 'function') {
                 return require(name);
             }
-        } catch {}
+        } catch (e) {
+            whlLog.debug('Erro ao executar require:', e.message);
+        }
         return null;
     }
 
@@ -40,7 +42,9 @@ window.whl_hooks_main = () => {
                     return { ChatCollection, ContactCollection };
                 }
             }
-        } catch {}
+        } catch (e) {
+            whlLog.debug('Erro ao resolver collections via require:', e.message);
+        }
 
         // B — globais (quando existirem)
         try {
@@ -50,7 +54,9 @@ window.whl_hooks_main = () => {
                     ContactCollection: window.ContactCollection
                 };
             }
-        } catch {}
+        } catch (e) {
+            whlLog.debug('Erro ao resolver collections via globals:', e.message);
+        }
 
         // C — introspecção defensiva
         try {
@@ -63,7 +69,9 @@ window.whl_hooks_main = () => {
                     }
                 }
             }
-        } catch {}
+        } catch (e) {
+            whlLog.debug('Erro ao resolver collections via introspecção:', e.message);
+        }
 
         return null;
     }

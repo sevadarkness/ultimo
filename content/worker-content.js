@@ -59,7 +59,9 @@
         ts: now(),
         data
       }));
-    } catch {}
+    } catch (e) {
+      console.warn('[WA Group Extractor] Erro ao salvar cache:', e.message);
+    }
   }
 
   function isExpired(cache, ttl) {
@@ -67,7 +69,11 @@
   }
 
   function invalidate(key) {
-    try { localStorage.removeItem(key); } catch {}
+    try { 
+      localStorage.removeItem(key); 
+    } catch (e) {
+      console.warn('[WA Group Extractor] Erro ao invalidar cache:', e.message);
+    }
   }
 
   function groupPartKey(groupId) {
@@ -83,7 +89,9 @@
       if (typeof require === 'function') {
         return require(name);
       }
-    } catch {}
+    } catch (e) {
+      console.warn('[WA Group Extractor] Erro ao executar require:', e.message);
+    }
     return null;
   }
 

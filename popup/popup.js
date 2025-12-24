@@ -1,4 +1,8 @@
 // PR #79: Enhanced popup functionality
+// PR #XX: Fix memory leaks - store interval/timeout IDs for cleanup
+let statsInterval = null;
+let statusTimeout = null;
+
 document.addEventListener('DOMContentLoaded', () => {
   // Main toggle button - opens panel
   const openPanelBtn = document.getElementById('openPanel');
@@ -68,8 +72,20 @@ document.addEventListener('DOMContentLoaded', () => {
   // Check status and update UI
   checkStatus();
   
-  // Update stats periodically
-  setInterval(updateStats, 2000);
+  // Update stats periodically - store interval ID for cleanup
+  statsInterval = setInterval(updateStats, 2000);
+});
+
+// Cleanup intervals and timeouts when popup closes
+window.addEventListener('unload', () => {
+  if (statsInterval) {
+    clearInterval(statsInterval);
+    statsInterval = null;
+  }
+  if (statusTimeout) {
+    clearTimeout(statusTimeout);
+    statusTimeout = null;
+  }
 });
 
 // Check WhatsApp Web status
@@ -112,8 +128,8 @@ async function checkStatus() {
     console.log('Status check error:', e);
   }
   
-  // Check again in 3 seconds
-  setTimeout(checkStatus, 3000);
+  // Check again in 3 seconds - store timeout ID for cleanup
+  statusTimeout = setTimeout(checkStatus, 3000);
 }
 
 // Update statistics from storage

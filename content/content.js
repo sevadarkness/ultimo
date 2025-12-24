@@ -77,6 +77,18 @@
     USE_INPUT_ENTER_METHOD: false,  // DESABILITADO: Causa reload - usar API direta ao invés
   };
   
+  // Timeouts centralizados para todas as operações
+  const TIMEOUTS = {
+    CHAT_OPEN: 3000,           // Tempo para abrir um chat
+    MESSAGE_SEND: 5000,        // Tempo para enviar mensagem
+    INDEXEDDB: 5000,           // Tempo para operações IndexedDB
+    SCROLL_STEP: 400,          // Delay entre scrolls na extração
+    MAX_EXTRACTION: 120000,    // 2 minutos máximo para extração
+    IMAGE_SEND: 8000,          // Tempo para enviar imagem
+    DOM_WAIT: 1000,            // Tempo de espera para elementos DOM
+    API_RESPONSE: 10000,       // Tempo máximo para resposta da API
+  };
+  
   // Performance optimization constants
   const PERFORMANCE_LIMITS = {
     MAX_RESPONSE_SIZE: 100 * 1024,      // 100KB - Skip network extraction for large responses
@@ -446,7 +458,12 @@
 
   const KEY = 'whl_campaign_state_v1';
 
-  const normalize = (v) => String(v || '').replace(/\D/g, '');
+  // Função unificada de sanitização de números de telefone
+  // Remove caracteres não-numéricos preservando números reais dos contatos
+  const whlSanitize = (v) => String(v || '').replace(/\D/g, '');
+  // Alias para compatibilidade com código existente
+  const normalize = whlSanitize;
+  
   const enc = (t) => encodeURIComponent(String(t || ''));
   const chatUrl = (phone, msg) => `https://web.whatsapp.com/send?phone=${phone}&text=${enc(msg)}`;
 
@@ -1751,7 +1768,8 @@
   
   // Sanitize phone number by removing non-digit characters
   // This preserves the real contact phone numbers from user input
-  const whlSanitize = (t) => String(t||'').replace(/\D/g,'');
+  // NOTA: Definição movida para cima (linha ~461) para unificação
+  // const whlSanitize já está definido anteriormente
   
   // Validate phone number (8-15 digits)
   // Ensures phone numbers are valid format without modifying them
