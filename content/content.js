@@ -18,7 +18,8 @@
     return;
   }
 
-  const whlLog = {
+  // Use centralized logging from logger.js
+  const whlLog = window.whlLog || {
     debug: (...args) => { if (WHL_DEBUG) console.log('[WHL DEBUG]', ...args); },
     info: (...args) => console.log('[WHL]', ...args),
     warn: (...args) => console.warn('[WHL]', ...args),
@@ -456,7 +457,8 @@
 
   const KEY = 'whl_campaign_state_v1';
 
-  const normalize = (v) => String(v || '').replace(/\D/g, '');
+  // Use centralized phone sanitization from phone-validator.js
+  const sanitizePhone = window.WHL_PhoneValidator?.sanitizePhone || ((v) => String(v || '').replace(/\D/g, ''));
   const enc = (t) => encodeURIComponent(String(t || ''));
   const chatUrl = (phone, msg) => `https://web.whatsapp.com/send?phone=${phone}&text=${enc(msg)}`;
 
@@ -1814,14 +1816,9 @@
   // Constants
   const PROGRESS_BAR_HIDE_DELAY = 3000; // ms to wait before hiding progress bar after completion
   
-  // Sanitize phone number by removing non-digit characters
-  // This preserves the real contact phone numbers from user input
-  const whlSanitize = (t) => String(t||'').replace(/\D/g,'');
-  
-  // Validate phone number (8-15 digits)
-  // Ensures phone numbers are valid format without modifying them
-  // Item 15: Reject invalid phone numbers with less than 10 digits (BR context)
-  const whlIsValidPhone = (t) => {
+  // Use centralized phone validation from phone-validator.js
+  const whlSanitize = window.WHL_PhoneValidator?.sanitizePhone || ((t) => String(t||'').replace(/\D/g,''));
+  const whlIsValidPhone = window.WHL_PhoneValidator?.isValidPhone || function(t) {
     const s = whlSanitize(t);
     // Brazilian phone numbers should have at least 10 digits (DDD + number)
     return s.length >= 10 && s.length <= 15;
@@ -2676,7 +2673,7 @@
     whlLog.debug('========================================');
     
     // Normalizar o número esperado
-    const normalizedExpected = normalize(expectedPhone);
+    const normalizedExpected = sanitizePhone(expectedPhone);
     
     // Aguardar um pouco para o chat carregar
     await new Promise(r => setTimeout(r, 500));
@@ -2766,7 +2763,7 @@
     }
     
     // Normalizar o número do chat
-    const normalizedChat = normalize(chatNumber);
+    const normalizedChat = sanitizePhone(chatNumber);
     
     // Comparar os números (últimos 8-10 dígitos para maior flexibilidade)
     // Alguns números podem ter código do país, então comparamos a parte final
@@ -2795,7 +2792,7 @@
     const numbers = [];
     
     // Padrão para números (8-15 dígitos)
-    const normalized = normalize(str);
+    const normalized = sanitizePhone(str);
     const matches = normalized.match(/\d{8,15}/g);
     if (matches) {
       matches.forEach(num => numbers.push(num));
@@ -3484,6 +3481,8 @@
   
   // Listener para resultados de envio direto
   window.addEventListener('message', async (e) => {
+    // Security: Validate message origin
+    if (e.origin !== window.location.origin) return;
     if (!e.data || !e.data.type) return;
     
     const { type } = e.data;
@@ -4121,32 +4120,7 @@
     }
   }
 
-  // DISABLED: Hidden Worker Tab function (não funciona)
-  // Usar Input + Enter method ao invés
-  /*
-  async function startCampaignViaWorker() {
-    const st = await getState();
-    
-    // Send to background to manage via worker
-    chrome.runtime.sendMessage({
-      action: 'START_CAMPAIGN_WORKER',
-      queue: st.queue,
-      config: {
-        message: st.message,
-        imageData: st.imageData,
-        delayMin: (st.delayMin || 2) * 1000,
-        delayMax: (st.delayMax || 6) * 1000
-      }
-    }, (response) => {
-      if (response?.success) {
-        console.log('[WHL] Campaign started via Hidden Worker');
-      } else {
-        console.error('[WHL] Failed to start campaign via worker:', response?.error);
-        alert('Erro ao iniciar campanha via worker. Tente novamente.');
-      }
-    });
-  }
-  */
+  // DISABLED: Hidden Worker Tab function (não funciona) - REMOVED
 
   async function pauseCampaign() {
     console.log('[WHL] 🔸 Botão PAUSAR clicado');
@@ -4635,6 +4609,8 @@ try {
   }
 
   window.addEventListener('message', (e) => {
+    // Security: Validate message origin
+    if (e.origin !== window.location.origin) return;
     if (!e || !e.data) return;
 
     // Keep the old WHL_EXTRACT_RESULT handler for backward compatibility
@@ -4983,7 +4959,7 @@ try {
       btnLoadGroups.textContent = '⏳ Carregando...';
       
       // Enviar comando para o store-bridge
-      window.postMessage({ type: 'WHL_LOAD_GROUPS' }, '*');
+      window.postMessage({ type: 'WHL_LOAD_GROUPS' }, window.location.origin);
     });
   }
 
@@ -5104,6 +5080,8 @@ try {
 
 // ===== WHL: Message Listeners para Store Bridge =====
 window.addEventListener('message', (e) => {
+  // Security: Validate message origin
+  if (e.origin !== window.location.origin) return;
   if (!e.data || !e.data.type) return;
   
   // Resposta de carregar grupos
@@ -5603,7 +5581,7 @@ try {
   }
   
   // Load recover history on init
-  window.postMessage({ type: 'WHL_GET_RECOVER_HISTORY' }, '*');
+  window.postMessage({ type: 'WHL_GET_RECOVER_HISTORY' }, window.location.origin);
 
   if (btnExportRecovered) {
     btnExportRecovered.addEventListener('click', () => {
@@ -5646,7 +5624,7 @@ try {
   if (btnClearRecovered) {
     btnClearRecovered.addEventListener('click', () => {
       if (confirm('⚠️ Tem certeza que deseja limpar todo o histórico de mensagens recuperadas?')) {
-        window.postMessage({ type: 'WHL_CLEAR_RECOVER_HISTORY' }, '*');
+        window.postMessage({ type: 'WHL_CLEAR_RECOVER_HISTORY' }, window.location.origin);
         alert('✅ Histórico limpo!');
       }
     });
@@ -7142,6 +7120,8 @@ try {
 
   // ===== ARQUIVADOS & BLOQUEADOS =====
   window.addEventListener('message', (e) => {
+    // Security: Validate message origin
+    if (e.origin !== window.location.origin) return;
     if (e.data?.type === 'WHL_ARCHIVED_BLOCKED_RESULT') {
       const { archived, blocked } = e.data;
       
@@ -7171,6 +7151,8 @@ try {
   const recoveredList = [];
 
   window.addEventListener('message', (e) => {
+    // Security: Validate message origin
+    if (e.origin !== window.location.origin) return;
     if (e.data?.type === 'WHL_RECOVERED_MESSAGE') {
       recoveredList.push(e.data.payload);
       
@@ -7200,6 +7182,8 @@ try {
 
   // ===== EXTRAÇÃO INSTANTÂNEA =====
   window.addEventListener('message', (e) => {
+    // Security: Validate message origin
+    if (e.origin !== window.location.origin) return;
     if (e.data?.type === 'WHL_EXTRACT_INSTANT_RESULT') {
       const numbers = e.data.numbers || [];
       console.log(`[WHL] Extração instantânea: ${numbers.length} números`);
@@ -7213,6 +7197,8 @@ try {
 
   // ===== GRUPOS =====
   window.addEventListener('message', (e) => {
+    // Security: Validate message origin
+    if (e.origin !== window.location.origin) return;
     if (e.data?.type === 'WHL_GROUPS_RESULT') {
       const groups = e.data.groups || [];
       console.log(`[WHL] ${groups.length} grupos carregados`);
@@ -7231,15 +7217,15 @@ try {
 
   // Funções auxiliares para solicitar dados
   window.loadArchivedBlocked = function() {
-    window.postMessage({ type: 'WHL_LOAD_ARCHIVED_BLOCKED' }, '*');
+    window.postMessage({ type: 'WHL_LOAD_ARCHIVED_BLOCKED' }, window.location.origin);
   };
 
   window.extractInstant = function() {
-    window.postMessage({ type: 'WHL_EXTRACT_INSTANT' }, '*');
+    window.postMessage({ type: 'WHL_EXTRACT_INSTANT' }, window.location.origin);
   };
 
   window.loadGroups = function() {
-    window.postMessage({ type: 'WHL_LOAD_GROUPS' }, '*');
+    window.postMessage({ type: 'WHL_LOAD_GROUPS' }, window.location.origin);
   };
 
   console.log('[WHL] Event listeners registrados');

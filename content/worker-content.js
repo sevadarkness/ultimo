@@ -41,6 +41,97 @@
      CACHE
   =============================== */
 
+  // Maximum localStorage usage (5MB to be safe, browsers typically allow 5-10MB)
+  const MAX_STORAGE_SIZE = 5 * 1024 * 1024;
+  
+  // Track approximate storage size to avoid expensive calculations
+  let approximateStorageSize = 0;
+  
+  /**
+   * Update approximate storage size
+   */
+  function updateStorageSize() {
+    try {
+      approximateStorageSize = 0;
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        const value = localStorage.getItem(key);
+        if (key && value) {
+          // Approximate: key length + value length + some overhead
+          approximateStorageSize += (key.length + value.length) * 2; // UTF-16 chars = 2 bytes
+        }
+      }
+    } catch (err) {
+      console.warn('[WHL Worker] Error updating storage size:', err.message);
+      approximateStorageSize = 0;
+    }
+  }
+  
+  /**
+   * Check if adding data would exceed storage quota
+   * @param {string} key - Storage key
+   * @param {any} data - Data to store
+   * @returns {boolean} - True if size is acceptable
+   */
+  function checkStorageSize(key, data) {
+    try {
+      const testData = JSON.stringify({ ts: now(), data });
+      const newDataSize = (key.length + testData.length) * 2; // UTF-16 estimation
+      
+      // Update size if needed
+      if (approximateStorageSize === 0) {
+        updateStorageSize();
+      }
+      
+      if (approximateStorageSize + newDataSize > MAX_STORAGE_SIZE) {
+        console.warn('[WHL Worker] Storage quota would be exceeded, clearing old caches');
+        clearOldCaches();
+        updateStorageSize();
+        return approximateStorageSize + newDataSize <= MAX_STORAGE_SIZE;
+      }
+      return true;
+    } catch (err) {
+      console.warn('[WHL Worker] Error checking storage size:', err.message);
+      return true; // Proceed anyway if check fails
+    }
+  }
+  
+  /**
+   * Clear old caches using LRU strategy
+   */
+  function clearOldCaches() {
+    try {
+      // Get all cache keys with timestamps
+      const caches = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith(GROUP_PART_CACHE_PREFIX) || key === GROUP_LIST_CACHE_KEY) {
+          try {
+            const item = JSON.parse(localStorage.getItem(key));
+            if (item?.ts) {
+              caches.push({ key, ts: item.ts });
+            }
+          } catch (e) {
+            // Invalid JSON, remove it
+            localStorage.removeItem(key);
+          }
+        }
+      }
+      
+      // Sort by timestamp (oldest first) and remove oldest 50%
+      caches.sort((a, b) => a.ts - b.ts);
+      const toRemove = Math.ceil(caches.length / 2);
+      
+      for (let i = 0; i < toRemove; i++) {
+        localStorage.removeItem(caches[i].key);
+      }
+      
+      console.log(`[WHL Worker] Cleared ${toRemove} old caches`);
+    } catch (err) {
+      console.error('[WHL Worker] Error clearing old caches:', err.message);
+    }
+  }
+
   function getCache(key) {
     try {
       const raw = localStorage.getItem(key);
@@ -55,12 +146,41 @@
 
   function setCache(key, data) {
     try {
-      localStorage.setItem(key, JSON.stringify({
+      // Check size before saving
+      if (!checkStorageSize(key, data)) {
+        console.warn('[WHL Worker] Cannot save cache, storage full even after cleanup');
+        return;
+      }
+      
+      const cacheData = JSON.stringify({
         ts: now(),
         data
-      }));
+      });
+      
+      localStorage.setItem(key, cacheData);
+      
+      // Update approximate size
+      approximateStorageSize += (key.length + cacheData.length) * 2;
     } catch (err) {
-      console.warn('[WHL Worker] Failed to save cache:', err.message);
+      // Handle QuotaExceededError specifically
+      if (err.name === 'QuotaExceededError') {
+        console.warn('[WHL Worker] Storage quota exceeded, clearing old caches');
+        clearOldCaches();
+        updateStorageSize();
+        // Try one more time
+        try {
+          const cacheData = JSON.stringify({
+            ts: now(),
+            data
+          });
+          localStorage.setItem(key, cacheData);
+          approximateStorageSize += (key.length + cacheData.length) * 2;
+        } catch (retryErr) {
+          console.error('[WHL Worker] Failed to save cache even after cleanup:', retryErr.message);
+        }
+      } else {
+        console.warn('[WHL Worker] Failed to save cache:', err.message);
+      }
     }
   }
 
