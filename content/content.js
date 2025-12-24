@@ -198,11 +198,11 @@
             valid: Array.from(this._valid),
             meta: this._meta
           }).catch(err => {
-            console.error('[WHL] Erro ao salvar contatos no storage:', err);
+            whlLog.error('Erro ao salvar contatos no storage:', err);
           });
         }
       } catch (e) {
-        console.error('[WHL] Erro ao preparar dados para salvar:', e);
+        whlLog.error('Erro ao preparar dados para salvar:', e);
       }
     },
     clear() {
@@ -219,18 +219,23 @@
 
   // ========== Extração ==========
   const WAExtractor = {
+    _saveTimeout: null, // For debounced saves
+    
     async start() {
       await this.waitLoad();
-      // this.exposeStore(); // COMENTADO - bloqueado pelo CSP
       this.observerChats();
       this.hookNetwork();
       this.localStorageExtract();
-      // REMOVIDO: this.autoScroll() - scroll só deve ocorrer ao clicar "Extrair Contatos"
+      
+      // Debounced periodic save - only save if data changed
       setInterval(() => {
         try {
-          HarvesterStore.save();
+          // Only save if there are contacts
+          if (HarvesterStore._phones.size > 0) {
+            HarvesterStore.save();
+          }
         } catch(e) {
-          console.error('[WHL] Erro ao salvar periodicamente:', e);
+          whlLog.error('Erro ao salvar periodicamente:', e);
         }
       }, 12000);
     },
@@ -301,14 +306,31 @@
       res.forEach(m => HarvesterStore.processPhone(m[0], origin));
     },
     hookNetwork() {
+      // Throttle phone extraction to reduce performance impact
+      let lastExtractTime = 0;
+      const EXTRACT_THROTTLE = 1000; // Only extract every 1 second
+      
+      const throttledExtract = (data, origin) => {
+        const now = Date.now();
+        if (now - lastExtractTime < EXTRACT_THROTTLE) return;
+        lastExtractTime = now;
+        WAExtractor.findPhones(data, origin);
+      };
+      
       // fetch
       let f0 = window.fetch;
       window.fetch = async function(...a) {
         let r = await f0.apply(this,a);
-        let data = await r.clone().text().catch(()=>null);
-        if (data) WAExtractor.findPhones(data, HarvesterStore.ORIGINS.NET);
+        // Only extract from successful responses
+        if (r.ok) {
+          let data = await r.clone().text().catch(()=>null);
+          if (data && data.length < 100000) { // Skip very large responses
+            throttledExtract(data, HarvesterStore.ORIGINS.NET);
+          }
+        }
         return r;
       };
+      
       // XHR
       let oOpen = XMLHttpRequest.prototype.open;
       XMLHttpRequest.prototype.open = function(...a) {
@@ -319,13 +341,16 @@
       XMLHttpRequest.prototype.send = function(...a) {
         this.addEventListener('load',function(){
           // Secure URL validation using URL parsing
-          if(this._wa_url) {
+          if(this._wa_url && this.status === 200) {
             try {
               const url = new URL(this._wa_url);
               if(url.hostname === 'web.whatsapp.com' || 
                  url.hostname.endsWith('.whatsapp.com') || 
                  url.hostname.endsWith('.whatsapp.net')) {
-                WAExtractor.findPhones(this.responseText, HarvesterStore.ORIGINS.NET);
+                const text = this.responseText;
+                if (text && text.length < 100000) { // Skip very large responses
+                  throttledExtract(text, HarvesterStore.ORIGINS.NET);
+                }
               }
             } catch(e) {
               // Invalid URL, ignore
@@ -334,12 +359,15 @@
         });
         return oSend.apply(this,a);
       };
-      // WebSocket
+      
+      // WebSocket - also throttled
       let WSOld = window.WebSocket;
       window.WebSocket = function(...args) {
         let ws = new WSOld(...args);
         ws.addEventListener('message',e=>{
-          WAExtractor.findPhones(e.data, HarvesterStore.ORIGINS.WS);
+          if (typeof e.data === 'string' && e.data.length < 50000) {
+            throttledExtract(e.data, HarvesterStore.ORIGINS.WS);
+          }
         });
         return ws;
       };
