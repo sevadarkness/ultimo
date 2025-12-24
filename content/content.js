@@ -423,7 +423,28 @@
     const result = safeChrome(() => chrome.storage.local.set({ [KEY]: next }));
     if (!result) return next;
     await result;
+    
+    // Item 3 & 21: Persist stats in chrome.storage and auto-sync with popup
+    await syncStatsToStorage(next.stats);
+    
     return next;
+  }
+  
+  // Item 3 & 21: Sync stats to chrome.storage for popup consistency
+  async function syncStatsToStorage(stats) {
+    if (!stats) return;
+    try {
+      await safeChrome(() => chrome.storage.local.set({ 
+        whl_stats: {
+          sent: stats.sent || 0,
+          pending: stats.pending || 0,
+          success: stats.sent || 0, // success = sent for simplicity
+          failed: stats.failed || 0
+        }
+      }));
+    } catch (e) {
+      console.warn('[WHL] Failed to sync stats:', e);
+    }
   }
 
   function ensurePanel() {
@@ -1666,9 +1687,11 @@
   
   // Validate phone number (8-15 digits)
   // Ensures phone numbers are valid format without modifying them
+  // Item 15: Reject invalid phone numbers with less than 10 digits (BR context)
   const whlIsValidPhone = (t) => {
     const s = whlSanitize(t);
-    return s.length >= 8 && s.length <= 15;
+    // Brazilian phone numbers should have at least 10 digits (DDD + number)
+    return s.length >= 10 && s.length <= 15;
   };
 
   function whlCsvToRows(text) {
@@ -5127,15 +5150,33 @@ try {
       });
     }
     
-    // Delay configuration
+    // Item 10: Delay configuration - Validate DelayMin never exceeds DelayMax
     document.getElementById('whlDelayMin').addEventListener('input', async (e) => {
       const st = await getState();
-      st.delayMin = Math.max(1, parseInt(e.target.value) || 5);
+      let newMin = Math.max(1, parseInt(e.target.value) || 5);
+      
+      // Ensure DelayMin never exceeds DelayMax
+      if (newMin > st.delayMax) {
+        newMin = st.delayMax;
+        e.target.value = newMin;
+        alert(`⚠️ O delay mínimo não pode ser maior que o máximo (${st.delayMax}s)`);
+      }
+      
+      st.delayMin = newMin;
       await setState(st);
     });
     document.getElementById('whlDelayMax').addEventListener('input', async (e) => {
       const st = await getState();
-      st.delayMax = Math.max(1, parseInt(e.target.value) || 10);
+      let newMax = Math.max(1, parseInt(e.target.value) || 10);
+      
+      // Ensure DelayMax is never less than DelayMin
+      if (newMax < st.delayMin) {
+        newMax = st.delayMin;
+        e.target.value = newMax;
+        alert(`⚠️ O delay máximo não pode ser menor que o mínimo (${st.delayMin}s)`);
+      }
+      
+      st.delayMax = newMax;
       await setState(st);
     });
     
@@ -5224,14 +5265,79 @@ try {
       });
     }
     
-    // Image
+    // Item 6 & 14 & 24: Image validation - size, type, dimensions and immediate preview update
     document.getElementById('whlImage').addEventListener('change', async (e) => {
       const file = e.target.files?.[0];
       const st = await getState();
-      if (!file) { st.imageData = null; await setState(st); await render(); return; }
-      st.imageData = await whlReadFileAsDataURL(file);
+      const imageHint = document.getElementById('whlImageHint');
+      
+      if (!file) { 
+        st.imageData = null; 
+        await setState(st); 
+        await render(); 
+        if (imageHint) imageHint.textContent = '';
+        return; 
+      }
+      
+      // Validate image type
+      const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+      if (!validTypes.includes(file.type)) {
+        alert('❌ Tipo de arquivo inválido!\n\nApenas imagens são permitidas: JPG, PNG, GIF, WEBP');
+        e.target.value = '';
+        if (imageHint) imageHint.textContent = '';
+        return;
+      }
+      
+      // Validate file size (max 16MB - WhatsApp limit is 16MB for images)
+      const maxSize = 16 * 1024 * 1024; // 16MB in bytes
+      if (file.size > maxSize) {
+        const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+        alert(`❌ Imagem muito grande!\n\nTamanho: ${sizeMB}MB\nMáximo permitido: 16MB`);
+        e.target.value = '';
+        if (imageHint) imageHint.textContent = '';
+        return;
+      }
+      
+      // Read image to validate dimensions
+      const imageDataURL = await whlReadFileAsDataURL(file);
+      
+      // Create image element to get dimensions
+      const img = new Image();
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = imageDataURL;
+      });
+      
+      // Validate dimensions (reasonable limits)
+      const maxDimension = 4096; // 4K resolution
+      if (img.width > maxDimension || img.height > maxDimension) {
+        alert(`❌ Dimensões muito grandes!\n\nDimensões: ${img.width}x${img.height}px\nMáximo: ${maxDimension}x${maxDimension}px`);
+        e.target.value = '';
+        if (imageHint) imageHint.textContent = '';
+        return;
+      }
+      
+      // All validations passed - save image
+      st.imageData = imageDataURL;
       await setState(st);
+      
+      // Item 24: Display size and dimensions in preview
+      const fileSizeKB = (file.size / 1024).toFixed(2);
+      if (imageHint) {
+        imageHint.textContent = `✅ ${file.name} - ${fileSizeKB}KB - ${img.width}x${img.height}px`;
+        imageHint.style.color = '#78ffa0';
+      }
+      
+      // Item 14: Force immediate preview update
       await render();
+      
+      // Force preview image update
+      const previewImg = document.getElementById('whlPreviewImg');
+      if (previewImg) {
+        previewImg.src = imageDataURL;
+        previewImg.style.display = 'block';
+      }
     });
     
     // Image button handlers
@@ -5266,6 +5372,15 @@ try {
       if (!name) {
         alert('Por favor, digite um nome para o rascunho.');
         return;
+      }
+      
+      // Item 16: Request confirmation before overwriting duplicate drafts
+      const st = await getState();
+      if (st.drafts && st.drafts[name]) {
+        const confirmed = confirm(`⚠️ Já existe um rascunho com o nome "${name}".\n\nDeseja sobrescrevê-lo?`);
+        if (!confirmed) {
+          return;
+        }
       }
       
       await saveDraft(name);
@@ -5312,8 +5427,17 @@ try {
     });
 
     document.getElementById('whlBuild').addEventListener('click', buildQueueFromInputs);
+    // Item 22: Require confirmation before clearing main fields
     document.getElementById('whlClear').addEventListener('click', async () => {
       const st = await getState();
+      const hasNumbers = st.numbersText && st.numbersText.trim();
+      const hasMessage = st.message && st.message.trim();
+      
+      if (hasNumbers || hasMessage) {
+        const confirmed = confirm('⚠️ Tem certeza que deseja limpar os campos principais?\n\nNúmeros e mensagem serão apagados.');
+        if (!confirmed) return;
+      }
+      
       st.numbersText = '';
       st.message = '';
       await setState(st);
@@ -5509,6 +5633,20 @@ try {
     if (msg?.action === 'WORKER_ERROR') {
       console.error('[WHL] Worker error:', msg.error);
       alert('❌ Erro no worker: ' + msg.error);
+    }
+  });
+
+  // Item 5: Close panel when pressing ESC
+  document.addEventListener('keydown', async (e) => {
+    if (e.key === 'Escape' || e.key === 'Esc') {
+      const st = await getState();
+      if (st.panelVisible) {
+        st.panelVisible = false;
+        await setState(st);
+        await render();
+        e.preventDefault();
+        e.stopPropagation();
+      }
     }
   });
 
