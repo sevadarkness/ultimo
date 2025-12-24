@@ -142,7 +142,7 @@ function getCaptionInput() {
  * @param {Element} element - Element to check
  * @returns {boolean}
  */
-export function isElementVisible(element) {
+function isElementVisible(element) {
   if (!element) return false;
   
   const style = window.getComputedStyle(element);

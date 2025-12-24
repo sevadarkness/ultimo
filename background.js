@@ -85,7 +85,6 @@ const NetSniffer = {
       console.warn('[NetSniffer] Error processing request:', err.message);
     }
   },
-  },
   resp(det) {
     if (this.phones.size) {
       chrome.tabs.query({active:true,currentWindow:true},tabs=>{
