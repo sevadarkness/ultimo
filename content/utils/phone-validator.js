@@ -37,8 +37,8 @@ function normalizePhone(phone) {
   }
   
   // Brazilian phone normalization logic
-  // Already has country code (55)
-  if (normalized.startsWith('55')) {
+  // Already has country code (55) and reasonable length
+  if (normalized.startsWith('55') && normalized.length >= 12 && normalized.length <= 13) {
     return normalized;
   }
   
@@ -66,7 +66,7 @@ function normalizePhone(phone) {
     return null;
   }
   
-  // Already correct length with country code
+  // Already correct length with country code (other countries)
   return normalized;
 }
 

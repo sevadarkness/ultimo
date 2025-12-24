@@ -4120,32 +4120,7 @@
     }
   }
 
-  // DISABLED: Hidden Worker Tab function (não funciona)
-  // Usar Input + Enter method ao invés
-  /*
-  async function startCampaignViaWorker() {
-    const st = await getState();
-    
-    // Send to background to manage via worker
-    chrome.runtime.sendMessage({
-      action: 'START_CAMPAIGN_WORKER',
-      queue: st.queue,
-      config: {
-        message: st.message,
-        imageData: st.imageData,
-        delayMin: (st.delayMin || 2) * 1000,
-        delayMax: (st.delayMax || 6) * 1000
-      }
-    }, (response) => {
-      if (response?.success) {
-        console.log('[WHL] Campaign started via Hidden Worker');
-      } else {
-        console.error('[WHL] Failed to start campaign via worker:', response?.error);
-        alert('Erro ao iniciar campanha via worker. Tente novamente.');
-      }
-    });
-  }
-  */
+  // DISABLED: Hidden Worker Tab function (não funciona) - REMOVED
 
   async function pauseCampaign() {
     console.log('[WHL] 🔸 Botão PAUSAR clicado');

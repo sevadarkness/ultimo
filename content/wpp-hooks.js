@@ -888,7 +888,7 @@ window.whl_hooks_main = () => {
             type: 'WHL_RECOVER_NEW_MESSAGE',
             message: entrada,
             total: historicoRecover.length
-        }, '*');
+        }, window.location.origin);
         
         console.log(`[WHL Recover] Mensagem editada de ${entrada.from}: ${entrada.body.substring(0, 50)}...`);
     }
@@ -973,7 +973,7 @@ window.whl_hooks_main = () => {
             type: 'WHL_RECOVER_NEW_MESSAGE',
             message: entrada,
             total: historicoRecover.length
-        }, '*');
+        }, window.location.origin);
         
         console.log(`[WHL Recover] Mensagem recuperada de ${entrada.from}: ${entrada.body.substring(0, 50)}...`);
     }
@@ -1052,7 +1052,7 @@ window.whl_hooks_main = () => {
                         kind: 'revoked',
                         preview: message?.body || '🚫 Esta mensagem foi excluída!'
                     }
-                }, '*');
+                }, window.location.origin);
             } catch (e) {
                 console.warn('[WHL Hooks] recover postMessage failed', e);
             }
@@ -1596,7 +1596,7 @@ window.whl_hooks_main = () => {
             phase: 'starting',
             message: 'Iniciando extração...',
             progress: 0
-        }, '*');
+        }, window.location.origin);
         
         try {
             return await Promise.race([
@@ -1613,7 +1613,7 @@ window.whl_hooks_main = () => {
                 phase: 'error',
                 message: 'Erro: ' + e.message,
                 progress: 100
-            }, '*');
+            }, window.location.origin);
             
             return { 
                 success: false, 
@@ -1684,7 +1684,7 @@ window.whl_hooks_main = () => {
                     message: `Extraídos: ${results.members.size} membros`,
                     progress: 50,
                     currentCount: results.members.size
-                }, '*');
+                }, window.location.origin);
                 
                 return true;
             }
@@ -1697,7 +1697,7 @@ window.whl_hooks_main = () => {
             phase: 'phase1',
             message: 'Fase 1: Carregando API interna...',
             progress: 10
-        }, '*');
+        }, window.location.origin);
         
         try {
             const cols = await waitForCollections();
@@ -1743,7 +1743,7 @@ window.whl_hooks_main = () => {
                 phase: 'phase2',
                 message: `Fase 2: Processando ${participants.length} participantes...`,
                 progress: 25
-            }, '*');
+            }, window.location.origin);
 
             // FASE 2: PROCESSAR CADA PARTICIPANTE (5 MÉTODOS + LID PREVENTION)
             for (const p of participants) {
@@ -1823,7 +1823,7 @@ window.whl_hooks_main = () => {
                 phase: 'phase3',
                 message: 'Fase 3: Ativando fallback DOM...',
                 progress: 75
-            }, '*');
+            }, window.location.origin);
             
             try {
                 console.log('[WHL] 📄 FASE 3: Ativando fallback DOM...');
@@ -1845,7 +1845,7 @@ window.whl_hooks_main = () => {
             phase: 'finalizing',
             message: 'Finalizando extração...',
             progress: 90
-        }, '*');
+        }, window.location.origin);
         
         const finalMembers = [...results.members.entries()]
             .sort((a, b) => b[1].confidence - a[1].confidence)
@@ -1868,7 +1868,7 @@ window.whl_hooks_main = () => {
             message: `Concluído: ${finalMembers.length} membros extraídos`,
             progress: 100,
             currentCount: finalMembers.length
-        }, '*');
+        }, window.location.origin);
 
         return {
             success: true,
@@ -1943,7 +1943,7 @@ window.whl_hooks_main = () => {
                     archived: arquivados.count || 0,
                     blocked: bloqueados.count || 0
                 }
-            }, '*');
+            }, window.location.origin);
         }
         
         // EXTRAIR MEMBROS DO GRUPO
@@ -1963,7 +1963,7 @@ window.whl_hooks_main = () => {
                     type: 'WHL_GROUP_MEMBERS_RESULT',
                     groupId,
                     members: [...new Set(members)]
-                }, '*');
+                }, window.location.origin);
             } catch (e) {
                 window.postMessage({ type: 'WHL_GROUP_MEMBERS_ERROR', error: e.message }, window.location.origin);
             }
@@ -1982,7 +1982,7 @@ window.whl_hooks_main = () => {
                         type: 'WHL_EXTRACT_GROUP_MEMBERS_RESULT',
                         requestId,
                         ...result
-                    }, '*');
+                    }, window.location.origin);
                 } catch (error) {
                     console.error('[WHL] Erro no listener:', error);
                     window.postMessage({
@@ -1992,7 +1992,7 @@ window.whl_hooks_main = () => {
                         error: error.message,
                         members: [],
                         count: 0
-                    }, '*');
+                    }, window.location.origin);
                 }
             })();
         }
@@ -2030,7 +2030,7 @@ window.whl_hooks_main = () => {
                 type: 'WHL_RECOVER_HISTORY_RESULT',
                 history: historicoRecover,
                 total: historicoRecover.length
-            }, '*');
+            }, window.location.origin);
         }
         
         // CLEAR RECOVER HISTORY
@@ -2202,13 +2202,13 @@ window.whl_hooks_main = () => {
                         type: 'WHL_SEND_IMAGE_TO_NUMBER_RESULT',
                         requestId,
                         ...result
-                    }, '*');
+                    }, window.location.origin);
                 } catch (error) {
                     window.postMessage({
                         type: 'WHL_SEND_IMAGE_TO_NUMBER_ERROR',
                         requestId,
                         error: error.message
-                    }, '*');
+                    }, window.location.origin);
                 }
             })();
         }
@@ -2230,13 +2230,13 @@ window.whl_hooks_main = () => {
                         type: 'WHL_EXTRACT_GROUP_CONTACTS_DOM_RESULT', 
                         requestId, 
                         ...result 
-                    }, '*');
+                    }, window.location.origin);
                 } catch (error) {
                     window.postMessage({ 
                         type: 'WHL_EXTRACT_GROUP_CONTACTS_DOM_ERROR', 
                         requestId, 
                         error: error.message 
-                    }, '*');
+                    }, window.location.origin);
                 }
             })();
         }
@@ -2252,13 +2252,13 @@ window.whl_hooks_main = () => {
                         requestId,
                         ...result,
                         success: true
-                    }, '*');
+                    }, window.location.origin);
                 } catch (error) {
                     window.postMessage({ 
                         type: 'WHL_EXTRACT_ARCHIVED_BLOCKED_DOM_ERROR', 
                         requestId, 
                         error: error.message 
-                    }, '*');
+                    }, window.location.origin);
                 }
             })();
         }
@@ -2273,13 +2273,13 @@ window.whl_hooks_main = () => {
                         type: 'WHL_VISUAL_CONFIRMATION_RESULT', 
                         requestId,
                         ...result
-                    }, '*');
+                    }, window.location.origin);
                 } catch (error) {
                     window.postMessage({ 
                         type: 'WHL_VISUAL_CONFIRMATION_ERROR', 
                         requestId, 
                         error: error.message 
-                    }, '*');
+                    }, window.location.origin);
                 }
             })();
         }
@@ -2308,14 +2308,14 @@ window.whl_hooks_main = () => {
                     type: 'WHL_SEND_MESSAGE_RESULT', 
                     success, 
                     phone 
-                }, '*');
+                }, window.location.origin);
             } catch (error) {
                 window.postMessage({ 
                     type: 'WHL_SEND_MESSAGE_RESULT', 
                     success: false, 
                     phone, 
                     error: error.message 
-                }, '*');
+                }, window.location.origin);
             }
         }
         
@@ -2328,14 +2328,14 @@ window.whl_hooks_main = () => {
                     type: 'WHL_SEND_IMAGE_RESULT', 
                     success, 
                     phone 
-                }, '*');
+                }, window.location.origin);
             } catch (error) {
                 window.postMessage({ 
                     type: 'WHL_SEND_IMAGE_RESULT', 
                     success: false, 
                     phone, 
                     error: error.message 
-                }, '*');
+                }, window.location.origin);
             }
         }
         
@@ -2346,12 +2346,12 @@ window.whl_hooks_main = () => {
                 window.postMessage({ 
                     type: 'WHL_EXTRACT_ALL_RESULT', 
                     ...result 
-                }, '*');
+                }, window.location.origin);
             } catch (error) {
                 window.postMessage({ 
                     type: 'WHL_EXTRACT_ALL_ERROR', 
                     error: error.message 
-                }, '*');
+                }, window.location.origin);
             }
         }
         
@@ -2362,12 +2362,12 @@ window.whl_hooks_main = () => {
                 window.postMessage({ 
                     type: 'WHL_EXTRACT_INSTANT_RESULT', 
                     ...result 
-                }, '*');
+                }, window.location.origin);
             } catch (error) {
                 window.postMessage({ 
                     type: 'WHL_EXTRACT_INSTANT_ERROR', 
                     error: error.message 
-                }, '*');
+                }, window.location.origin);
             }
         }
         
@@ -2381,13 +2381,13 @@ window.whl_hooks_main = () => {
                         type: 'WHL_EXTRACT_ALL_INSTANT_RESULT',
                         requestId,
                         ...result
-                    }, '*');
+                    }, window.location.origin);
                 } catch (error) {
                     window.postMessage({
                         type: 'WHL_EXTRACT_ALL_INSTANT_ERROR',
                         requestId,
                         error: error.message
-                    }, '*');
+                    }, window.location.origin);
                 }
             })();
         }

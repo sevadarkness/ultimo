@@ -44,6 +44,29 @@
   // Maximum localStorage usage (5MB to be safe, browsers typically allow 5-10MB)
   const MAX_STORAGE_SIZE = 5 * 1024 * 1024;
   
+  // Track approximate storage size to avoid expensive calculations
+  let approximateStorageSize = 0;
+  
+  /**
+   * Update approximate storage size
+   */
+  function updateStorageSize() {
+    try {
+      approximateStorageSize = 0;
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        const value = localStorage.getItem(key);
+        if (key && value) {
+          // Approximate: key length + value length + some overhead
+          approximateStorageSize += (key.length + value.length) * 2; // UTF-16 chars = 2 bytes
+        }
+      }
+    } catch (err) {
+      console.warn('[WHL Worker] Error updating storage size:', err.message);
+      approximateStorageSize = 0;
+    }
+  }
+  
   /**
    * Check if adding data would exceed storage quota
    * @param {string} key - Storage key
@@ -53,13 +76,18 @@
   function checkStorageSize(key, data) {
     try {
       const testData = JSON.stringify({ ts: now(), data });
-      const currentSize = new Blob([JSON.stringify(localStorage)]).size;
-      const newDataSize = new Blob([testData]).size;
+      const newDataSize = (key.length + testData.length) * 2; // UTF-16 estimation
       
-      if (currentSize + newDataSize > MAX_STORAGE_SIZE) {
+      // Update size if needed
+      if (approximateStorageSize === 0) {
+        updateStorageSize();
+      }
+      
+      if (approximateStorageSize + newDataSize > MAX_STORAGE_SIZE) {
         console.warn('[WHL Worker] Storage quota would be exceeded, clearing old caches');
         clearOldCaches();
-        return false;
+        updateStorageSize();
+        return approximateStorageSize + newDataSize <= MAX_STORAGE_SIZE;
       }
       return true;
     } catch (err) {
@@ -120,28 +148,33 @@
     try {
       // Check size before saving
       if (!checkStorageSize(key, data)) {
-        // Try again after clearing caches
-        if (!checkStorageSize(key, data)) {
-          console.warn('[WHL Worker] Cannot save cache, storage full even after cleanup');
-          return;
-        }
+        console.warn('[WHL Worker] Cannot save cache, storage full even after cleanup');
+        return;
       }
       
-      localStorage.setItem(key, JSON.stringify({
+      const cacheData = JSON.stringify({
         ts: now(),
         data
-      }));
+      });
+      
+      localStorage.setItem(key, cacheData);
+      
+      // Update approximate size
+      approximateStorageSize += (key.length + cacheData.length) * 2;
     } catch (err) {
       // Handle QuotaExceededError specifically
       if (err.name === 'QuotaExceededError') {
         console.warn('[WHL Worker] Storage quota exceeded, clearing old caches');
         clearOldCaches();
+        updateStorageSize();
         // Try one more time
         try {
-          localStorage.setItem(key, JSON.stringify({
+          const cacheData = JSON.stringify({
             ts: now(),
             data
-          }));
+          });
+          localStorage.setItem(key, cacheData);
+          approximateStorageSize += (key.length + cacheData.length) * 2;
         } catch (retryErr) {
           console.error('[WHL Worker] Failed to save cache even after cleanup:', retryErr.message);
         }
