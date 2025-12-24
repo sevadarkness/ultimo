@@ -59,7 +59,9 @@
         ts: now(),
         data
       }));
-    } catch {}
+    } catch (err) {
+      console.warn('[WHL Worker] Failed to save cache:', err.message);
+    }
   }
 
   function isExpired(cache, ttl) {
@@ -67,7 +69,11 @@
   }
 
   function invalidate(key) {
-    try { localStorage.removeItem(key); } catch {}
+    try { 
+      localStorage.removeItem(key); 
+    } catch (err) { 
+      console.warn('[WHL Worker] Failed to invalidate cache:', err.message);
+    }
   }
 
   function groupPartKey(groupId) {
@@ -83,7 +89,9 @@
       if (typeof require === 'function') {
         return require(name);
       }
-    } catch {}
+    } catch (err) {
+      console.warn('[WHL Worker] safeRequire failed for', name, ':', err.message);
+    }
     return null;
   }
 
