@@ -2,7 +2,25 @@
 
 Uma extensão para navegador que automatiza o envio de mensagens no WhatsApp Web.
 
-## ✨ Melhorias Recentes
+## 🎉 Melhorias Mais Recentes (v1.3.8)
+
+### 🔒 Segurança Aprimorada
+- ✅ **Correção de segurança postMessage**: Todas as comunicações agora validam origem
+- ✅ **NetSniffer otimizado**: Usa apenas padrões específicos do WhatsApp
+- ✅ **CodeQL scan limpo**: 0 vulnerabilidades detectadas
+- ✅ **Limite de memória reduzido**: NetSniffer agora limitado a 5000 números (otimizado)
+
+### 🏗️ Arquitetura Melhorada
+- ✅ **Listeners consolidados**: Background script agora usa único listener organizado
+- ✅ **Logging centralizado**: Sistema unificado de logs em todo o projeto
+- ✅ **Validação de telefone**: Normalização correta para números brasileiros e internacionais
+- ✅ **Cache inteligente**: Sistema LRU com proteção contra QuotaExceededError
+
+### 📚 Documentação
+- ✅ **Consolidada**: 41 arquivos markdown reduzidos para 2 (README + docs/DOCUMENTATION.md)
+- ✅ **Documentação técnica**: Nova documentação completa para desenvolvedores
+
+## ✨ Funcionalidades Principais
 
 ### 📊 Barra de Progresso em Tempo Real
 A barra de progresso agora reflete o progresso real das operações em tempo real:
@@ -10,8 +28,8 @@ A barra de progresso agora reflete o progresso real das operações em tempo rea
 - ✅ Estatísticas precisas (Enviados, Falhas, Pendentes)
 - ✅ Porcentagem de conclusão atualizada instantaneamente
 - ✅ Feedback visual durante toda a execução da campanha
-- ✅ **NOVO**: Barra de progresso na extração de contatos
-- ✅ **NOVO**: Contador de contatos em tempo real durante extração
+- ✅ Barra de progresso na extração de contatos
+- ✅ Contador de contatos em tempo real durante extração
 
 ### 📱 Integridade dos Números de Telefone
 Os números de telefone utilizados são sempre os números reais dos contatos:
@@ -19,12 +37,12 @@ Os números de telefone utilizados são sempre os números reais dos contatos:
 - ✅ Sanitização apenas remove caracteres não-numéricos (espaços, hífens)
 - ✅ Nenhum número aleatório é gerado ou utilizado
 - ✅ Validação garante formato correto (8-15 dígitos)
-- ✅ **NOVO**: Extração de contatos usa SOMENTE números reais do WhatsApp Web
-- ✅ **NOVO**: Documentação completa das fontes de extração
+- ✅ Extração de contatos usa SOMENTE números reais do WhatsApp Web
+- ✅ Documentação completa das fontes de extração
 
 ### 🎨 Interface Aprimorada
-- ✅ **NOVO**: Logo WhatsHybrid Lite no painel principal
-- ✅ **NOVO**: Logo WhatsHybrid Lite no popup da extensão
+- ✅ Logo WhatsHybrid Lite no painel principal
+- ✅ Logo WhatsHybrid Lite no popup da extensão
 - ✅ Design responsivo e bem posicionado
 
 ## 🚀 Funcionalidades
