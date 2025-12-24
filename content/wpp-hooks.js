@@ -2055,15 +2055,16 @@ window.whl_hooks_main = () => {
     async function extractGroupContacts() {
         const sleep = (ms) => new Promise(r => setTimeout(r, ms));
         // Match Brazilian phone numbers with optional + prefix
+        // Allows spaces in format as shown in WhatsApp UI (e.g., "+55 21 99999-8888")
         const PHONE_BR_REGEX = /\+?55\s?\d{2}\s?\d{4,5}-?\d{4}/g;
         
         // Maximum scroll loops before stopping (prevents infinite loops in large groups)
         const MAX_SCROLL_LOOPS = 220;
 
-        // Normalize phone: remove spaces and hyphens, keep digits and optional +
+        // Normalize phone: remove spaces and hyphens, keep digits (+ will be removed by isBR check)
         const normalizePhone = (s) => s.replace(/\s+/g,'').replace(/[^\d+]/g,'');
         
-        // Check if phone is valid Brazilian number
+        // Check if phone is valid Brazilian number (works with or without + prefix)
         const isBR = (phone) => {
             const digitsOnly = phone.replace(/[^\d]/g,'');
             return digitsOnly.startsWith('55') && (digitsOnly.length === 12 || digitsOnly.length === 13);
@@ -2177,8 +2178,7 @@ window.whl_hooks_main = () => {
         let stableRounds = 0;
         let noNewRounds = 0;
 
-        const maxLoops = MAX_SCROLL_LOOPS;
-        for (let loop = 0; loop < maxLoops; loop++) {
+        for (let loop = 0; loop < MAX_SCROLL_LOOPS; loop++) {
             // coleta incremental
             const textNodes = container.querySelectorAll('span, div');
             textNodes.forEach(el => {
@@ -2209,7 +2209,7 @@ window.whl_hooks_main = () => {
             
             // Log de progresso a cada 20 loops
             if (loop % 20 === 0 && loop > 0) {
-                console.log(`[WHL] DOM: scroll ${loop}/${maxLoops}, telefones: ${phones.size}`);
+                console.log(`[WHL] DOM: scroll ${loop}/${MAX_SCROLL_LOOPS}, telefones: ${phones.size}`);
             }
         }
 
