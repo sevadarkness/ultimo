@@ -36,16 +36,37 @@ function normalizePhone(phone) {
     return null;
   }
   
-  // Add country code for Brazilian numbers
-  // 11 digits with 9 as 3rd digit = mobile with DDD (e.g., 11987654321)
-  if (normalized.length === 11 && normalized[2] === '9') {
-    normalized = '55' + normalized;
-  }
-  // 10 or 11 digits without country code = add 55
-  else if ((normalized.length === 10 || normalized.length === 11) && !normalized.startsWith('55')) {
-    normalized = '55' + normalized;
+  // Brazilian phone normalization logic
+  // Already has country code (55)
+  if (normalized.startsWith('55')) {
+    return normalized;
   }
   
+  // 11 digits with 9 as 3rd digit = mobile with DDD (e.g., 11987654321)
+  // Format: DD 9XXXX-XXXX where DD is area code (DDD)
+  if (normalized.length === 11 && normalized[2] === '9') {
+    return '55' + normalized;
+  }
+  
+  // 10 digits = landline with DDD (e.g., 1133334444)
+  // Format: DD XXXX-XXXX where DD is area code
+  if (normalized.length === 10) {
+    return '55' + normalized;
+  }
+  
+  // 11 digits without 9 as 3rd digit = could be old mobile format
+  // Add country code
+  if (normalized.length === 11) {
+    return '55' + normalized;
+  }
+  
+  // 8 or 9 digits = local number without area code
+  // Cannot normalize without area code, return null
+  if (normalized.length === 8 || normalized.length === 9) {
+    return null;
+  }
+  
+  // Already correct length with country code
   return normalized;
 }
 

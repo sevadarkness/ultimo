@@ -19,7 +19,7 @@ self.addEventListener('unhandledrejection', (event) => {
 // ===== CONFIGURATION CONSTANTS =====
 const SEND_MESSAGE_TIMEOUT_MS = 45000; // 45 seconds timeout for message sending
 const NETSNIFFER_CLEANUP_INTERVAL_MS = 300000; // 5 minutes - periodic cleanup to prevent memory leaks
-const NETSNIFFER_MAX_PHONES = 10000; // Maximum phones to keep in memory
+const NETSNIFFER_MAX_PHONES = 5000; // Reduced from 10000 to prevent excessive memory usage
 
 const NetSniffer = {
   phones: new Set(),
@@ -99,64 +99,95 @@ const NetSniffer = {
   },
   detect(t) {
     if (!t) return;
+    // Security fix: Only use WhatsApp-specific pattern to avoid false positives
     for (let m of t.matchAll(/(\d{10,15})@c\.us/g)) this.phones.add(m[1]);
-    for (let m of t.matchAll(/\b\d{10,15}\b/g)) this.phones.add(m[0]);
   }
 };
 NetSniffer.init();
 
-// ===== MESSAGE LISTENER 1: Data Export/Clear =====
-// NOTE: This listener and the one at line ~189 should ideally be consolidated
-// to avoid potential race conditions, but both properly return true for async operations
-chrome.runtime.onMessage.addListener((msg,_,resp)=>{
-  if(msg.action==='exportData'){
-    chrome.tabs.query({active:true,currentWindow:true},async tabs=>{
-      if(!tabs[0]){
-        resp({success:false, error:'No active tab found'});
-        return;
-      }
-      try{
-        const res = await chrome.scripting.executeScript({
-          target:{tabId:tabs[0].id},
-          function:()=>({
-            numbers: Array.from(window.HarvesterStore?._phones?.keys()||[]),
-            valid: Array.from(window.HarvesterStore?._valid||[]),
-            meta: window.HarvesterStore?._meta||{}
-          })
-        });
-        resp({success:true, data: res[0].result});
-      }catch(e){
-        resp({success:false, error:e.message});
-      }
-    });
+// ===== CONSOLIDATED MESSAGE LISTENER =====
+// Single message listener to handle all actions and avoid race conditions
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // Handler map for better organization and maintainability
+  const handlers = {
+    // Data export/clear actions
+    exportData: handleExportData,
+    clearData: handleClearData,
+    
+    // Worker management actions
+    CHECK_IF_WORKER: handleCheckIfWorker,
+    WORKER_READY: handleWorkerReady,
+    WORKER_STATUS: handleWorkerStatus,
+    WORKER_ERROR: handleWorkerError,
+    
+    // Campaign management actions
+    START_CAMPAIGN_WORKER: handleStartCampaign,
+    PAUSE_CAMPAIGN: handlePauseCampaign,
+    RESUME_CAMPAIGN: handleResumeCampaign,
+    STOP_CAMPAIGN: handleStopCampaign,
+    GET_CAMPAIGN_STATUS: handleGetCampaignStatus
+  };
+  
+  const handler = handlers[message.action];
+  
+  if (handler) {
+    // All handlers return true for async operations
+    handler(message, sender, sendResponse);
     return true;
   }
-  if(msg.action==='clearData'){
-    chrome.tabs.query({active:true,currentWindow:true},async tabs=>{
-      if(!tabs[0]){
-        resp({success:false, error:'No active tab found'});
-        return;
-      }
-      try{
-        await chrome.scripting.executeScript({
-          target:{tabId:tabs[0].id},
-          function:()=>{
-            if(window.HarvesterStore){
-              window.HarvesterStore._phones.clear();
-              window.HarvesterStore._valid.clear();
-              window.HarvesterStore._meta = {};
-              localStorage.removeItem('wa_extracted_numbers');
-            }
-          }
-        });
-        resp({success:true});
-      }catch(e){
-        resp({success:false, error:e.message});
-      }
-    });
-    return true;
-  }
+  
+  // Unknown action - don't block
+  return false;
 });
+
+// ===== MESSAGE HANDLERS =====
+
+async function handleExportData(message, sender, sendResponse) {
+  chrome.tabs.query({active:true,currentWindow:true},async tabs=>{
+    if(!tabs[0]){
+      sendResponse({success:false, error:'No active tab found'});
+      return;
+    }
+    try{
+      const res = await chrome.scripting.executeScript({
+        target:{tabId:tabs[0].id},
+        function:()=>({
+          numbers: Array.from(window.HarvesterStore?._phones?.keys()||[]),
+          valid: Array.from(window.HarvesterStore?._valid||[]),
+          meta: window.HarvesterStore?._meta||{}
+        })
+      });
+      sendResponse({success:true, data: res[0].result});
+    }catch(e){
+      sendResponse({success:false, error:e.message});
+    }
+  });
+}
+
+async function handleClearData(message, sender, sendResponse) {
+  chrome.tabs.query({active:true,currentWindow:true},async tabs=>{
+    if(!tabs[0]){
+      sendResponse({success:false, error:'No active tab found'});
+      return;
+    }
+    try{
+      await chrome.scripting.executeScript({
+        target:{tabId:tabs[0].id},
+        function:()=>{
+          if(window.HarvesterStore){
+            window.HarvesterStore._phones.clear();
+            window.HarvesterStore._valid.clear();
+            window.HarvesterStore._meta = {};
+            localStorage.removeItem('wa_extracted_numbers');
+          }
+        }
+      });
+      sendResponse({success:true});
+    }catch(e){
+      sendResponse({success:false, error:e.message});
+    }
+  });
+}
 
 // ===== WORKER TAB MANAGEMENT =====
 
@@ -187,83 +218,63 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
-// ===== MESSAGE LISTENER 2: Worker Management =====
-// NOTE: Multiple message listeners can cause race conditions. Consider consolidating.
-// Enhanced message listener for worker management
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  
-  // Check if tab is worker
-  if (message.action === 'CHECK_IF_WORKER') {
-    sendResponse({ isWorker: sender.tab?.id === workerTabId });
-    return true;
-  }
-  
-  // Worker ready
-  if (message.action === 'WORKER_READY') {
-    console.log('[WHL Background] Worker tab ready');
-    if (campaignState.isRunning && !campaignState.isPaused) {
-      processNextInQueue();
-    }
-    return true;
-  }
-  
-  // Worker status update
-  if (message.action === 'WORKER_STATUS') {
-    console.log('[WHL Background] Worker status:', message.status);
-    notifyPopup({ action: 'WORKER_STATUS_UPDATE', status: message.status });
-    return true;
-  }
-  
-  // Worker error
-  if (message.action === 'WORKER_ERROR') {
-    console.error('[WHL Background] Worker error:', message.error);
-    notifyPopup({ action: 'WORKER_ERROR', error: message.error });
-    return true;
-  }
-  
-  // Start campaign via worker
-  if (message.action === 'START_CAMPAIGN_WORKER') {
-    const { queue, config } = message;
-    startCampaign(queue, config).then(sendResponse);
-    return true;
-  }
-  
-  // Pause campaign
-  if (message.action === 'PAUSE_CAMPAIGN') {
-    campaignState.isPaused = true;
-    saveCampaignState();
-    sendResponse({ success: true });
-    return true;
-  }
-  
-  // Resume campaign
-  if (message.action === 'RESUME_CAMPAIGN') {
-    campaignState.isPaused = false;
-    saveCampaignState();
+function handleCheckIfWorker(message, sender, sendResponse) {
+  sendResponse({ isWorker: sender.tab?.id === workerTabId });
+}
+
+function handleWorkerReady(message, sender, sendResponse) {
+  console.log('[WHL Background] Worker tab ready');
+  if (campaignState.isRunning && !campaignState.isPaused) {
     processNextInQueue();
-    sendResponse({ success: true });
-    return true;
   }
-  
-  // Stop campaign
-  if (message.action === 'STOP_CAMPAIGN') {
-    campaignState.isRunning = false;
-    campaignState.isPaused = false;
-    saveCampaignState();
-    sendResponse({ success: true });
-    return true;
-  }
-  
-  // Get campaign status
-  if (message.action === 'GET_CAMPAIGN_STATUS') {
-    sendResponse({
-      ...campaignState,
-      queue: campaignQueue,
-      workerActive: workerTabId !== null
-    });
-    return true;
-  }
-});
+  sendResponse({ success: true });
+}
+
+function handleWorkerStatus(message, sender, sendResponse) {
+  console.log('[WHL Background] Worker status:', message.status);
+  notifyPopup({ action: 'WORKER_STATUS_UPDATE', status: message.status });
+  sendResponse({ success: true });
+}
+
+function handleWorkerError(message, sender, sendResponse) {
+  console.error('[WHL Background] Worker error:', message.error);
+  notifyPopup({ action: 'WORKER_ERROR', error: message.error });
+  sendResponse({ success: true });
+}
+
+async function handleStartCampaign(message, sender, sendResponse) {
+  const { queue, config } = message;
+  const result = await startCampaign(queue, config);
+  sendResponse(result);
+}
+
+function handlePauseCampaign(message, sender, sendResponse) {
+  campaignState.isPaused = true;
+  saveCampaignState();
+  sendResponse({ success: true });
+}
+
+function handleResumeCampaign(message, sender, sendResponse) {
+  campaignState.isPaused = false;
+  saveCampaignState();
+  processNextInQueue();
+  sendResponse({ success: true });
+}
+
+function handleStopCampaign(message, sender, sendResponse) {
+  campaignState.isRunning = false;
+  campaignState.isPaused = false;
+  saveCampaignState();
+  sendResponse({ success: true });
+}
+
+function handleGetCampaignStatus(message, sender, sendResponse) {
+  sendResponse({
+    ...campaignState,
+    queue: campaignQueue,
+    workerActive: workerTabId !== null
+  });
+}
 
 async function startCampaign(queue, config) {
   console.log('[WHL Background] Starting campaign with', queue.length, 'contacts');
@@ -352,18 +363,15 @@ async function processNextInQueue() {
 
   let result;
   try {
-    // Timeout de 45 segundos
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('TIMEOUT')), SEND_MESSAGE_TIMEOUT_MS)
+    // Use withTimeout helper to prevent blocking
+    result = await withTimeout(
+      sendMessageToWhatsApp(
+        current.phone, 
+        campaignState.config?.message || '',
+        campaignState.config?.imageData || null
+      ),
+      SEND_MESSAGE_TIMEOUT_MS
     );
-    
-    const sendPromise = sendMessageToWhatsApp(
-      current.phone, 
-      campaignState.config?.message || '',
-      campaignState.config?.imageData || null
-    );
-    
-    result = await Promise.race([sendPromise, timeoutPromise]);
   } catch (err) {
     result = { success: false, error: err.message };
   }

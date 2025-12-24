@@ -1923,12 +1923,12 @@ window.whl_hooks_main = () => {
         
         if (type === 'WHL_EXTRACT_CONTACTS') {
             const result = extrairContatos();
-            window.postMessage({ type: 'WHL_EXTRACT_CONTACTS_RESULT', ...result }, '*');
+            window.postMessage({ type: 'WHL_EXTRACT_CONTACTS_RESULT', ...result }, window.location.origin);
         }
         
         if (type === 'WHL_LOAD_GROUPS') {
             const result = extrairGrupos();
-            window.postMessage({ type: 'WHL_LOAD_GROUPS_RESULT', ...result }, '*');
+            window.postMessage({ type: 'WHL_LOAD_GROUPS_RESULT', ...result }, window.location.origin);
         }
         
         if (type === 'WHL_LOAD_ARCHIVED_BLOCKED') {
@@ -1965,7 +1965,7 @@ window.whl_hooks_main = () => {
                     members: [...new Set(members)]
                 }, '*');
             } catch (e) {
-                window.postMessage({ type: 'WHL_GROUP_MEMBERS_ERROR', error: e.message }, '*');
+                window.postMessage({ type: 'WHL_GROUP_MEMBERS_ERROR', error: e.message }, window.location.origin);
             }
         }
         
@@ -1999,7 +1999,7 @@ window.whl_hooks_main = () => {
         
         if (type === 'WHL_EXTRACT_ALL') {
             const result = extrairTudo();
-            window.postMessage({ type: 'WHL_EXTRACT_ALL_RESULT', ...result }, '*');
+            window.postMessage({ type: 'WHL_EXTRACT_ALL_RESULT', ...result }, window.location.origin);
         }
         
         // RECOVER MESSAGES - Since hooks are automatic, just acknowledge
@@ -2037,7 +2037,7 @@ window.whl_hooks_main = () => {
         if (type === 'WHL_CLEAR_RECOVER_HISTORY') {
             historicoRecover.length = 0;
             localStorage.removeItem('whl_recover_history');
-            window.postMessage({ type: 'WHL_RECOVER_HISTORY_CLEARED' }, '*');
+            window.postMessage({ type: 'WHL_RECOVER_HISTORY_CLEARED' }, window.location.origin);
         }
     });
     
@@ -2182,14 +2182,14 @@ window.whl_hooks_main = () => {
         if (event.data.type === 'WHL_SEND_MESSAGE_API') {
             const { phone, message, requestId } = event.data;
             const result = await enviarMensagemAPI(phone, message);
-            window.postMessage({ type: 'WHL_SEND_MESSAGE_API_RESULT', requestId, ...result }, '*');
+            window.postMessage({ type: 'WHL_SEND_MESSAGE_API_RESULT', requestId, ...result }, window.location.origin);
         }
         
         // Enviar apenas IMAGEM
         if (event.data.type === 'WHL_SEND_IMAGE_DOM') {
             const { base64Image, caption, requestId } = event.data;
             const result = await enviarImagemDOM(base64Image, caption);
-            window.postMessage({ type: 'WHL_SEND_IMAGE_DOM_RESULT', requestId, ...result }, '*');
+            window.postMessage({ type: 'WHL_SEND_IMAGE_DOM_RESULT', requestId, ...result }, window.location.origin);
         }
         
         // CORREÇÃO BUG 2: Enviar IMAGEM para número específico (abre o chat primeiro)
@@ -2217,7 +2217,7 @@ window.whl_hooks_main = () => {
         if (event.data.type === 'WHL_SEND_COMPLETE') {
             const { phone, texto, base64Image, caption, requestId } = event.data;
             const result = await enviarMensagemCompleta(phone, texto, base64Image, caption);
-            window.postMessage({ type: 'WHL_SEND_COMPLETE_RESULT', requestId, ...result }, '*');
+            window.postMessage({ type: 'WHL_SEND_COMPLETE_RESULT', requestId, ...result }, window.location.origin);
         }
         
         // EXTRAIR MEMBROS DE GRUPO VIA DOM
@@ -2419,10 +2419,10 @@ window.whl_hooks_main = () => {
             });
 
             console.log(`[WHL Hooks] Extração instantânea: ${nums.size} números`);
-            window.postMessage({ type: 'WHL_EXTRACT_INSTANT_RESULT', numbers: [...nums] }, '*');
+            window.postMessage({ type: 'WHL_EXTRACT_INSTANT_RESULT', numbers: [...nums] }, window.location.origin);
         } catch (e) {
             console.error('[WHL Hooks] Erro na extração instantânea:', e);
-            window.postMessage({ type: 'WHL_EXTRACT_INSTANT_ERROR', error: e.message }, '*');
+            window.postMessage({ type: 'WHL_EXTRACT_INSTANT_ERROR', error: e.message }, window.location.origin);
         }
     });
 };

@@ -3484,6 +3484,8 @@
   
   // Listener para resultados de envio direto
   window.addEventListener('message', async (e) => {
+    // Security: Validate message origin
+    if (e.origin !== window.location.origin) return;
     if (!e.data || !e.data.type) return;
     
     const { type } = e.data;
@@ -4635,6 +4637,8 @@ try {
   }
 
   window.addEventListener('message', (e) => {
+    // Security: Validate message origin
+    if (e.origin !== window.location.origin) return;
     if (!e || !e.data) return;
 
     // Keep the old WHL_EXTRACT_RESULT handler for backward compatibility
@@ -4983,7 +4987,7 @@ try {
       btnLoadGroups.textContent = '⏳ Carregando...';
       
       // Enviar comando para o store-bridge
-      window.postMessage({ type: 'WHL_LOAD_GROUPS' }, '*');
+      window.postMessage({ type: 'WHL_LOAD_GROUPS' }, window.location.origin);
     });
   }
 
@@ -5104,6 +5108,8 @@ try {
 
 // ===== WHL: Message Listeners para Store Bridge =====
 window.addEventListener('message', (e) => {
+  // Security: Validate message origin
+  if (e.origin !== window.location.origin) return;
   if (!e.data || !e.data.type) return;
   
   // Resposta de carregar grupos
@@ -5603,7 +5609,7 @@ try {
   }
   
   // Load recover history on init
-  window.postMessage({ type: 'WHL_GET_RECOVER_HISTORY' }, '*');
+  window.postMessage({ type: 'WHL_GET_RECOVER_HISTORY' }, window.location.origin);
 
   if (btnExportRecovered) {
     btnExportRecovered.addEventListener('click', () => {
@@ -5646,7 +5652,7 @@ try {
   if (btnClearRecovered) {
     btnClearRecovered.addEventListener('click', () => {
       if (confirm('⚠️ Tem certeza que deseja limpar todo o histórico de mensagens recuperadas?')) {
-        window.postMessage({ type: 'WHL_CLEAR_RECOVER_HISTORY' }, '*');
+        window.postMessage({ type: 'WHL_CLEAR_RECOVER_HISTORY' }, window.location.origin);
         alert('✅ Histórico limpo!');
       }
     });
@@ -7142,6 +7148,8 @@ try {
 
   // ===== ARQUIVADOS & BLOQUEADOS =====
   window.addEventListener('message', (e) => {
+    // Security: Validate message origin
+    if (e.origin !== window.location.origin) return;
     if (e.data?.type === 'WHL_ARCHIVED_BLOCKED_RESULT') {
       const { archived, blocked } = e.data;
       
@@ -7171,6 +7179,8 @@ try {
   const recoveredList = [];
 
   window.addEventListener('message', (e) => {
+    // Security: Validate message origin
+    if (e.origin !== window.location.origin) return;
     if (e.data?.type === 'WHL_RECOVERED_MESSAGE') {
       recoveredList.push(e.data.payload);
       
@@ -7200,6 +7210,8 @@ try {
 
   // ===== EXTRAÇÃO INSTANTÂNEA =====
   window.addEventListener('message', (e) => {
+    // Security: Validate message origin
+    if (e.origin !== window.location.origin) return;
     if (e.data?.type === 'WHL_EXTRACT_INSTANT_RESULT') {
       const numbers = e.data.numbers || [];
       console.log(`[WHL] Extração instantânea: ${numbers.length} números`);
@@ -7213,6 +7225,8 @@ try {
 
   // ===== GRUPOS =====
   window.addEventListener('message', (e) => {
+    // Security: Validate message origin
+    if (e.origin !== window.location.origin) return;
     if (e.data?.type === 'WHL_GROUPS_RESULT') {
       const groups = e.data.groups || [];
       console.log(`[WHL] ${groups.length} grupos carregados`);
@@ -7231,15 +7245,15 @@ try {
 
   // Funções auxiliares para solicitar dados
   window.loadArchivedBlocked = function() {
-    window.postMessage({ type: 'WHL_LOAD_ARCHIVED_BLOCKED' }, '*');
+    window.postMessage({ type: 'WHL_LOAD_ARCHIVED_BLOCKED' }, window.location.origin);
   };
 
   window.extractInstant = function() {
-    window.postMessage({ type: 'WHL_EXTRACT_INSTANT' }, '*');
+    window.postMessage({ type: 'WHL_EXTRACT_INSTANT' }, window.location.origin);
   };
 
   window.loadGroups = function() {
-    window.postMessage({ type: 'WHL_LOAD_GROUPS' }, '*');
+    window.postMessage({ type: 'WHL_LOAD_GROUPS' }, window.location.origin);
   };
 
   console.log('[WHL] Event listeners registrados');
