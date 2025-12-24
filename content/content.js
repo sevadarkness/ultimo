@@ -3786,6 +3786,70 @@
   // PR #78: Store scheduled timeout ID for cancellation
   let scheduledCampaignTimeout = null;
   
+  // Item 9: WhatsApp disconnect detector
+  let disconnectCheckInterval = null;
+  
+  function isWhatsAppConnected() {
+    // Check for common disconnect indicators in WhatsApp Web
+    // 1. Check for QR code (not logged in)
+    const qrCode = document.querySelector('canvas[aria-label*="QR"]') || 
+                   document.querySelector('[data-ref="qr-code"]');
+    if (qrCode) {
+      whlLog.warn('WhatsApp desconectado: QR Code detectado');
+      return false;
+    }
+    
+    // 2. Check for connection issues banner
+    const connectionBanner = document.querySelector('[data-testid="alert-phone-connection"]') ||
+                             document.querySelector('[role="banner"]');
+    if (connectionBanner && connectionBanner.textContent.toLowerCase().includes('conectando')) {
+      whlLog.warn('WhatsApp desconectado: Banner de conexão detectado');
+      return false;
+    }
+    
+    // 3. Check if there's a retry button (connection lost)
+    const retryButton = document.querySelector('button[aria-label*="Tentar"]') ||
+                        document.querySelector('button[aria-label*="Retry"]');
+    if (retryButton) {
+      whlLog.warn('WhatsApp desconectado: Botão de retry detectado');
+      return false;
+    }
+    
+    return true;
+  }
+  
+  function startDisconnectMonitor() {
+    // Item 9: Monitor WhatsApp connection during campaign
+    if (disconnectCheckInterval) {
+      clearInterval(disconnectCheckInterval);
+    }
+    
+    disconnectCheckInterval = setInterval(async () => {
+      const st = await getState();
+      
+      if (!st.isRunning || st.isPaused) {
+        // Campaign not running, stop monitoring
+        if (disconnectCheckInterval) {
+          clearInterval(disconnectCheckInterval);
+          disconnectCheckInterval = null;
+        }
+        return;
+      }
+      
+      if (!isWhatsAppConnected()) {
+        whlLog.warn('⚠️ Desconexão detectada! Pausando campanha...');
+        await pauseCampaign();
+        alert('⚠️ WhatsApp desconectado!\n\nA campanha foi pausada automaticamente.\nReconecte ao WhatsApp e clique em "Iniciar Campanha" para continuar.');
+        
+        // Stop monitoring until campaign is resumed
+        if (disconnectCheckInterval) {
+          clearInterval(disconnectCheckInterval);
+          disconnectCheckInterval = null;
+        }
+      }
+    }, 5000); // Check every 5 seconds
+  }
+  
   async function startCampaign() {
     const st = await getState();
     
@@ -3854,17 +3918,20 @@
     await setState(st);
     await render();
 
-    console.log('[WHL] 🚀 Campanha iniciada');
+    whlLog.info('🚀 Campanha iniciada');
+    
+    // Item 9: Start disconnect monitoring
+    startDisconnectMonitor();
     
     // ATUALIZADO: Usar métodos API validados (SEM reload)
     if (WHL_CONFIG.USE_DIRECT_API) {
-      console.log('[WHL] 📡 Usando API validada (enviarMensagemAPI e enviarImagemDOM) - SEM RELOAD!');
+      whlLog.info('📡 Usando API validada (enviarMensagemAPI e enviarImagemDOM) - SEM RELOAD!');
       processCampaignStepDirect();
     } else if (WHL_CONFIG.USE_INPUT_ENTER_METHOD) {
-      console.log('[WHL] 🔧 Using Input + Enter method for sending');
+      whlLog.info('🔧 Using Input + Enter method for sending');
       processCampaignStepViaInput();
     } else {
-      console.log('[WHL] 🔗 Usando modo URL (com reload)');
+      whlLog.info('🔗 Usando modo URL (com reload)');
       processCampaignStepViaDom();
     }
   }
@@ -4424,6 +4491,14 @@ try {
         btnExtract.disabled = false;
         btnExtract.textContent = '📥 Extrair contatos';
       }
+      
+      // Item 12: Ensure extraction progress bar disappears after 100%
+      setTimeout(() => {
+        const progressBar = document.getElementById('whlExtractProgress');
+        if (progressBar) progressBar.style.display = 'none';
+        const extractControls = document.getElementById('whlExtractControls');
+        if (extractControls) extractControls.style.display = 'none';
+      }, 2000);
     }
     
     // Handler para extração instantânea
@@ -4499,6 +4574,18 @@ try {
       if (statusEl) {
         statusEl.textContent = `✅ Extração finalizada! Total: ${totalCount} números`;
       }
+      
+      // Item 12: Ensure extraction progress bar disappears after 100%
+      setTimeout(() => {
+        const progressBar = document.getElementById('whlExtractProgress');
+        if (progressBar) {
+          progressBar.style.display = 'none';
+        }
+        const extractControls = document.getElementById('whlExtractControls');
+        if (extractControls) {
+          extractControls.style.display = 'none';
+        }
+      }, 2000); // Hide after 2 seconds to allow users to see 100%
       
       // CORREÇÃO: Alert com valores dos arrays, não stats
       alert(`✅ Extração instantânea concluída!\n\n📱 Contatos: ${normalCount}\n📁 Arquivados: ${archivedCount}\n🚫 Bloqueados: ${blockedCount}\n\n📊 Total: ${totalCount}`);
