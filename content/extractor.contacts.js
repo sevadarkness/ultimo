@@ -21,7 +21,16 @@
   if (window.__WHL_EXTRACTOR_TURBO_V7__) return;
   window.__WHL_EXTRACTOR_TURBO_V7__ = true;
 
-  console.log('[WHL] 🚀 EXTRATOR TURBO v7 - FILTRO ULTRA-RIGOROSO iniciando...');
+  // ===== SISTEMA DE LOG =====
+  const WHL_DEBUG = typeof localStorage !== 'undefined' && localStorage.getItem('whl_debug') === 'true';
+  const whlLog = {
+    debug: (...args) => { if (WHL_DEBUG) console.log('[WHL DEBUG]', ...args); },
+    info: (...args) => { if (WHL_DEBUG) console.log('[WHL]', ...args); },
+    warn: (...args) => console.warn('[WHL]', ...args),
+    error: (...args) => console.error('[WHL]', ...args)
+  };
+
+  whlLog.info('🚀 EXTRATOR TURBO v7 - FILTRO ULTRA-RIGOROSO iniciando...');
 
   // ===== CONFIGURAÇÃO =====
   const CONFIG = {
@@ -215,7 +224,7 @@
       // Verificar contexto negativo
       if (hasNegativeContext(context)) {
         if (CONFIG.debug) {
-          console.log('[WHL] ⚠️ Contexto negativo:', normalized);
+          whlLog.debug('⚠️ Contexto negativo:', normalized);
         }
         return null; // Rejeitar completamente se contexto negativo
       }
@@ -466,7 +475,7 @@
                               document.querySelector('[aria-label*="Archived"]');
       
       if (archivedSection) {
-        console.log('[WHL] 📁 Seção de arquivados encontrada');
+        whlLog.info('📁 Seção de arquivados encontrada');
         // Extrair números desta seção marcando como arquivados
         archivedSection.querySelectorAll('[data-id*="@c.us"]').forEach(el => {
           const dataId = el.getAttribute('data-id');
@@ -498,9 +507,9 @@
         }
       }
       
-      console.log(`[WHL] 📁 Contatos arquivados encontrados: ${count}`);
+      whlLog.info(`📁 Contatos arquivados encontrados: ${count}`);
     } catch (e) {
-      console.error('[WHL] Erro ao extrair arquivados:', e);
+      whlLog.error('Erro ao extrair arquivados:', e);
     }
     
     return count;
@@ -579,9 +588,9 @@
         }
       });
       
-      console.log(`[WHL] 🚫 Contatos bloqueados encontrados: ${count}`);
+      whlLog.info(`🚫 Contatos bloqueados encontrados: ${count}`);
     } catch (e) {
-      console.error('[WHL] Erro ao extrair bloqueados:', e);
+      whlLog.error('Erro ao extrair bloqueados:', e);
     }
     
     return count;
@@ -675,7 +684,7 @@
     const pane = document.querySelector('#pane-side');
     if (!pane) return;
     
-    console.log('[WHL] 📜 Iniciando scroll...');
+    whlLog.info('📜 Iniciando scroll...');
     
     // Resetar flags de controle
     extractionPaused = false;
@@ -691,7 +700,7 @@
     while (stable < CONFIG.stabilityCount && scrollCount < CONFIG.maxScrolls) {
       // Verificar se foi cancelado
       if (extractionCancelled) {
-        console.log('[WHL] ⛔ Extração cancelada pelo usuário');
+        whlLog.info('⛔ Extração cancelada pelo usuário');
         break;
       }
       
@@ -702,7 +711,7 @@
       
       // Se cancelou durante a pausa, sair
       if (extractionCancelled) {
-        console.log('[WHL] ⛔ Extração cancelada durante pausa');
+        whlLog.info('⛔ Extração cancelada durante pausa');
         break;
       }
       
@@ -733,7 +742,7 @@
       
       if (scrollCount % 30 === 0) {
         const stats = PhoneStore.getStats();
-        console.log(`[WHL] Scroll ${scrollCount}/${CONFIG.maxScrolls}, válidos: ${stats.valid}`);
+        whlLog.debug(`Scroll ${scrollCount}/${CONFIG.maxScrolls}, válidos: ${stats.valid}`);
       }
     }
     
@@ -742,9 +751,9 @@
     extractFromDOM();
     
     if (extractionCancelled) {
-      console.log(`[WHL] ⛔ Extração cancelada: ${scrollCount} scrolls executados`);
+      whlLog.info(`⛔ Extração cancelada: ${scrollCount} scrolls executados`);
     } else {
-      console.log(`[WHL] ✅ Scroll concluído: ${scrollCount} scrolls`);
+      whlLog.info(`✅ Scroll concluído: ${scrollCount} scrolls`);
     }
   }
 
@@ -764,28 +773,31 @@
     };
     
     const OriginalWebSocket = window.WebSocket;
-    window.WebSocket = function(...args) {
-      const ws = new OriginalWebSocket(...args);
-      ws.addEventListener('message', function(e) {
-        try {
-          if (e.data && typeof e.data === 'string') {
-            if (e.data.includes('@c.us') || e.data.includes('@g.us')) {
-              extractFromText(e.data, 'cus');
+    window.WebSocket = new Proxy(OriginalWebSocket, {
+      construct(target, args) {
+        const ws = new target(...args);
+        ws.addEventListener('message', function(e) {
+          try {
+            if (e.data && typeof e.data === 'string') {
+              if (e.data.includes('@c.us') || e.data.includes('@g.us')) {
+                extractFromText(e.data, 'cus');
+              }
             }
+          } catch (err) {
+            whlLog.warn('WebSocket intercept error:', err.message);
           }
-        } catch {}
-      });
-      return ws;
-    };
-    window.WebSocket.prototype = OriginalWebSocket.prototype;
+        });
+        return ws;
+      }
+    });
     
-    console.log('[WHL] 🔌 Network hooks instalados');
+    whlLog.info('🔌 Network hooks instalados');
   }
 
   // ===== FUNÇÃO PRINCIPAL =====
   async function extractAll() {
-    console.log('[WHL] 🚀🚀🚀 EXTRAÇÃO TURBO v7 - FILTRO ULTRA-RIGOROSO 🚀🚀🚀');
-    console.log('[WHL] Score mínimo:', CONFIG.minValidScore);
+    whlLog.info('🚀🚀🚀 EXTRAÇÃO TURBO v7 - FILTRO ULTRA-RIGOROSO 🚀🚀🚀');
+    whlLog.info('Score mínimo:', CONFIG.minValidScore);
     
     PhoneStore.clear();
     
@@ -798,32 +810,32 @@
     installNetworkHooks();
     
     // Fase 1: DOM
-    console.log('[WHL] 📱 Fase 1: DOM...');
+    whlLog.info('📱 Fase 1: DOM...');
     extractFromDOM();
     window.postMessage({ type: 'WHL_EXTRACT_PROGRESS', progress: 10, count: PhoneStore.getFiltered().length }, '*');
     
     // Fase 2: Storage
-    console.log('[WHL] 💾 Fase 2: Storage...');
+    whlLog.info('💾 Fase 2: Storage...');
     extractFromStorage();
     window.postMessage({ type: 'WHL_EXTRACT_PROGRESS', progress: 15, count: PhoneStore.getFiltered().length }, '*');
     
     // Fase 3: IndexedDB
-    console.log('[WHL] 🗄️ Fase 3: IndexedDB...');
+    whlLog.info('🗄️ Fase 3: IndexedDB...');
     await extractFromIndexedDB();
     window.postMessage({ type: 'WHL_EXTRACT_PROGRESS', progress: 18, count: PhoneStore.getFiltered().length }, '*');
     
     // Fase 3.5: Arquivados e Bloqueados
-    console.log('[WHL] 📁 Fase 3.5: Contatos arquivados e bloqueados...');
+    whlLog.info('📁 Fase 3.5: Contatos arquivados e bloqueados...');
     extractArchivedContacts();
     extractBlockedContacts();
     window.postMessage({ type: 'WHL_EXTRACT_PROGRESS', progress: 20, count: PhoneStore.getFiltered().length }, '*');
     
     // Fase 4: Scroll
-    console.log('[WHL] 📜 Fase 4: Scroll...');
+    whlLog.info('📜 Fase 4: Scroll...');
     await turboScroll();
     
     // Fase 5: Final
-    console.log('[WHL] 🔍 Fase 5: Extração final...');
+    whlLog.info('🔍 Fase 5: Extração final...');
     extractFromDOM();
     extractFromStorage();
     extractArchivedContacts();
@@ -838,11 +850,11 @@
     const byType = PhoneStore.getAllByType();
     const stats = PhoneStore.getStats();
     
-    console.log('[WHL] ✅✅✅ EXTRAÇÃO v7 CONCLUÍDA ✅✅✅');
-    console.log('[WHL] Estatísticas:', stats);
-    console.log('[WHL] Números normais:', byType.normal.length);
-    console.log('[WHL] Números arquivados:', byType.archived.length);
-    console.log('[WHL] Números bloqueados:', byType.blocked.length);
+    whlLog.info('✅✅✅ EXTRAÇÃO v7 CONCLUÍDA ✅✅✅');
+    whlLog.info('Estatísticas:', stats);
+    whlLog.info('Números normais:', byType.normal.length);
+    whlLog.info('Números arquivados:', byType.archived.length);
+    whlLog.info('Números bloqueados:', byType.blocked.length);
     
     try {
       localStorage.setItem('whl_extracted_numbers', JSON.stringify(byType.normal));
@@ -869,26 +881,26 @@
           numbers: byType.normal  // backward compatibility
         }, '*');
       } catch (e) {
-        console.error('[WHL] Erro:', e);
+        whlLog.error('Erro:', e);
         window.postMessage({ type: 'WHL_EXTRACT_ERROR', error: String(e) }, '*');
       }
     }
     
     if (ev.data.type === 'WHL_PAUSE_EXTRACTION') {
       extractionPaused = true;
-      console.log('[WHL] ⏸️ Extração pausada');
+      whlLog.info('⏸️ Extração pausada');
       window.postMessage({ type: 'WHL_EXTRACTION_PAUSED' }, '*');
     }
     
     if (ev.data.type === 'WHL_RESUME_EXTRACTION') {
       extractionPaused = false;
-      console.log('[WHL] ▶️ Extração retomada');
+      whlLog.info('▶️ Extração retomada');
       window.postMessage({ type: 'WHL_EXTRACTION_RESUMED' }, '*');
     }
     
     if (ev.data.type === 'WHL_CANCEL_EXTRACTION') {
       extractionCancelled = true;
-      console.log('[WHL] ⛔ Extração cancelada');
+      whlLog.info('⛔ Extração cancelada');
       const byType = PhoneStore.getAllByType();
       window.postMessage({ 
         type: 'WHL_EXTRACT_RESULT', 
@@ -910,9 +922,9 @@
     getFiltered: () => PhoneStore.getFiltered(),
     getAll: () => PhoneStore.getAllWithDetails(),
     getStats: () => PhoneStore.getStats(),
-    setMinScore: (s) => { CONFIG.minValidScore = s; console.log('[WHL] Score mínimo:', s); }
+    setMinScore: (s) => { CONFIG.minValidScore = s; whlLog.info('Score mínimo:', s); }
   };
 
-  console.log('[WHL] ✅ EXTRATOR TURBO v7 - FILTRO ULTRA-RIGOROSO carregado!');
-  console.log('[WHL] 📊 Debug: window.__WHL_TURBO_V7__.getStats()');
+  whlLog.info('✅ EXTRATOR TURBO v7 - FILTRO ULTRA-RIGOROSO carregado!');
+  whlLog.info('📊 Debug: window.__WHL_TURBO_V7__.getStats()');
 })();

@@ -1,19 +1,28 @@
 // ===== STRICT MODE AND ERROR HANDLING =====
 'use strict';
 
+// ===== SISTEMA DE LOG =====
+const WHL_DEBUG = false; // Background não tem acesso a localStorage
+const whlLog = {
+  debug: (...args) => { if (WHL_DEBUG) console.log('[WHL DEBUG]', ...args); },
+  info: (...args) => { if (WHL_DEBUG) console.log('[WHL]', ...args); },
+  warn: (...args) => console.warn('[WHL]', ...args),
+  error: (...args) => console.error('[WHL]', ...args)
+};
+
 // Verify Chrome APIs are available
 if (typeof chrome === 'undefined' || !chrome.runtime) {
-    console.error('[WHL Background] Chrome APIs not available');
+    whlLog.error('[WHL Background] Chrome APIs not available');
 }
 
 // Global error handler
 self.addEventListener('error', (event) => {
-    console.error('[WHL Background] Global error:', event.error);
+    whlLog.error('[WHL Background] Global error:', event.error);
 });
 
 // Unhandled promise rejection handler
 self.addEventListener('unhandledrejection', (event) => {
-    console.error('[WHL Background] Unhandled promise rejection:', event.reason);
+    whlLog.error('[WHL Background] Unhandled promise rejection:', event.reason);
 });
 
 // ===== CONFIGURATION CONSTANTS =====

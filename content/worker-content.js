@@ -11,6 +11,18 @@
   window.__WA_GROUP_EXTRACTOR_LOADED__ = true;
 
   /* ===============================
+     SISTEMA DE LOG
+  =============================== */
+
+  const WHL_DEBUG = typeof localStorage !== 'undefined' && localStorage.getItem('whl_debug') === 'true';
+  const whlLog = {
+    debug: (...args) => { if (WHL_DEBUG) console.log('[WHL DEBUG]', ...args); },
+    info: (...args) => { if (WHL_DEBUG) console.log('[WHL]', ...args); },
+    warn: (...args) => console.warn('[WHL]', ...args),
+    error: (...args) => console.error('[WHL]', ...args)
+  };
+
+  /* ===============================
      CONFIGURAÇÃO
   =============================== */
 
@@ -345,11 +357,22 @@
   }
 
   /* ===============================
-     INVALIDAÇÃO GLOBAL
+     SALVAR CACHE ANTES DE SAIR
   =============================== */
 
   window.addEventListener('beforeunload', () => {
-    invalidate(GROUP_LIST_CACHE_KEY);
+    // Salvar estado atual antes de sair
+    try {
+      const currentGroups = getCache(GROUP_LIST_CACHE_KEY);
+      if (currentGroups && currentGroups.data) {
+        // Atualizar timestamp para manter cache válido
+        setCache(GROUP_LIST_CACHE_KEY, currentGroups.data);
+        console.log('[WHL] Cache de grupos salvo antes de sair');
+      }
+    } catch (e) {
+      console.warn('[WHL] Erro ao salvar cache antes de sair:', e.message);
+    }
+    // Não invalidar - manter cache para próxima sessão
   });
 
   /* ===============================
