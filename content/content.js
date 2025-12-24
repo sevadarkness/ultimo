@@ -13,16 +13,16 @@
   const WHL_DEBUG = localStorage.getItem('whl_debug') === 'true';
   
   if (isWorkerTab) {
-    if (WHL_DEBUG) console.log('[WHL] This is the worker tab, UI disabled');
+    if (WHL_DEBUG) whlLog.info(' This is the worker tab, UI disabled');
     // Worker content script will handle this tab
     return;
   }
 
   const whlLog = {
-    debug: (...args) => { if (WHL_DEBUG) console.log('[WHL DEBUG]', ...args); },
-    info: (...args) => console.log('[WHL]', ...args),
-    warn: (...args) => console.warn('[WHL]', ...args),
-    error: (...args) => console.error('[WHL]', ...args)
+    debug: (...args) => { if (WHL_DEBUG) whlLog.debug('', ...args); },
+    info: (...args) => whlLog.info('', ...args),
+    warn: (...args) => whlLog.warn('', ...args),
+    error: (...args) => whlLog.error('', ...args)
   };
 
   // ===== DOM SELECTORS =====
@@ -133,7 +133,7 @@
         return chrome.runtime.getURL(`icons/${iconName}`);
       }
     } catch (e) {
-      console.warn('[WHL] Não foi possível obter URL do ícone:', e);
+      whlLog.warn(' Não foi possível obter URL do ícone:', e);
     }
     return ''; // fallback
   }
@@ -143,14 +143,14 @@
   function safeChrome(fn) {
     try {
       if (!chrome?.runtime?.id) {
-        console.warn('[WHL] ⚠️ Extensão invalidada - recarregue a página (F5)');
+        whlLog.warn(' ⚠️ Extensão invalidada - recarregue a página (F5)');
         showExtensionInvalidatedWarning();
         return null;
       }
       return fn();
     } catch (e) {
       if (e.message && e.message.includes('Extension context invalidated')) {
-        console.warn('[WHL] ⚠️ Recarregue a página do WhatsApp Web (F5)');
+        whlLog.warn(' ⚠️ Recarregue a página do WhatsApp Web (F5)');
         showExtensionInvalidatedWarning();
       }
       return null;
@@ -580,7 +580,7 @@
         }
       }));
     } catch (e) {
-      console.warn('[WHL] Failed to sync stats:', e);
+      whlLog.warn(' Failed to sync stats:', e);
     }
   }
 
@@ -2884,7 +2884,7 @@
   }
 
   async function autoSendMessage() {
-    console.log('[WHL] Tentando enviar mensagem...');
+    whlLog.info(' Tentando enviar mensagem...');
     
     // Aguardar um pouco para garantir que a mensagem foi preenchida via URL
     await new Promise(r => setTimeout(r, 2000));
@@ -2893,11 +2893,11 @@
     const sendButton = getSendButton();
     
     if (sendButton) {
-      console.log('[WHL] Botão de enviar encontrado:', sendButton);
+      whlLog.info(' Botão de enviar encontrado:', sendButton);
       
       // Simular clique robusto
       simulateClick(sendButton);
-      console.log('[WHL] Clique simulado no botão de enviar');
+      whlLog.info(' Clique simulado no botão de enviar');
       
       // Aguardar um pouco
       await new Promise(r => setTimeout(r, 1000));
@@ -2905,12 +2905,12 @@
       // Verificar se a mensagem foi enviada (campo de input deve estar vazio)
       const msgInput = getMessageInput();
       if (msgInput && msgInput.textContent.trim() === '') {
-        console.log('[WHL] ✅ Mensagem enviada com sucesso!');
+        whlLog.info(' ✅ Mensagem enviada com sucesso!');
         return true;
       }
       
       // Se ainda tem texto, tentar via Enter
-      console.log('[WHL] Tentando enviar via tecla Enter...');
+      whlLog.info(' Tentando enviar via tecla Enter...');
       await sendViaEnterKey();
       await new Promise(r => setTimeout(r, 1000));
       
@@ -2918,16 +2918,16 @@
     }
     
     // Fallback: tentar enviar via Enter direto
-    console.log('[WHL] Botão não encontrado, tentando via Enter...');
+    whlLog.info(' Botão não encontrado, tentando via Enter...');
     const sent = await sendViaEnterKey();
     
     if (sent) {
-      console.log('[WHL] Enviado via Enter');
+      whlLog.info(' Enviado via Enter');
       await new Promise(r => setTimeout(r, 1000));
       return true;
     }
     
-    console.log('[WHL] ❌ Não foi possível enviar a mensagem');
+    whlLog.info(' ❌ Não foi possível enviar a mensagem');
     return false;
   }
 
@@ -2937,7 +2937,7 @@
     
     // NOVO: Verificar se foi pausado ou parado ANTES de continuar
     if (!st.isRunning) {
-      console.log('[WHL] ⏹️ Campanha foi parada, não continuando');
+      whlLog.info(' ⏹️ Campanha foi parada, não continuando');
       st.urlNavigationInProgress = false;
       await setState(st);
       await render();
@@ -2945,7 +2945,7 @@
     }
     
     if (st.isPaused) {
-      console.log('[WHL] ⏸️ Campanha está pausada, aguardando retomada');
+      whlLog.info(' ⏸️ Campanha está pausada, aguardando retomada');
       st.urlNavigationInProgress = false;
       await setState(st);
       await render();
@@ -2957,9 +2957,9 @@
       return;
     }
     
-    console.log('[WHL] 🔄 Retomando campanha após navegação URL...');
-    console.log('[WHL] Número atual:', st.currentPhoneNumber);
-    console.log('[WHL] Mensagem:', st.currentMessage?.substring(0, 50));
+    whlLog.info(' 🔄 Retomando campanha após navegação URL...');
+    whlLog.info(' Número atual:', st.currentPhoneNumber);
+    whlLog.info(' Mensagem:', st.currentMessage?.substring(0, 50));
     
     // Aguardar página carregar completamente (aumentado de 4s para 5s)
     await new Promise(r => setTimeout(r, 5000));
@@ -2967,7 +2967,7 @@
     // Verificar se há popup de erro
     const hasError = await checkForErrorPopup();
     if (hasError) {
-      console.log('[WHL] ❌ Número não encontrado no WhatsApp');
+      whlLog.info(' ❌ Número não encontrado no WhatsApp');
       await closeErrorPopup();
       
       // Marcar como falha
@@ -2990,7 +2990,7 @@
     // Verificar se chat abriu
     const chatOpened = await waitForChatToOpen();
     if (!chatOpened) {
-      console.log('[WHL] ❌ Chat não abriu');
+      whlLog.info(' ❌ Chat não abriu');
       
       // Marcar como falha
       const cur = st.queue[st.index];
@@ -3009,7 +3009,7 @@
       return;
     }
     
-    console.log('[WHL] ✅ Chat aberto');
+    whlLog.info(' ✅ Chat aberto');
     
     // Processar envio conforme o tipo
     const cur = st.queue[st.index];
@@ -3017,18 +3017,18 @@
     
     // Se tem imagem, usar fluxo correto: TEXTO PRIMEIRO, DEPOIS IMAGEM
     if (st.imageData) {
-      console.log('[WHL] 📸 Modo TEXTO + IMAGEM');
+      whlLog.info(' 📸 Modo TEXTO + IMAGEM');
       const imageResult = await sendTextWithImage(st.imageData, st.currentMessage);
       success = imageResult && imageResult.ok;
       
       if (success) {
-        console.log('[WHL] ✅ Texto + Imagem enviados');
+        whlLog.info(' ✅ Texto + Imagem enviados');
       } else {
-        console.log('[WHL] ❌ Falha ao enviar texto + imagem');
+        whlLog.info(' ❌ Falha ao enviar texto + imagem');
       }
     } else if (st.currentMessage) {
       // MODO TEXTO: URL abriu o chat, agora digitar e enviar
-      console.log('[WHL] 📝 Modo TEXTO: digitando mensagem...');
+      whlLog.info(' 📝 Modo TEXTO: digitando mensagem...');
       await new Promise(r => setTimeout(r, 2000));
       
       // Obter configuração de typing effect
@@ -3037,19 +3037,19 @@
       // SEMPRE digitar o texto manualmente (não confiar na URL)
       const typed = await typeMessageInField(st.currentMessage, useHumanTyping);
       if (!typed) {
-        console.log('[WHL] ❌ Falha ao digitar texto');
+        whlLog.info(' ❌ Falha ao digitar texto');
         success = false;
       } else {
         await new Promise(r => setTimeout(r, 500));
         
         // Tentar enviar (3 tentativas)
         for (let attempt = 1; attempt <= 3; attempt++) {
-          console.log(`[WHL] Tentativa de envio ${attempt}/3...`);
+          whlLog.debug(`[WHL] Tentativa de envio ${attempt}/3...`);
           
           // Método 1: Clicar no botão de enviar
           const sendBtn = findSendButton();
           if (sendBtn) {
-            console.log('[WHL] ✅ Botão de enviar encontrado');
+            whlLog.info(' ✅ Botão de enviar encontrado');
             sendBtn.click();
             await new Promise(r => setTimeout(r, 1000));
             
@@ -3057,7 +3057,7 @@
             const msgInput = getMessageInputField();
             if (!msgInput || msgInput.textContent.trim().length === 0) {
               success = true;
-              console.log('[WHL] ✅ Mensagem enviada com sucesso!');
+              whlLog.info(' ✅ Mensagem enviada com sucesso!');
               break;
             }
           }
@@ -3072,7 +3072,7 @@
               const checkInput = getMessageInputField();
               if (!checkInput || checkInput.textContent.trim().length === 0) {
                 success = true;
-                console.log('[WHL] ✅ Mensagem enviada via ENTER!');
+                whlLog.info(' ✅ Mensagem enviada via ENTER!');
                 break;
               }
             }
@@ -3083,9 +3083,9 @@
       }
       
       if (success) {
-        console.log('[WHL] ✅ Texto enviado');
+        whlLog.info(' ✅ Texto enviado');
       } else {
-        console.log('[WHL] ❌ Falha ao enviar texto após 3 tentativas');
+        whlLog.info(' ❌ Falha ao enviar texto após 3 tentativas');
       }
     }
     
@@ -3093,11 +3093,11 @@
     if (cur) {
       if (success) {
         cur.status = 'sent';
-        console.log(`[WHL] ✅ Sucesso: ${cur.phone}`);
+        whlLog.debug(`[WHL] ✅ Sucesso: ${cur.phone}`);
       } else {
         cur.status = 'failed';
         cur.errorReason = 'Falha no envio';
-        console.log(`[WHL] ❌ Falha: ${cur.phone}`);
+        whlLog.debug(`[WHL] ❌ Falha: ${cur.phone}`);
       }
     }
     
@@ -3109,7 +3109,7 @@
     // Continuar com próximo após delay
     if (st.index < st.queue.length && st.isRunning) {
       const delay = getRandomDelay(st.delayMin, st.delayMax);
-      console.log(`[WHL] ⏳ Aguardando ${Math.round(delay/1000)}s antes do próximo...`);
+      whlLog.debug(`[WHL] ⏳ Aguardando ${Math.round(delay/1000)}s antes do próximo...`);
       
       campaignInterval = setTimeout(() => {
         processCampaignStepViaDom();
@@ -3119,7 +3119,7 @@
       st.isRunning = false;
       await setState(st);
       await render();
-      console.log('[WHL] 🎉 Campanha finalizada!');
+      whlLog.info(' 🎉 Campanha finalizada!');
     }
   }
 
@@ -3132,7 +3132,7 @@
    * Este é o método TESTADO e CONFIRMADO FUNCIONANDO pelo usuário
    */
   async function sendMessageViaInput(phone, text) {
-    console.log(`[WHL] 📨 Enviando via Input + Enter para: ${phone}`);
+    whlLog.debug(`[WHL] 📨 Enviando via Input + Enter para: ${phone}`);
     
     // Verificar se já está no chat correto
     const currentUrl = window.location.href;
@@ -3140,7 +3140,7 @@
     
     if (needsNavigation) {
       // Abrir chat via URL
-      console.log('[WHL] 🔗 Abrindo chat via URL...');
+      whlLog.info(' 🔗 Abrindo chat via URL...');
       window.location.href = `https://web.whatsapp.com/send?phone=${phone}`;
       
       // Aguardar página carregar e input aparecer
@@ -3152,12 +3152,12 @@
                         document.querySelector('footer [contenteditable="true"]');
           
           if (input) {
-            console.log('[WHL] ✅ Chat aberto, input encontrado');
+            whlLog.info(' ✅ Chat aberto, input encontrado');
             resolve(true);
           } else if (attempts < 60) {
             setTimeout(check, 500);
           } else {
-            console.error('[WHL] ⏱️ Timeout aguardando input');
+            whlLog.error(' ⏱️ Timeout aguardando input');
             resolve(false);
           }
         };
@@ -3174,7 +3174,7 @@
                   document.querySelector('footer [contenteditable="true"]');
     
     if (!input) {
-      console.error('[WHL] ❌ Input não encontrado!');
+      whlLog.error(' ❌ Input não encontrado!');
       return { success: false, error: 'INPUT_NOT_FOUND' };
     }
     
@@ -3223,10 +3223,10 @@
       // Aguardar envio processar
       await new Promise(r => setTimeout(r, 1000));
       
-      console.log('[WHL] ✅ Mensagem enviada via Input + Enter');
+      whlLog.info(' ✅ Mensagem enviada via Input + Enter');
       return { success: true };
     } catch (e) {
-      console.error('[WHL] ❌ Erro ao enviar:', e.message);
+      whlLog.error(' ❌ Erro ao enviar:', e.message);
       return { success: false, error: e.message };
     }
   }
@@ -3277,12 +3277,12 @@
     const st = await getState();
     
     if (!st.isRunning || st.isPaused) {
-      console.log('[WHL] Campanha parada ou pausada');
+      whlLog.info(' Campanha parada ou pausada');
       return;
     }
     
     if (st.index >= st.queue.length) {
-      console.log('[WHL] 🎉 Campanha finalizada!');
+      whlLog.info(' 🎉 Campanha finalizada!');
       st.isRunning = false;
       await setState(st);
       await render();
@@ -3293,7 +3293,7 @@
     
     // Pular números inválidos
     if (cur && cur.valid === false) {
-      console.log('[WHL] ⚠️ Número inválido, pulando:', cur.phone);
+      whlLog.info(' ⚠️ Número inválido, pulando:', cur.phone);
       cur.status = 'failed';
       cur.errorReason = 'Número inválido';
       st.index++;
@@ -3329,7 +3329,7 @@
       return;
     }
     
-    console.log(`[WHL] 📨 Enviando via API validada: ${st.index + 1}/${st.queue.length} - ${cur.phone}`);
+    whlLog.debug(`[WHL] 📨 Enviando via API validada: ${st.index + 1}/${st.queue.length} - ${cur.phone}`);
     cur.status = 'opened';
     await setState(st);
     await render();
@@ -3347,7 +3347,7 @@
     
     if (st.imageData) {
       // CORREÇÃO BUG 2: Quando há imagem, usar a nova função que abre o chat primeiro
-      console.log('[WHL] 📸 Enviando imagem para número específico (via WHL_SEND_IMAGE_TO_NUMBER)...');
+      whlLog.info(' 📸 Enviando imagem para número específico (via WHL_SEND_IMAGE_TO_NUMBER)...');
       window.postMessage({
         type: 'WHL_SEND_IMAGE_TO_NUMBER',  // CORREÇÃO BUG 2: Novo tipo que abre chat correto
         phone: cur.phone,
@@ -3359,7 +3359,7 @@
       // Só texto - usar API direta
       // Enviar texto via API interna (método validado - resultado: {messageSendResult: 'OK'})
       // NÃO precisa abrir chat - a função cria/abre automaticamente
-      console.log('[WHL] 💬 Enviando texto via API interna...');
+      whlLog.info(' 💬 Enviando texto via API interna...');
       window.postMessage({
         type: 'WHL_SEND_MESSAGE_API',
         phone: cur.phone,
@@ -3389,12 +3389,12 @@
     const st = await getState();
     
     if (!st.isRunning || st.isPaused) {
-      console.log('[WHL] Campanha parada ou pausada');
+      whlLog.info(' Campanha parada ou pausada');
       return;
     }
     
     if (st.index >= st.queue.length) {
-      console.log('[WHL] 🎉 Campanha finalizada!');
+      whlLog.info(' 🎉 Campanha finalizada!');
       st.isRunning = false;
       await setState(st);
       await render();
@@ -3405,7 +3405,7 @@
     
     // Pular números inválidos
     if (cur && cur.valid === false) {
-      console.log('[WHL] ⚠️ Número inválido, pulando:', cur.phone);
+      whlLog.info(' ⚠️ Número inválido, pulando:', cur.phone);
       cur.status = 'failed';
       cur.errorReason = 'Número inválido';
       st.index++;
@@ -3441,7 +3441,7 @@
       return;
     }
     
-    console.log(`[WHL] 📨 Enviando via Input + Enter: ${st.index + 1}/${st.queue.length} - ${cur.phone}`);
+    whlLog.debug(`[WHL] 📨 Enviando via Input + Enter: ${st.index + 1}/${st.queue.length} - ${cur.phone}`);
     cur.status = 'opened';
     await setState(st);
     await render();
@@ -3451,13 +3451,13 @@
     
     if (result.success) {
       // Sucesso!
-      console.log('[WHL] ✅ Mensagem enviada com sucesso para', cur.phone);
+      whlLog.info(' ✅ Mensagem enviada com sucesso para', cur.phone);
       cur.status = 'sent';
       st.stats.sent++;
       st.stats.pending--;
     } else {
       // Falha
-      console.log('[WHL] ❌ Falha ao enviar para', cur.phone, ':', result.error);
+      whlLog.info(' ❌ Falha ao enviar para', cur.phone, ':', result.error);
       cur.status = 'failed';
       cur.errorReason = result.error;
       st.stats.failed++;
@@ -3471,14 +3471,14 @@
     // Continuar campanha após delay
     if (st.isRunning && !st.isPaused && st.index < st.queue.length) {
       const delay = getRandomDelay(st.delayMin, st.delayMax);
-      console.log(`[WHL] ⏳ Aguardando ${(delay/1000).toFixed(1)}s antes do próximo envio...`);
+      whlLog.debug(`[WHL] ⏳ Aguardando ${(delay/1000).toFixed(1)}s antes do próximo envio...`);
       setTimeout(() => processCampaignStepViaInput(), delay);
     } else if (st.index >= st.queue.length) {
       // Campanha finalizada
       st.isRunning = false;
       await setState(st);
       await render();
-      console.log('[WHL] 🎉 Campanha finalizada!');
+      whlLog.info(' 🎉 Campanha finalizada!');
     }
   }
   
@@ -3506,7 +3506,7 @@
       
       // CORREÇÃO CRÍTICA: Validar requestId para evitar processar resultado de envio antigo
       if (cur && cur.requestId && e.data.requestId && cur.requestId !== e.data.requestId) {
-        console.warn('[WHL] ⚠️ RequestId não corresponde - ignorando resultado antigo', {
+        whlLog.warn(' ⚠️ RequestId não corresponde - ignorando resultado antigo', {
           expected: cur.requestId,
           received: e.data.requestId,
           currentPhone: cur.phone
@@ -3517,7 +3517,7 @@
       if (cur) {
         if (e.data.success) {
           // NOVO: Aguardar confirmação visual antes de avançar
-          console.log('[WHL] 📤 Mensagem enviada, aguardando confirmação visual...');
+          whlLog.info(' 📤 Mensagem enviada, aguardando confirmação visual...');
           cur.status = 'confirming';
           await setState(st);
           await render();
@@ -3531,7 +3531,7 @@
           }, '*');
         } else {
           // Falha - verificar retry
-          console.log('[WHL] ❌ Falha ao enviar texto via API para', cur.phone, ':', e.data.error);
+          whlLog.info(' ❌ Falha ao enviar texto via API para', cur.phone, ':', e.data.error);
           cur.retries = (cur.retries || 0) + 1;
           
           if (cur.retries >= (st.retryMax || 0)) {
@@ -3545,7 +3545,7 @@
             
             // Se não continuar em erros, parar campanha
             if (!st.continueOnError) {
-              console.log('[WHL] ⚠️ Parando campanha devido a erro');
+              whlLog.info(' ⚠️ Parando campanha devido a erro');
               st.isRunning = false;
               await setState(st);
               await render();
@@ -3554,7 +3554,7 @@
           } else {
             // Ainda pode tentar novamente
             cur.retryPending = true;
-            console.log(`[WHL] 🔄 Tentando novamente (${cur.retries}/${st.retryMax})...`);
+            whlLog.debug(`[WHL] 🔄 Tentando novamente (${cur.retries}/${st.retryMax})...`);
           }
         }
         
@@ -3566,11 +3566,11 @@
         if (!e.data.success && st.isRunning && !st.isPaused) {
           if (st.index < st.queue.length) {
             const delay = getRandomDelay(st.delayMin, st.delayMax);
-            console.log(`[WHL] ⏳ Aguardando ${(delay/1000).toFixed(1)}s antes do próximo envio...`);
+            whlLog.debug(`[WHL] ⏳ Aguardando ${(delay/1000).toFixed(1)}s antes do próximo envio...`);
             setTimeout(() => processCampaignStepDirect(), delay);
           } else {
             // Campanha finalizada
-            console.log('[WHL] 🎉 Campanha finalizada!');
+            whlLog.info(' 🎉 Campanha finalizada!');
             st.isRunning = false;
             await setState(st);
             await render();
@@ -3590,7 +3590,7 @@
       
       // CORREÇÃO CRÍTICA: Validar requestId para evitar processar resultado de envio antigo
       if (cur && cur.requestId && e.data.requestId && cur.requestId !== e.data.requestId) {
-        console.warn('[WHL] ⚠️ RequestId não corresponde - ignorando resultado antigo de imagem', {
+        whlLog.warn(' ⚠️ RequestId não corresponde - ignorando resultado antigo de imagem', {
           expected: cur.requestId,
           received: e.data.requestId,
           currentPhone: cur.phone
@@ -3601,7 +3601,7 @@
       if (cur) {
         if (e.data.success) {
           // NOVO: Aguardar confirmação visual antes de avançar (para imagens também)
-          console.log('[WHL] 📸 Imagem enviada, aguardando confirmação visual...');
+          whlLog.info(' 📸 Imagem enviada, aguardando confirmação visual...');
           cur.status = 'confirming';
           await setState(st);
           await render();
@@ -3618,7 +3618,7 @@
           }, '*');
         } else {
           // Falha - verificar retry
-          console.log('[WHL] ❌ Falha ao enviar imagem via DOM para', cur.phone, ':', e.data.error);
+          whlLog.info(' ❌ Falha ao enviar imagem via DOM para', cur.phone, ':', e.data.error);
           cur.retries = (cur.retries || 0) + 1;
           
           if (cur.retries >= (st.retryMax || 0)) {
@@ -3632,7 +3632,7 @@
             
             // Se não continuar em erros, parar campanha
             if (!st.continueOnError) {
-              console.log('[WHL] ⚠️ Parando campanha devido a erro');
+              whlLog.info(' ⚠️ Parando campanha devido a erro');
               st.isRunning = false;
               await setState(st);
               await render();
@@ -3641,7 +3641,7 @@
           } else {
             // Ainda pode tentar novamente
             cur.retryPending = true;
-            console.log(`[WHL] 🔄 Tentando novamente (${cur.retries}/${st.retryMax})...`);
+            whlLog.debug(`[WHL] 🔄 Tentando novamente (${cur.retries}/${st.retryMax})...`);
           }
         }
         
@@ -3653,11 +3653,11 @@
         if (!e.data.success && st.isRunning && !st.isPaused) {
           if (st.index < st.queue.length) {
             const delay = getRandomDelay(st.delayMin, st.delayMax);
-            console.log(`[WHL] ⏳ Aguardando ${(delay/1000).toFixed(1)}s antes do próximo envio...`);
+            whlLog.debug(`[WHL] ⏳ Aguardando ${(delay/1000).toFixed(1)}s antes do próximo envio...`);
             setTimeout(() => processCampaignStepDirect(), delay);
           } else {
             // Campanha finalizada
-            console.log('[WHL] 🎉 Campanha finalizada!');
+            whlLog.info(' 🎉 Campanha finalizada!');
             st.isRunning = false;
             await setState(st);
             await render();
@@ -3677,7 +3677,7 @@
       
       // CORREÇÃO CRÍTICA: Validar requestId para evitar processar resultado de envio antigo
       if (cur && cur.requestId && e.data.requestId && cur.requestId !== e.data.requestId) {
-        console.warn('[WHL] ⚠️ RequestId não corresponde - ignorando resultado antigo de imagem específica', {
+        whlLog.warn(' ⚠️ RequestId não corresponde - ignorando resultado antigo de imagem específica', {
           expected: cur.requestId,
           received: e.data.requestId,
           currentPhone: cur.phone
@@ -3688,7 +3688,7 @@
       if (cur) {
         if (e.data.success) {
           // NOVO: Aguardar confirmação visual antes de avançar
-          console.log('[WHL] 📸 Imagem enviada para número específico, aguardando confirmação visual...');
+          whlLog.info(' 📸 Imagem enviada para número específico, aguardando confirmação visual...');
           cur.status = 'confirming';
           await setState(st);
           await render();
@@ -3705,7 +3705,7 @@
           }, '*');
         } else {
           // Falha - verificar retry
-          console.log('[WHL] ❌ Falha ao enviar imagem para número', cur.phone, ':', e.data.error);
+          whlLog.info(' ❌ Falha ao enviar imagem para número', cur.phone, ':', e.data.error);
           cur.retries = (cur.retries || 0) + 1;
           
           if (cur.retries >= (st.retryMax || 0)) {
@@ -3719,7 +3719,7 @@
             
             // Se não continuar em erros, parar campanha
             if (!st.continueOnError) {
-              console.log('[WHL] ⚠️ Parando campanha devido a erro');
+              whlLog.info(' ⚠️ Parando campanha devido a erro');
               st.isRunning = false;
               await setState(st);
               await render();
@@ -3728,7 +3728,7 @@
           } else {
             // Ainda pode tentar novamente
             cur.retryPending = true;
-            console.log(`[WHL] 🔄 Tentando novamente (${cur.retries}/${st.retryMax})...`);
+            whlLog.debug(`[WHL] 🔄 Tentando novamente (${cur.retries}/${st.retryMax})...`);
           }
         }
         
@@ -3739,11 +3739,11 @@
         if (!e.data.success && st.isRunning && !st.isPaused) {
           if (st.index < st.queue.length) {
             const delay = getRandomDelay(st.delayMin, st.delayMax);
-            console.log(`[WHL] ⏳ Aguardando ${(delay/1000).toFixed(1)}s antes do próximo envio...`);
+            whlLog.debug(`[WHL] ⏳ Aguardando ${(delay/1000).toFixed(1)}s antes do próximo envio...`);
             setTimeout(() => processCampaignStepDirect(), delay);
           } else {
             // Campanha finalizada
-            console.log('[WHL] 🎉 Campanha finalizada!');
+            whlLog.info(' 🎉 Campanha finalizada!');
             st.isRunning = false;
             await setState(st);
             await render();
@@ -3763,11 +3763,11 @@
       // CORREÇÃO ISSUE 01: Sempre avançar quando API retornou sucesso
       // Confiar na API mesmo sem confirmação visual
       if (e.data.confirmed) {
-        console.log('[WHL] ✅ Confirmação visual OK!');
+        whlLog.info(' ✅ Confirmação visual OK!');
         cur.status = 'sent';
       } else {
         // FALLBACK: Mesmo sem confirmação, marcar como enviado se API retornou sucesso
-        console.warn('[WHL] ⚠️ Sem confirmação visual, mas API retornou sucesso. Avançando...');
+        whlLog.warn(' ⚠️ Sem confirmação visual, mas API retornou sucesso. Avançando...');
         cur.status = 'sent'; // Confiar na API
       }
       
@@ -3781,10 +3781,10 @@
       // Continuar para próximo
       if (st.isRunning && !st.isPaused && st.index < st.queue.length) {
         const delay = getRandomDelay(st.delayMin, st.delayMax);
-        console.log(`[WHL] ⏳ Aguardando ${(delay/1000).toFixed(1)}s antes do próximo envio...`);
+        whlLog.debug(`[WHL] ⏳ Aguardando ${(delay/1000).toFixed(1)}s antes do próximo envio...`);
         setTimeout(() => processCampaignStepDirect(), delay);
       } else if (st.index >= st.queue.length) {
-        console.log('[WHL] 🎉 Campanha finalizada!');
+        whlLog.info(' 🎉 Campanha finalizada!');
         st.isRunning = false;
         await setState(st);
         await render();
@@ -3803,7 +3803,7 @@
       if (cur && cur.phone === e.data.phone) {
         if (e.data.success) {
           // Sucesso!
-          console.log('[WHL] ✅ Mensagem enviada com sucesso via API para', e.data.phone);
+          whlLog.info(' ✅ Mensagem enviada com sucesso via API para', e.data.phone);
           cur.status = 'sent';
           cur.retries = cur.retries || 0;
           st.stats.sent++;
@@ -3811,7 +3811,7 @@
           st.index++;
         } else {
           // Falha - verificar retry
-          console.log('[WHL] ❌ Falha ao enviar via API para', e.data.phone, ':', e.data.error);
+          whlLog.info(' ❌ Falha ao enviar via API para', e.data.phone, ':', e.data.error);
           cur.retries = (cur.retries || 0) + 1;
           
           if (cur.retries >= (st.retryMax || 0)) {
@@ -3825,7 +3825,7 @@
             
             // Se não continuar em erros, parar campanha
             if (!st.continueOnError) {
-              console.log('[WHL] ⚠️ Parando campanha devido a erro');
+              whlLog.info(' ⚠️ Parando campanha devido a erro');
               st.isRunning = false;
               await setState(st);
               await render();
@@ -3834,7 +3834,7 @@
           } else {
             // Ainda pode tentar novamente
             cur.retryPending = true;
-            console.log(`[WHL] 🔄 Tentando novamente (${cur.retries}/${st.retryMax})...`);
+            whlLog.debug(`[WHL] 🔄 Tentando novamente (${cur.retries}/${st.retryMax})...`);
           }
         }
         
@@ -3844,21 +3844,21 @@
         // Continuar campanha após delay
         if (st.isRunning && !st.isPaused && st.index < st.queue.length) {
           const delay = getRandomDelay(st.delayMin, st.delayMax);
-          console.log(`[WHL] ⏳ Aguardando ${(delay/1000).toFixed(1)}s antes do próximo envio...`);
+          whlLog.debug(`[WHL] ⏳ Aguardando ${(delay/1000).toFixed(1)}s antes do próximo envio...`);
           setTimeout(() => processCampaignStepDirect(), delay);
         } else if (st.index >= st.queue.length) {
           // Campanha finalizada
           st.isRunning = false;
           await setState(st);
           await render();
-          console.log('[WHL] 🎉 Campanha finalizada!');
+          whlLog.info(' 🎉 Campanha finalizada!');
         }
       }
     }
     
     // Resultado de extração direta
     if (type === 'WHL_EXTRACT_ALL_RESULT') {
-      console.log('[WHL] ✅ Extração via API concluída:', e.data);
+      whlLog.info(' ✅ Extração via API concluída:', e.data);
       
       // Atualizar campos de extração
       const normalBox = document.getElementById('whlExtractedNumbers');
@@ -3894,7 +3894,7 @@
     }
     
     if (type === 'WHL_EXTRACT_ALL_ERROR') {
-      console.error('[WHL] ❌ Erro na extração via API:', e.data.error);
+      whlLog.error(' ❌ Erro na extração via API:', e.data.error);
       const statusEl = document.getElementById('whlExtractStatus');
       if (statusEl) {
         statusEl.textContent = `❌ Erro: ${e.data.error}`;
@@ -3907,12 +3907,12 @@
     const st = await getState();
     
     if (!st.isRunning || st.isPaused) {
-      console.log('[WHL] Campanha parada ou pausada');
+      whlLog.info(' Campanha parada ou pausada');
       return;
     }
     
     if (st.index >= st.queue.length) {
-      console.log('[WHL] 🎉 Campanha finalizada!');
+      whlLog.info(' 🎉 Campanha finalizada!');
       st.isRunning = false;
       await setState(st);
       await render();
@@ -3923,7 +3923,7 @@
     
     // Pular números inválidos
     if (cur && cur.valid === false) {
-      console.log('[WHL] ⚠️ Número inválido, pulando:', cur.phone);
+      whlLog.info(' ⚠️ Número inválido, pulando:', cur.phone);
       cur.status = 'failed';
       st.index++;
       await setState(st);
@@ -3956,7 +3956,7 @@
       return;
     }
     
-    console.log(`[WHL] Processando ${st.index + 1}/${st.queue.length}: ${cur.phone}`);
+    whlLog.debug(`[WHL] Processando ${st.index + 1}/${st.queue.length}: ${cur.phone}`);
     cur.status = 'opened';
     await setState(st);
     await render();
@@ -4051,7 +4051,7 @@
     }
 
     if (st.isRunning) {
-      console.log('[WHL] Campaign already running');
+      whlLog.info(' Campaign already running');
       return;
     }
 
@@ -4062,7 +4062,7 @@
       
       // Validate the date
       if (isNaN(scheduledTime.getTime())) {
-        console.error('[WHL] Invalid schedule date:', st.scheduleAt);
+        whlLog.error(' Invalid schedule date:', st.scheduleAt);
         alert('⚠️ Data de agendamento inválida. Por favor, defina uma data válida.');
         return;
       }
@@ -4071,8 +4071,8 @@
         const delayMs = scheduledTime - now;
         const delayMinutes = Math.round(delayMs / 60000);
         
-        console.log(`[WHL] 📅 Campanha agendada para ${scheduledTime.toLocaleString('pt-BR')}`);
-        console.log(`[WHL] ⏰ Aguardando ${delayMinutes} minutos...`);
+        whlLog.debug(`[WHL] 📅 Campanha agendada para ${scheduledTime.toLocaleString('pt-BR')}`);
+        whlLog.debug(`[WHL] ⏰ Aguardando ${delayMinutes} minutos...`);
         
         alert(`✅ Campanha agendada!\nInício: ${scheduledTime.toLocaleString('pt-BR')}\nAguardando ${delayMinutes} minutos...`);
         
@@ -4089,7 +4089,7 @@
         
         return;
       } else {
-        console.log('[WHL] ⚠️ Horário agendado já passou, iniciando imediatamente');
+        whlLog.info(' ⚠️ Horário agendado já passou, iniciando imediatamente');
       }
     }
     
@@ -4146,9 +4146,9 @@
       }
     }, (response) => {
       if (response?.success) {
-        console.log('[WHL] Campaign started via Hidden Worker');
+        whlLog.info(' Campaign started via Hidden Worker');
       } else {
-        console.error('[WHL] Failed to start campaign via worker:', response?.error);
+        whlLog.error(' Failed to start campaign via worker:', response?.error);
         alert('Erro ao iniciar campanha via worker. Tente novamente.');
       }
     });
@@ -4156,19 +4156,19 @@
   */
 
   async function pauseCampaign() {
-    console.log('[WHL] 🔸 Botão PAUSAR clicado');
+    whlLog.info(' 🔸 Botão PAUSAR clicado');
     const st = await getState();
     
     if (st.isPaused) {
       // Retomar
-      console.log('[WHL] ▶️ Retomando campanha...');
+      whlLog.info(' ▶️ Retomando campanha...');
       st.isPaused = false;
       await setState(st);
       await render();
       
       // DISABLED: Worker mode não funciona
       if (st.useWorker) {
-        console.log('[WHL] ⚠️ Worker mode disabled - usando Input + Enter');
+        whlLog.info(' ⚠️ Worker mode disabled - usando Input + Enter');
         // Don't use worker
       }
       
@@ -4185,14 +4185,14 @@
       }
     } else {
       // Pausar
-      console.log('[WHL] ⏸️ Pausando campanha...');
+      whlLog.info(' ⏸️ Pausando campanha...');
       st.isPaused = true;
       await setState(st);
       await render();
       
       // DISABLED: Worker mode não funciona
       if (st.useWorker) {
-        console.log('[WHL] ⚠️ Worker mode disabled');
+        whlLog.info(' ⚠️ Worker mode disabled');
         // Don't use worker
       }
       
@@ -4213,7 +4213,7 @@
 
     // DISABLED: Worker mode não funciona
     if (st.useWorker) {
-      console.log('[WHL] ⚠️ Worker mode disabled');
+      whlLog.info(' ⚠️ Worker mode disabled');
       // Don't use worker
     }
 
@@ -4226,10 +4226,10 @@
     if (scheduledCampaignTimeout) {
       clearTimeout(scheduledCampaignTimeout);
       scheduledCampaignTimeout = null;
-      console.log('[WHL] Scheduled campaign cancelled');
+      whlLog.info(' Scheduled campaign cancelled');
     }
 
-    console.log('[WHL] Campaign stopped');
+    whlLog.info(' Campaign stopped');
   }
 
   // ===== RENDER & UI =====
@@ -4475,7 +4475,7 @@
         timeEl.textContent = `${hh}:${mm}`;
       }
     } catch (e) {
-      console.error('[WHL] Erro ao atualizar preview:', e);
+      whlLog.error(' Erro ao atualizar preview:', e);
     }
   }
 
@@ -4706,7 +4706,7 @@ try {
       const blockedCount = blockedContacts.length;
       const totalCount = normalCount + archivedCount + blockedCount;
       
-      console.log('[WHL] Extração instantânea - Normais:', normalCount, 'Arquivados:', archivedCount, 'Bloqueados:', blockedCount);
+      whlLog.info(' Extração instantânea - Normais:', normalCount, 'Arquivados:', archivedCount, 'Bloqueados:', blockedCount);
       
       // Preencher caixas de texto
       const normalBox = document.getElementById('whlExtractedNumbers');
@@ -4727,9 +4727,9 @@ try {
       if (normalCountEl) {
         normalCountEl.textContent = normalCount;
         normalCountEl.innerText = normalCount; // Fallback
-        console.log('[WHL] ✅ Contador normais atualizado:', normalCount);
+        whlLog.info(' ✅ Contador normais atualizado:', normalCount);
       } else {
-        console.error('[WHL] ❌ Elemento contador normais não encontrado!');
+        whlLog.error(' ❌ Elemento contador normais não encontrado!');
       }
       
       const archivedCountEl = document.getElementById('whlArchivedCount') ||
@@ -4738,9 +4738,9 @@ try {
       if (archivedCountEl) {
         archivedCountEl.textContent = archivedCount;
         archivedCountEl.innerText = archivedCount;
-        console.log('[WHL] ✅ Contador arquivados atualizado:', archivedCount);
+        whlLog.info(' ✅ Contador arquivados atualizado:', archivedCount);
       } else {
-        console.error('[WHL] ❌ Elemento contador arquivados não encontrado!');
+        whlLog.error(' ❌ Elemento contador arquivados não encontrado!');
       }
       
       const blockedCountEl = document.getElementById('whlBlockedCount') ||
@@ -4749,9 +4749,9 @@ try {
       if (blockedCountEl) {
         blockedCountEl.textContent = blockedCount;
         blockedCountEl.innerText = blockedCount;
-        console.log('[WHL] ✅ Contador bloqueados atualizado:', blockedCount);
+        whlLog.info(' ✅ Contador bloqueados atualizado:', blockedCount);
       } else {
-        console.error('[WHL] ❌ Elemento contador bloqueados não encontrado!');
+        whlLog.error(' ❌ Elemento contador bloqueados não encontrado!');
       }
       
       // Restaurar botão
@@ -4812,11 +4812,11 @@ try {
       const blockedCount = document.getElementById('whlBlockedCount');
       if (blockedCount) blockedCount.textContent = (blocked || []).length;
       
-      console.log(`[WHL] Arquivados: ${archived?.length || 0}, Bloqueados: ${blocked?.length || 0}`);
+      whlLog.debug(`[WHL] Arquivados: ${archived?.length || 0}, Bloqueados: ${blocked?.length || 0}`);
     }
 
     if (e.data.type === 'WHL_EXTRACT_ERROR') {
-      console.error('[WHL] Erro no extrator:', e.data.error);
+      whlLog.error(' Erro no extrator:', e.data.error);
       alert('Erro ao extrair contatos');
       
       isExtracting = false;
@@ -4877,7 +4877,7 @@ try {
           statusEl.textContent = `✅ ${total} números copiados (${normal.length} normais, ${archived.length} arquivados, ${blocked.length} bloqueados)`;
         }
       } catch (err) {
-        console.error('[WHL] Erro ao copiar:', err);
+        whlLog.error(' Erro ao copiar:', err);
         alert('Erro ao copiar números para área de transferência');
       }
     });
@@ -4903,7 +4903,7 @@ try {
           btnCopyNormal.textContent = originalText;
         }, 2000);
       } catch (err) {
-        console.error('[WHL] Erro ao copiar:', err);
+        whlLog.error(' Erro ao copiar:', err);
         alert('Erro ao copiar números');
       }
     });
@@ -4929,7 +4929,7 @@ try {
           btnCopyArchived.textContent = originalText;
         }, 2000);
       } catch (err) {
-        console.error('[WHL] Erro ao copiar:', err);
+        whlLog.error(' Erro ao copiar:', err);
         alert('Erro ao copiar números');
       }
     });
@@ -4955,7 +4955,7 @@ try {
           btnCopyBlocked.textContent = originalText;
         }, 2000);
       } catch (err) {
-        console.error('[WHL] Erro ao copiar:', err);
+        whlLog.error(' Erro ao copiar:', err);
         alert('Erro ao copiar números');
       }
     });
@@ -4969,7 +4969,7 @@ try {
     });
   }
 } catch(e) {
-  console.error('[WHL] Falha ao bindar extrator no painel', e);
+  whlLog.error(' Falha ao bindar extrator no painel', e);
 }
 
 // ===== WHL: Bind Grupos (Groups) Tab =====
@@ -5032,7 +5032,7 @@ try {
           btnCopyGroupMembers.textContent = originalText;
         }, 2000);
       } catch (err) {
-        console.error('[WHL] Erro ao copiar:', err);
+        whlLog.error(' Erro ao copiar:', err);
         alert('Erro ao copiar números');
       }
     });
@@ -5061,9 +5061,9 @@ try {
           btnCopyGroupId.textContent = originalText;
         }, 2000);
         
-        console.log(`[WHL] ID do grupo "${groupName}" copiado: ${groupId}`);
+        whlLog.debug(`[WHL] ID do grupo "${groupName}" copiado: ${groupId}`);
       } catch (err) {
-        console.error('[WHL] Erro ao copiar ID do grupo:', err);
+        whlLog.error(' Erro ao copiar ID do grupo:', err);
         alert('Erro ao copiar ID do grupo');
       }
     });
@@ -5091,7 +5091,7 @@ try {
     });
   }
 } catch(e) {
-  console.error('[WHL] Falha ao bindar grupos no painel', e);
+  whlLog.error(' Falha ao bindar grupos no painel', e);
 }
 
 // ===== WHL: Message Listeners para Store Bridge =====
@@ -5171,7 +5171,7 @@ window.addEventListener('message', (e) => {
   // CORREÇÃO BUG 3: Handler para resultado de extração de membros (API e DOM)
   // PR #76 ULTRA: Handler com estatísticas detalhadas
   if (e.data.type === 'WHL_GROUP_MEMBERS_RESULT' || e.data.type === 'WHL_EXTRACT_GROUP_MEMBERS_RESULT') {
-    console.log('[WHL] 📨 Resultado ULTRA recebido:', e.data);
+    whlLog.info(' 📨 Resultado ULTRA recebido:', e.data);
     
     const btnExtractMembers = document.getElementById('whlExtractGroupMembers');
     const membersBox = document.getElementById('whlGroupMembersNumbers');
@@ -5185,25 +5185,25 @@ window.addEventListener('message', (e) => {
     if (e.data.success || e.data.members) {
       let members = e.data.members || [];
       
-      console.log('[WHL] 📊 Membros recebidos da API:', members);
-      console.log('[WHL] 📊 Tipo:', typeof members, 'Comprimento:', members.length);
+      whlLog.info(' 📊 Membros recebidos da API:', members);
+      whlLog.info(' 📊 Tipo:', typeof members, 'Comprimento:', members.length);
       
       // VALIDAÇÃO FINAL: Filtrar LIDs
       const validMembers = members.filter(num => {
         if (String(num).includes(':') || String(num).includes('@lid')) {
-          console.warn('[WHL] ❌ LID rejeitado:', num);
+          whlLog.warn(' ❌ LID rejeitado:', num);
           return false;
         }
         const clean = String(num).replace(/\D/g, '');
         const isValid = /^\d{10,15}$/.test(clean);
         if (!isValid) {
-          console.warn('[WHL] ❌ Número inválido rejeitado:', num, 'clean:', clean);
+          whlLog.warn(' ❌ Número inválido rejeitado:', num, 'clean:', clean);
         }
         return isValid;
       });
       
-      console.log('[WHL] ✅ Números válidos:', validMembers.length);
-      console.log('[WHL] ✅ Números válidos lista:', validMembers);
+      whlLog.info(' ✅ Números válidos:', validMembers.length);
+      whlLog.info(' ✅ Números válidos lista:', validMembers);
       
       if (membersBox) membersBox.value = validMembers.join('\n');
       if (membersCount) membersCount.textContent = validMembers.length;
@@ -5230,7 +5230,7 @@ window.addEventListener('message', (e) => {
         alert(`✅ ${validMembers.length} membros extraídos!`);
       }
     } else {
-      console.error('[WHL] ❌ Erro na extração:', e.data);
+      whlLog.error(' ❌ Erro na extração:', e.data);
       alert('❌ Erro: ' + (e.data.error || 'Desconhecido'));
     }
   }
@@ -5260,10 +5260,10 @@ window.addEventListener('message', (e) => {
       }
       
       alert(`✅ ${phoneNumbers.length} membros extraídos do grupo "${groupName}"!`);
-      console.log('[WHL] Membros extraídos:', contacts);
+      whlLog.info(' Membros extraídos:', contacts);
     } else {
       alert('❌ Erro ao extrair membros: ' + (error || 'Erro desconhecido'));
-      console.error('[WHL] Erro na extração:', error);
+      whlLog.error(' Erro na extração:', error);
     }
   }
   
@@ -5294,12 +5294,12 @@ window.addEventListener('message', (e) => {
     const extractStatus = document.getElementById('whlExtractStatus');
     
     if (e.data.success) {
-      console.log('[WHL] Extração instantânea bem-sucedida:', e.data.contacts?.length, 'contatos');
+      whlLog.info(' Extração instantânea bem-sucedida:', e.data.contacts?.length, 'contatos');
       if (extractStatus) {
         extractStatus.textContent = `✅ ${e.data.contacts?.length || 0} contatos extraídos via ${e.data.method}`;
       }
     } else {
-      console.log('[WHL] Extração instantânea falhou:', e.data.error);
+      whlLog.info(' Extração instantânea falhou:', e.data.error);
       if (extractStatus) {
         extractStatus.textContent = `⚠️ Método instantâneo falhou: ${e.data.error}`;
       }
@@ -5333,7 +5333,7 @@ window.addEventListener('message', (e) => {
       if (archivedCount) archivedCount.textContent = e.data.archived?.length || 0;
       if (blockedCount) blockedCount.textContent = e.data.blocked?.length || 0;
       
-      console.log('[WHL] Extração completa instantânea:', {
+      whlLog.info(' Extração completa instantânea:', {
         normal: e.data.contacts?.length || 0,
         archived: e.data.archived?.length || 0,
         blocked: e.data.blocked?.length || 0,
@@ -5372,7 +5372,7 @@ window.addEventListener('message', (e) => {
         groupsList.appendChild(opt);
       });
       
-      console.log(`[WHL] ${groups.length} grupos carregados`);
+      whlLog.debug(`[WHL] ${groups.length} grupos carregados`);
       alert(`✅ ${groups.length} grupos carregados!`);
     } else if (!e.data.success) {
       alert('Erro ao carregar grupos: ' + (e.data.error || 'Desconhecido'));
@@ -5450,7 +5450,7 @@ window.addEventListener('message', (e) => {
       }
     }
     
-    console.log('[WHL Recover] Nova mensagem recuperada:', e.data.message?.body?.substring(0, 50));
+    whlLog.debug('[WHL Recover] Nova mensagem recuperada:', e.data.message?.body?.substring(0, 50));
   }
   
   // CORREÇÃO BUG 4: Histórico completo de recover
@@ -5522,7 +5522,7 @@ window.addEventListener('message', (e) => {
       }
     }
     
-    console.log('[WHL Recover] Histórico carregado:', e.data.total, 'mensagens');
+    whlLog.debug('[WHL Recover] Histórico carregado:', e.data.total, 'mensagens');
   }
   
   // Histórico limpo
@@ -5542,7 +5542,7 @@ window.addEventListener('message', (e) => {
       recoverHistory.innerHTML = '<div class="muted" style="text-align:center;padding:20px">Nenhuma mensagem recuperada ainda...</div>';
     }
     
-    console.log('[WHL Recover] Histórico limpo');
+    whlLog.debug('[WHL Recover] Histórico limpo');
   }
 });
 
@@ -5582,7 +5582,7 @@ try {
           return;
         }
       } catch (e) {
-        console.error('[WHL] Erro ao validar histórico:', e);
+        whlLog.error(' Erro ao validar histórico:', e);
         alert('❌ Erro ao validar histórico de mensagens.\n\nO formato está corrompido.');
         return;
       }
@@ -5609,7 +5609,7 @@ try {
     });
   }
 } catch(e) {
-  console.error('[WHL] Falha ao bindar recover no painel', e);
+  whlLog.error(' Falha ao bindar recover no painel', e);
 }
 
 // persist typing
@@ -5641,7 +5641,7 @@ try {
           // Only auto-build if there are numbers and a message
           if (st.numbersText.trim() && st.message.trim()) {
             e.preventDefault(); // Prevent default new line behavior only when triggering action
-            console.log('[WHL] 📨 Enter pressionado - gerando tabela automaticamente');
+            whlLog.info(' 📨 Enter pressionado - gerando tabela automaticamente');
             // Trigger build queue
             const buildBtn = document.getElementById('whlBuild');
             if (buildBtn) {
@@ -6126,14 +6126,14 @@ try {
     }
     
     if (msg?.action === 'WORKER_STATUS_UPDATE') {
-      console.log('[WHL] Worker status:', msg.status);
+      whlLog.info(' Worker status:', msg.status);
       if (msg.status === 'QR_CODE_REQUIRED') {
         alert('⚠️ A aba worker precisa escanear o QR Code do WhatsApp.');
       }
     }
     
     if (msg?.action === 'WORKER_ERROR') {
-      console.error('[WHL] Worker error:', msg.error);
+      whlLog.error(' Worker error:', msg.error);
       alert('❌ Erro no worker: ' + msg.error);
     }
   });
@@ -6161,7 +6161,7 @@ try {
     // Check and resume campaign if needed (for URL navigation)
     await checkAndResumeCampaignAfterURLNavigation();
     
-    console.log('[WHL] Extension initialized');
+    whlLog.info(' Extension initialized');
   })();
 
 
@@ -6170,10 +6170,10 @@ try {
   function getAttachButton() {
     const btn = document.querySelector('[aria-label="Anexar"]');
     if (btn) {
-      console.log('[WHL] ✅ Botão de anexar encontrado');
+      whlLog.info(' ✅ Botão de anexar encontrado');
       return btn;
     }
-    console.log('[WHL] ❌ Botão de anexar não encontrado');
+    whlLog.info(' ❌ Botão de anexar não encontrado');
     return null;
   }
 
@@ -6186,7 +6186,7 @@ try {
 
   // ===== IMAGE AUTO SEND (FROM ORIGINAL) =====
   async function sendImage(imageData, captionText, useTypingEffect) {
-    console.log('[WHL] 📸 Sending image');
+    whlLog.info(' 📸 Sending image');
     let captionApplied = false;
 
     try {
@@ -6200,7 +6200,7 @@ try {
       // Find attach button
       const attachBtn = getAttachButton();
       if (!attachBtn) {
-        console.log('[WHL] ❌ Attach button not found');
+        whlLog.info(' ❌ Attach button not found');
         return { ok: false, captionApplied };
       }
 
@@ -6211,7 +6211,7 @@ try {
       // Find image input
       const imageInput = getImageInput();
       if (!imageInput) {
-        console.log('[WHL] ❌ Image input not found');
+        whlLog.info(' ❌ Image input not found');
         return { ok: false, captionApplied };
       }
 
@@ -6223,7 +6223,7 @@ try {
       // Trigger change event
       imageInput.dispatchEvent(new Event('change', { bubbles: true }));
 
-      console.log('[WHL] ✅ Image attached, waiting for preview');
+      whlLog.info(' ✅ Image attached, waiting for preview');
       await new Promise(r => setTimeout(r, 1300));
 
       const cap = String(captionText || '').trim();
@@ -6298,10 +6298,10 @@ try {
           }
 
           captionApplied = true;
-          console.log('[WHL] ✅ Caption typed in preview');
+          whlLog.info(' ✅ Caption typed in preview');
           await new Promise(r => setTimeout(r, 250));
         } else {
-          console.log('[WHL] ⚠️ Caption box not found; will try sending text after media');
+          whlLog.info(' ⚠️ Caption box not found; will try sending text after media');
         }
       }
 
@@ -6310,14 +6310,14 @@ try {
 
       if (sendBtn) {
         sendBtn.click();
-        console.log('[WHL] ✅ Image sent');
+        whlLog.info(' ✅ Image sent');
         return { ok: true, captionApplied };
       } else {
-        console.log('[WHL] ❌ Send button not found in preview');
+        whlLog.info(' ❌ Send button not found in preview');
         return { ok: false, captionApplied };
       }
     } catch (error) {
-      console.error('[WHL] ❌ Error sending image:', error);
+      whlLog.error(' ❌ Error sending image:', error);
       return { ok: false, captionApplied: false };
     }
   }
@@ -6333,7 +6333,7 @@ try {
         return;
       }
       
-      console.log('[WHL] 🔄 Convertendo WebP para JPEG...');
+      whlLog.info(' 🔄 Convertendo WebP para JPEG...');
       
       const img = new Image();
       const canvas = document.createElement('canvas');
@@ -6349,13 +6349,13 @@ try {
             type: 'image/jpeg',
             lastModified: Date.now()
           });
-          console.log('[WHL] ✅ WebP convertido para JPEG');
+          whlLog.info(' ✅ WebP convertido para JPEG');
           resolve(newFile);
         }, 'image/jpeg', 0.92);
       };
       
       img.onerror = () => {
-        console.log('[WHL] ❌ Erro ao converter WebP, usando original');
+        whlLog.info(' ❌ Erro ao converter WebP, usando original');
         resolve(file);
       };
       
@@ -6369,7 +6369,7 @@ try {
    * NOTA: Esta função é mantida como fallback. Use sendTextWithImage() ao invés desta.
    */
   async function sendImageWithCaption(imageData, captionText) {
-    console.log('[WHL] 📸 Iniciando envio de imagem...');
+    whlLog.info(' 📸 Iniciando envio de imagem...');
 
     try {
       // Converter base64 para blob
@@ -6380,12 +6380,12 @@ try {
       // 1. Clicar no botão de anexar
       const attachBtn = document.querySelector('[aria-label="Anexar"]');
       if (!attachBtn) {
-        console.log('[WHL] ❌ Botão de anexar não encontrado');
+        whlLog.info(' ❌ Botão de anexar não encontrado');
         return { ok: false };
       }
 
       attachBtn.click();
-      console.log('[WHL] ✅ Botão de anexar clicado');
+      whlLog.info(' ✅ Botão de anexar clicado');
       await new Promise(r => setTimeout(r, 1000));
 
       // 2. Clicar no botão "Fotos e vídeos" (não sticker!)
@@ -6400,7 +6400,7 @@ try {
       
       if (photoVideoBtn) {
         photoVideoBtn.click();
-        console.log('[WHL] ✅ Botão "Fotos e vídeos" clicado');
+        whlLog.info(' ✅ Botão "Fotos e vídeos" clicado');
         await new Promise(r => setTimeout(r, 800));
       }
 
@@ -6413,7 +6413,7 @@ try {
       }) || imageInputs[0];
       
       if (!imageInput) {
-        console.log('[WHL] ❌ Input de imagem não encontrado');
+        whlLog.info(' ❌ Input de imagem não encontrado');
         return { ok: false };
       }
 
@@ -6423,7 +6423,7 @@ try {
       imageInput.files = dataTransfer.files;
       imageInput.dispatchEvent(new Event('change', { bubbles: true }));
       
-      console.log('[WHL] ✅ Imagem anexada, aguardando preview...');
+      whlLog.info(' ✅ Imagem anexada, aguardando preview...');
       await new Promise(r => setTimeout(r, 2000));
       
       // 5. Verificar se preview abriu (com retries)
@@ -6438,12 +6438,12 @@ try {
       }
       
       if (!previewOpened) {
-        console.log('[WHL] ⚠️ Preview não abriu, tentando continuar...');
+        whlLog.info(' ⚠️ Preview não abriu, tentando continuar...');
       }
 
       // 6. Digitar legenda se houver
       if (captionText && captionText.trim()) {
-        console.log('[WHL] ⌨️ Digitando legenda...');
+        whlLog.info(' ⌨️ Digitando legenda...');
         
         // Procurar campo de legenda no dialog
         const captionSelectors = [
@@ -6490,15 +6490,15 @@ try {
             }
           }
           captionBox.dispatchEvent(new Event('input', { bubbles: true }));
-          console.log('[WHL] ✅ Legenda digitada (com quebras preservadas)');
+          whlLog.info(' ✅ Legenda digitada (com quebras preservadas)');
           await new Promise(r => setTimeout(r, 500));
         } else {
-          console.log('[WHL] ⚠️ Campo de legenda não encontrado');
+          whlLog.info(' ⚠️ Campo de legenda não encontrado');
         }
       }
 
       // 7. Clicar no botão de enviar (com múltiplos fallbacks)
-      console.log('[WHL] 📤 Enviando...');
+      whlLog.info(' 📤 Enviando...');
       await new Promise(r => setTimeout(r, 500));
       
       // Procurar botão no dialog
@@ -6531,16 +6531,16 @@ try {
       
       if (sendBtn) {
         sendBtn.click();
-        console.log('[WHL] ✅ Botão de enviar clicado');
+        whlLog.info(' ✅ Botão de enviar clicado');
         await new Promise(r => setTimeout(r, 2000));
         return { ok: true };
       }
       
-      console.log('[WHL] ❌ Botão de enviar não encontrado');
+      whlLog.info(' ❌ Botão de enviar não encontrado');
       return { ok: false };
 
     } catch (error) {
-      console.error('[WHL] ❌ Erro ao enviar imagem:', error);
+      whlLog.error(' ❌ Erro ao enviar imagem:', error);
       return { ok: false };
     }
   }
@@ -6552,21 +6552,21 @@ try {
    * ATUALIZADO: Melhora detecção do botão correto de "Fotos e vídeos"
    */
   async function sendTextWithImage(imageData, messageText) {
-    console.log('[WHL] 📸 Enviando FOTO (não sticker)...');
-    console.log('[WHL] Texto:', messageText?.substring(0, 50) + '...');
+    whlLog.info(' 📸 Enviando FOTO (não sticker)...');
+    whlLog.info(' Texto:', messageText?.substring(0, 50) + '...');
 
     try {
       // PASSO 1: Digitar o texto PRIMEIRO (se houver)
       if (messageText && messageText.trim()) {
-        console.log('[WHL] ⌨️ PASSO 1: Digitando texto primeiro...');
+        whlLog.info(' ⌨️ PASSO 1: Digitando texto primeiro...');
         const st = await getState();
         const useHumanTyping = st.typingEffect !== false;
         const typed = await typeMessageInField(messageText, useHumanTyping);
         if (!typed) {
-          console.log('[WHL] ❌ Falha ao digitar texto');
+          whlLog.info(' ❌ Falha ao digitar texto');
           return { ok: false };
         }
-        console.log('[WHL] ✅ Texto digitado');
+        whlLog.info(' ✅ Texto digitado');
         await new Promise(r => setTimeout(r, 500));
       }
 
@@ -6584,7 +6584,7 @@ try {
         extension = 'gif';
       } else if (mimeType.includes('webp')) {
         // IMPORTANTE: WebP pode ser enviado como sticker - converter para JPEG
-        console.log('[WHL] ⚠️ Imagem webp detectada, convertendo para JPEG...');
+        whlLog.info(' ⚠️ Imagem webp detectada, convertendo para JPEG...');
         extension = 'webp';
       }
       
@@ -6597,17 +6597,17 @@ try {
       // Converter WebP para JPEG para evitar ser enviado como sticker
       if (mimeType.includes('webp')) {
         file = await convertWebPtoJPEG(file);
-        console.log('[WHL] ✅ Arquivo convertido:', file.type, file.name);
+        whlLog.info(' ✅ Arquivo convertido:', file.type, file.name);
       }
 
-      console.log('[WHL] 📷 Arquivo preparado:', {
+      whlLog.info(' 📷 Arquivo preparado:', {
         tipo: mimeType,
         tamanho: `${(blob.size / 1024).toFixed(1)} KB`,
         nome: file.name
       });
 
       // PASSO 3: Clicar no botão de anexar (ícone de clipe)
-      console.log('[WHL] 📎 PASSO 2: Clicando no botão de anexar...');
+      whlLog.info(' 📎 PASSO 2: Clicando no botão de anexar...');
       
       const attachBtn = document.querySelector('[data-testid="attach-clip"]') ||
                         document.querySelector('[data-testid="clip"]') ||
@@ -6617,18 +6617,18 @@ try {
                         document.querySelector('[title="Anexar"]');
       
       if (!attachBtn) {
-        console.log('[WHL] ❌ Botão de anexar não encontrado');
+        whlLog.info(' ❌ Botão de anexar não encontrado');
         return { ok: false };
       }
 
       attachBtn.click();
-      console.log('[WHL] ✅ Botão de anexar clicado');
+      whlLog.info(' ✅ Botão de anexar clicado');
       await new Promise(r => setTimeout(r, 1000));
 
       // PASSO 4: CRÍTICO - Clicar especificamente em "Fotos e vídeos"
       // O menu de anexar tem várias opções: Documento, Câmera, Sticker, Fotos e vídeos
       // Precisamos clicar em "Fotos e vídeos" para enviar como FOTO
-      console.log('[WHL] 🖼️ PASSO 3: Procurando "Fotos e vídeos"...');
+      whlLog.info(' 🖼️ PASSO 3: Procurando "Fotos e vídeos"...');
       
       // Método 1: Procurar por data-testid específico
       let photosBtn = document.querySelector('[data-testid="attach-image"]') ||
@@ -6644,7 +6644,7 @@ try {
           if ((label.includes('foto') || label.includes('photo') || label.includes('vídeo') || label.includes('video') || label.includes('mídia') || label.includes('media') || label.includes('imagem') || label.includes('image')) && 
               !label.includes('figurinha') && !label.includes('sticker') && !label.includes('adesivo')) {
             photosBtn = item;
-            console.log('[WHL] ✅ Encontrou opção de mídia:', label);
+            whlLog.info(' ✅ Encontrou opção de mídia:', label);
             break;
           }
         }
@@ -6659,7 +6659,7 @@ try {
           if (iconName.includes('gallery') || iconName.includes('image') || iconName.includes('photo') || iconName.includes('attach-image')) {
             photosBtn = icon.closest('li') || icon.closest('button') || icon.closest('div[role="button"]');
             if (photosBtn) {
-              console.log('[WHL] ✅ Encontrou ícone de mídia:', iconName);
+              whlLog.info(' ✅ Encontrou ícone de mídia:', iconName);
               break;
             }
           }
@@ -6668,35 +6668,35 @@ try {
       
       if (photosBtn) {
         photosBtn.click();
-        console.log('[WHL] ✅ Clicou em Fotos e vídeos');
+        whlLog.info(' ✅ Clicou em Fotos e vídeos');
         await new Promise(r => setTimeout(r, 800));
       } else {
-        console.log('[WHL] ⚠️ Opção "Fotos e vídeos" não encontrada, tentando input direto');
+        whlLog.info(' ⚠️ Opção "Fotos e vídeos" não encontrada, tentando input direto');
       }
 
       // PASSO 5: Encontrar o input CORRETO (NÃO o de sticker)
-      console.log('[WHL] 📁 PASSO 4: Procurando input de fotos...');
+      whlLog.info(' 📁 PASSO 4: Procurando input de fotos...');
       
       let imageInput = null;
       const allInputs = document.querySelectorAll('input[type="file"]');
       
-      console.log('[WHL] Inputs encontrados:', allInputs.length);
+      whlLog.info(' Inputs encontrados:', allInputs.length);
       
       // Prioridade 1: Input com accept que inclui image/* ou video/*
       for (const input of allInputs) {
         const accept = input.getAttribute('accept') || '';
-        console.log('[WHL] Analisando input:', accept);
+        whlLog.info(' Analisando input:', accept);
         
         // EVITAR input de sticker (apenas image/webp)
         if (accept === 'image/webp') {
-          console.log('[WHL] ⚠️ Ignorando input de sticker:', accept);
+          whlLog.info(' ⚠️ Ignorando input de sticker:', accept);
           continue;
         }
         
         // Preferir input que aceita múltiplos tipos de imagem ou vídeo
         if (accept.includes('image/') && (accept.includes(',') || accept.includes('video'))) {
           imageInput = input;
-          console.log('[WHL] ✅ Input de fotos/vídeos encontrado:', accept);
+          whlLog.info(' ✅ Input de fotos/vídeos encontrado:', accept);
           break;
         }
       }
@@ -6707,7 +6707,7 @@ try {
           const accept = input.getAttribute('accept') || '';
           if (accept.includes('image') && accept !== 'image/webp') {
             imageInput = input;
-            console.log('[WHL] ✅ Input de imagem encontrado (fallback 1):', accept);
+            whlLog.info(' ✅ Input de imagem encontrado (fallback 1):', accept);
             break;
           }
         }
@@ -6719,7 +6719,7 @@ try {
           const accept = input.getAttribute('accept') || '';
           if (accept === '*' || accept === '*/*' || accept.includes('*')) {
             imageInput = input;
-            console.log('[WHL] ✅ Input genérico encontrado:', accept);
+            whlLog.info(' ✅ Input genérico encontrado:', accept);
             break;
           }
         }
@@ -6732,25 +6732,25 @@ try {
           const accept = input.getAttribute('accept') || '';
           if (accept !== 'image/webp') {
             imageInput = input;
-            console.log('[WHL] ⚠️ Usando input disponível:', accept);
+            whlLog.info(' ⚠️ Usando input disponível:', accept);
             break;
           }
         }
       }
       
       if (!imageInput) {
-        console.log('[WHL] ❌ Nenhum input de imagem adequado encontrado');
+        whlLog.info(' ❌ Nenhum input de imagem adequado encontrado');
         return { ok: false };
       }
 
       // PASSO 6: Anexar arquivo
-      console.log('[WHL] 📎 Anexando imagem ao input...');
+      whlLog.info(' 📎 Anexando imagem ao input...');
       const dataTransfer = new DataTransfer();
       dataTransfer.items.add(file);
       imageInput.files = dataTransfer.files;
       imageInput.dispatchEvent(new Event('change', { bubbles: true }));
       
-      console.log('[WHL] ✅ Imagem anexada, aguardando preview...');
+      whlLog.info(' ✅ Imagem anexada, aguardando preview...');
       // Aumentar delay para aguardar preview abrir (mínimo 1500ms conforme spec)
       await new Promise(r => setTimeout(r, 2000));
       
@@ -6761,22 +6761,22 @@ try {
         const dialog = document.querySelector('[role="dialog"]');
         if (dialog) {
           previewFound = true;
-          console.log('[WHL] ✅ Preview detectado');
+          whlLog.info(' ✅ Preview detectado');
           break;
         }
-        console.log(`[WHL] ⏳ Aguardando preview... tentativa ${retries + 1}/5`);
+        whlLog.debug(`[WHL] ⏳ Aguardando preview... tentativa ${retries + 1}/5`);
         await new Promise(r => setTimeout(r, 1000));
         retries++;
       }
       
       if (!previewFound) {
-        console.log('[WHL] ⚠️ Preview não detectado após 5 segundos, continuando...');
+        whlLog.info(' ⚠️ Preview não detectado após 5 segundos, continuando...');
       }
       
       // PASSO 6.5: Digitar legenda no campo correto (se houver texto que ainda não foi enviado)
       // Verificar se há campo de legenda no preview
       if (messageText && messageText.trim()) {
-        console.log('[WHL] 📝 Verificando campo de legenda no preview...');
+        whlLog.info(' 📝 Verificando campo de legenda no preview...');
         
         const captionSelectors = [
           'div[aria-label*="legenda"][contenteditable="true"]',
@@ -6794,13 +6794,13 @@ try {
           // Evitar campo de mensagem principal (data-tab="3")
           if (el && el.getAttribute('data-tab') !== '3') {
             captionBox = el;
-            console.log('[WHL] ✅ Campo de legenda encontrado:', sel);
+            whlLog.info(' ✅ Campo de legenda encontrado:', sel);
             break;
           }
         }
         
         if (captionBox) {
-          console.log('[WHL] ⌨️ Digitando legenda no preview...');
+          whlLog.info(' ⌨️ Digitando legenda no preview...');
           captionBox.focus();
           await new Promise(r => setTimeout(r, 200));
           
@@ -6833,15 +6833,15 @@ try {
           captionBox.dispatchEvent(new Event('input', { bubbles: true }));
           captionBox.dispatchEvent(new Event('change', { bubbles: true }));
           
-          console.log('[WHL] ✅ Legenda digitada no preview (com quebras preservadas)');
+          whlLog.info(' ✅ Legenda digitada no preview (com quebras preservadas)');
           await new Promise(r => setTimeout(r, 500));
         } else {
-          console.log('[WHL] ℹ️ Campo de legenda não encontrado (texto será enviado separadamente)');
+          whlLog.info(' ℹ️ Campo de legenda não encontrado (texto será enviado separadamente)');
         }
       }
 
       // PASSO 7: Enviar a imagem
-      console.log('[WHL] 📤 PASSO 5: Enviando IMAGEM...');
+      whlLog.info(' 📤 PASSO 5: Enviando IMAGEM...');
       
       // Procurar botão de enviar no dialog/preview com múltiplos fallbacks
       let sendBtn = null;
@@ -6884,19 +6884,19 @@ try {
       
       if (sendBtn) {
         sendBtn.click();
-        console.log('[WHL] ✅ IMAGEM enviada!');
+        whlLog.info(' ✅ IMAGEM enviada!');
       } else {
-        console.log('[WHL] ❌ Botão de enviar não encontrado para imagem');
+        whlLog.info(' ❌ Botão de enviar não encontrado para imagem');
         return { ok: false };
       }
 
       // PASSO 8: Aguardar dialog fechar e enviar texto (se houver)
-      console.log('[WHL] ⏳ Aguardando dialog fechar...');
+      whlLog.info(' ⏳ Aguardando dialog fechar...');
       
       for (let i = 0; i < 20; i++) {
         const dialogStillOpen = document.querySelector('[role="dialog"]');
         if (!dialogStillOpen) {
-          console.log('[WHL] ✅ Dialog fechou');
+          whlLog.info(' ✅ Dialog fechou');
           break;
         }
         await new Promise(r => setTimeout(r, 300));
@@ -6907,7 +6907,7 @@ try {
       // Verificar se ainda tem texto no campo de mensagem
       const msgField = getMessageInputField();
       if (msgField && msgField.textContent.trim().length > 0) {
-        console.log('[WHL] 📤 PASSO 6: Enviando TEXTO...');
+        whlLog.info(' 📤 PASSO 6: Enviando TEXTO...');
         
         const textSendBtn = document.querySelector('footer [aria-label="Enviar"]') ||
                             document.querySelector('[data-testid="send"]') ||
@@ -6915,20 +6915,20 @@ try {
         
         if (textSendBtn) {
           textSendBtn.click();
-          console.log('[WHL] ✅ TEXTO enviado!');
+          whlLog.info(' ✅ TEXTO enviado!');
           await new Promise(r => setTimeout(r, 1500));
         } else {
           await sendEnterKey(msgField);
-          console.log('[WHL] ✅ ENTER enviado para texto');
+          whlLog.info(' ✅ ENTER enviado para texto');
           await new Promise(r => setTimeout(r, 1500));
         }
       }
 
-      console.log('[WHL] ✅ Texto + Foto enviados com sucesso!');
+      whlLog.info(' ✅ Texto + Foto enviados com sucesso!');
       return { ok: true };
 
     } catch (error) {
-      console.error('[WHL] ❌ Erro:', error);
+      whlLog.error(' ❌ Erro:', error);
       return { ok: false };
     }
   }
@@ -6939,7 +6939,7 @@ try {
    * CORRIGIDO: Melhor suporte para WhatsApp Web moderno com fallback confiável
    */
   async function sendImageWithEnter(imageData) {
-    console.log('[WHL] 📸 Enviando imagem - iniciando processo');
+    whlLog.info(' 📸 Enviando imagem - iniciando processo');
 
     try {
       // Convert base64 to blob
@@ -6955,11 +6955,11 @@ try {
                         document.querySelector('span[data-icon="attach-menu-plus"]')?.closest('button');
       
       if (!attachBtn) {
-        console.log('[WHL] ❌ Botão de anexar não encontrado');
+        whlLog.info(' ❌ Botão de anexar não encontrado');
         return { ok: false };
       }
 
-      console.log('[WHL] ✅ Botão de anexar encontrado');
+      whlLog.info(' ✅ Botão de anexar encontrado');
       attachBtn.click();
       await new Promise(r => setTimeout(r, 1000));
 
@@ -6973,11 +6973,11 @@ try {
       }
       
       if (!imageInput) {
-        console.log('[WHL] ❌ Input de imagem não encontrado após 2s');
+        whlLog.info(' ❌ Input de imagem não encontrado após 2s');
         return { ok: false };
       }
 
-      console.log('[WHL] ✅ Input de imagem encontrado');
+      whlLog.info(' ✅ Input de imagem encontrado');
 
       // 3. Anexar arquivo
       const dataTransfer = new DataTransfer();
@@ -6985,7 +6985,7 @@ try {
       imageInput.files = dataTransfer.files;
       imageInput.dispatchEvent(new Event('change', { bubbles: true }));
       
-      console.log('[WHL] ✅ Imagem anexada, aguardando preview...');
+      whlLog.info(' ✅ Imagem anexada, aguardando preview...');
       await new Promise(r => setTimeout(r, 2500));
 
       // 4. Verificar se há campo de legenda
@@ -7007,11 +7007,11 @@ try {
         }
       }
       
-      console.log('[WHL] Campo de legenda encontrado:', !!captionBox);
+      whlLog.info(' Campo de legenda encontrado:', !!captionBox);
 
       // 5. MÉTODO CONFIÁVEL: Usar botão de enviar diretamente
       // WhatsApp Web moderno funciona melhor com clique no botão
-      console.log('[WHL] 📤 Procurando botão de enviar...');
+      whlLog.info(' 📤 Procurando botão de enviar...');
       
       // Esperar o botão de enviar aparecer
       let sendBtn = null;
@@ -7022,7 +7022,7 @@ try {
       }
       
       if (sendBtn) {
-        console.log('[WHL] ✅ Botão de enviar encontrado - clicando');
+        whlLog.info(' ✅ Botão de enviar encontrado - clicando');
         sendBtn.click();
         await new Promise(r => setTimeout(r, 1500));
         
@@ -7032,16 +7032,16 @@ try {
                                  document.querySelector('div[aria-label*="legenda"][contenteditable]');
         
         if (!previewStillOpen) {
-          console.log('[WHL] ✅ Preview fechou - imagem enviada com sucesso!');
+          whlLog.info(' ✅ Preview fechou - imagem enviada com sucesso!');
           return { ok: true };
         }
         
-        console.log('[WHL] ✅ Imagem enviada (botão)');
+        whlLog.info(' ✅ Imagem enviada (botão)');
         return { ok: true };
       }
       
       // FALLBACK: Tentar via ENTER se botão não funcionar
-      console.log('[WHL] ⚠️ Botão não encontrado, tentando via ENTER...');
+      whlLog.info(' ⚠️ Botão não encontrado, tentando via ENTER...');
       
       const focusTarget = captionBox || 
                           document.querySelector('[data-testid="media-caption-input"]') ||
@@ -7070,22 +7070,22 @@ try {
           await new Promise(r => setTimeout(r, 50));
         }
         
-        console.log('[WHL] ✅ ENTER enviado');
+        whlLog.info(' ✅ ENTER enviado');
         await new Promise(r => setTimeout(r, 2000));
         
         // Verificar se funcionou
         const previewGone = !document.querySelector('[role="dialog"]');
         if (previewGone) {
-          console.log('[WHL] ✅ Preview fechou - imagem enviada via ENTER!');
+          whlLog.info(' ✅ Preview fechou - imagem enviada via ENTER!');
           return { ok: true };
         }
       }
       
-      console.log('[WHL] ⚠️ Assumindo envio bem-sucedido');
+      whlLog.info(' ⚠️ Assumindo envio bem-sucedido');
       return { ok: true };
 
     } catch (error) {
-      console.error('[WHL] ❌ Erro ao enviar imagem:', error);
+      whlLog.error(' ❌ Erro ao enviar imagem:', error);
       return { ok: false };
     }
   }
@@ -7116,11 +7116,11 @@ try {
       if (archCnt) archCnt.textContent = archived.length;
       if (blkCnt) blkCnt.textContent = blocked.length;
       
-      console.log(`[WHL] Arquivados: ${archived.length}, Bloqueados: ${blocked.length}`);
+      whlLog.debug(`[WHL] Arquivados: ${archived.length}, Bloqueados: ${blocked.length}`);
     }
 
     if (e.data?.type === 'WHL_ARCHIVED_BLOCKED_ERROR') {
-      console.error('[WHL] Erro arquivados/bloqueados:', e.data.error);
+      whlLog.error(' Erro arquivados/bloqueados:', e.data.error);
     }
   });
 
@@ -7135,7 +7135,7 @@ try {
       try {
         chrome.storage.local.set({ recoveredList });
       } catch(err) {
-        console.warn('[WHL] Erro ao salvar recoveredList:', err);
+        whlLog.warn(' Erro ao salvar recoveredList:', err);
       }
 
       // Atualizar contador
@@ -7151,7 +7151,7 @@ try {
         history.prepend(row);
       }
       
-      console.log(`[WHL Recover] Nova mensagem recuperada, total: ${recoveredList.length}`);
+      whlLog.debug(`[WHL Recover] Nova mensagem recuperada, total: ${recoveredList.length}`);
     }
   });
 
@@ -7159,7 +7159,7 @@ try {
   window.addEventListener('message', (e) => {
     if (e.data?.type === 'WHL_EXTRACT_INSTANT_RESULT') {
       const numbers = e.data.numbers || [];
-      console.log(`[WHL] Extração instantânea: ${numbers.length} números`);
+      whlLog.debug(`[WHL] Extração instantânea: ${numbers.length} números`);
       
       // Adicionar ao HarvesterStore se existir
       if (window.HarvesterStore) {
@@ -7172,13 +7172,13 @@ try {
   window.addEventListener('message', (e) => {
     if (e.data?.type === 'WHL_GROUPS_RESULT') {
       const groups = e.data.groups || [];
-      console.log(`[WHL] ${groups.length} grupos carregados`);
+      whlLog.debug(`[WHL] ${groups.length} grupos carregados`);
       // updateGroupsUI(groups) - implementar quando UI estiver disponível
     }
     
     if (e.data?.type === 'WHL_GROUP_MEMBERS_RESULT') {
       const { groupId, members } = e.data;
-      console.log(`[WHL] Grupo ${groupId}: ${members.length} membros`);
+      whlLog.debug(`[WHL] Grupo ${groupId}: ${members.length} membros`);
       // Adicionar membros à lista de extração se necessário
       if (window.HarvesterStore && members) {
         members.forEach(m => HarvesterStore.processPhone(m, HarvesterStore.ORIGINS.GROUP));
@@ -7199,7 +7199,7 @@ try {
     window.postMessage({ type: 'WHL_LOAD_GROUPS' }, '*');
   };
 
-  console.log('[WHL] Event listeners registrados');
+  whlLog.info(' Event listeners registrados');
 })();
 
 
@@ -7211,10 +7211,10 @@ try {
 
     const s = document.createElement('script');
     s.src = chrome.runtime.getURL('content/extractor.contacts.js');
-    s.onload = () => console.log('[WHL] Extractor script injetado');
+    s.onload = () => whlLog.info(' Extractor script injetado');
     (document.head || document.documentElement).appendChild(s);
   } catch(e) {
-    console.error('[WHL] Falha ao carregar extrator', e);
+    whlLog.error(' Falha ao carregar extrator', e);
   }
 })();
 

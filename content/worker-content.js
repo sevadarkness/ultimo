@@ -1,6 +1,6 @@
 // content/worker-content.js
-// WhatsApp Group Contact Extractor
-// FINAL — headless + cache + fallback + LID fix
+// Extrator de Contatos de Grupos do WhatsApp
+// FINAL — headless + cache + fallback + correção LID
 // COMPATÍVEL COM TODOS OS BUILDS (loadParticipants opcional)
 
 (() => {
@@ -9,6 +9,18 @@
   // Evita dupla injeção
   if (window.__WA_GROUP_EXTRACTOR_LOADED__) return;
   window.__WA_GROUP_EXTRACTOR_LOADED__ = true;
+
+  /* ===============================
+     LOGGING
+  =============================== */
+
+  const WHL_DEBUG = typeof localStorage !== 'undefined' && localStorage.getItem('whl_debug') === 'true';
+  const whlLog = {
+    debug: (...args) => { if (WHL_DEBUG) console.log('[WHL DEBUG]', ...args); },
+    info: (...args) => { if (WHL_DEBUG) console.log('[WHL]', ...args); },
+    warn: (...args) => console.warn('[WHL]', ...args),
+    error: (...args) => console.error('[WHL]', ...args)
+  };
 
   /* ===============================
      CONFIGURAÇÃO
@@ -60,7 +72,7 @@
         data
       }));
     } catch (e) {
-      console.warn('[WA Group Extractor] Erro ao salvar cache:', e.message);
+      whlLog.warn('Erro ao salvar cache:', e.message);
     }
   }
 
@@ -72,7 +84,7 @@
     try { 
       localStorage.removeItem(key); 
     } catch (e) {
-      console.warn('[WA Group Extractor] Erro ao invalidar cache:', e.message);
+      whlLog.warn('Erro ao invalidar cache:', e.message);
     }
   }
 
@@ -90,7 +102,7 @@
         return require(name);
       }
     } catch (e) {
-      console.warn('[WA Group Extractor] Erro ao executar require:', e.message);
+      whlLog.warn('Erro ao executar require:', e.message);
     }
     return null;
   }
@@ -172,7 +184,7 @@
     try {
       const cached = getCache(GROUP_LIST_CACHE_KEY);
       if (cached && !isExpired(cached, GROUP_LIST_TTL)) {
-        console.log('[WHL] Usando cache de grupos');
+        whlLog.info('Usando cache de grupos');
         return { groups: cached.data, cached: true };
       }
 
@@ -197,11 +209,11 @@
         .sort((a, b) => a.name.localeCompare(b.name));
 
       setCache(GROUP_LIST_CACHE_KEY, groups);
-      console.log('[WHL] Grupos carregados:', groups.length);
+      whlLog.info('Grupos carregados:', groups.length);
       return { groups, cached: false };
 
     } catch (e) {
-      console.error('[WHL] Erro ao listar grupos:', e);
+      whlLog.error('Erro ao listar grupos:', e);
       return { error: e.message };
     }
   }
@@ -247,7 +259,7 @@
         Math.abs(liveCount - cachedCount) > REFRESH_SOFT_LIMIT;
 
       if (!shouldRefresh && cached?.data?.length) {
-        console.log('[WHL] Usando cache de participantes para', groupId);
+        whlLog.info('Usando cache de participantes para', groupId);
         return { contacts: cached.data, cached: true };
       }
 
@@ -271,7 +283,7 @@
         return { error: 'Nenhum participante encontrado.' };
       }
 
-      console.log('[WHL] Total participantes encontrados:', participants.length);
+      whlLog.info('Total participantes encontrados:', participants.length);
 
       // EXTRAÇÃO COM 5 MÉTODOS + CORREÇÃO LID
       const contacts = [];
@@ -337,8 +349,8 @@
 
       const uniqueContacts = uniqueByNumber(contacts);
       
-      console.log('[WHL] Membros com telefone real:', uniqueContacts.length, 'de', participants.length);
-      console.log('[WHL] LIDs encontrados:', lidCount, '| Resolvidos:', resolvedCount);
+      whlLog.info('Membros com telefone real:', uniqueContacts.length, 'de', participants.length);
+      whlLog.info('LIDs encontrados:', lidCount, '| Resolvidos:', resolvedCount);
 
       // Salvar no cache
       setCache(groupPartKey(groupId), uniqueContacts);
@@ -346,7 +358,7 @@
       return { contacts: uniqueContacts, cached: false };
 
     } catch (e) {
-      console.error('[WHL] Erro ao extrair contatos:', e);
+      whlLog.error('Erro ao extrair contatos:', e);
       invalidate(groupPartKey(groupId));
       return { error: e.message };
     }
@@ -357,7 +369,15 @@
   =============================== */
 
   window.addEventListener('beforeunload', () => {
-    invalidate(GROUP_LIST_CACHE_KEY);
+    // Salvar estado atual antes de sair (não invalidar)
+    try {
+      const currentGroups = getCache(GROUP_LIST_CACHE_KEY);
+      if (currentGroups && currentGroups.data) {
+        setCache(GROUP_LIST_CACHE_KEY, currentGroups.data);
+      }
+    } catch (e) {
+      // Silenciar erro no beforeunload
+    }
   });
 
   /* ===============================
@@ -369,7 +389,7 @@
     extractContacts
   };
 
-  console.log('[WHL] Worker Core FINAL inicializado com sucesso!');
+  whlLog.info('Worker Core FINAL inicializado com sucesso!');
 
   /* ===============================
      MESSAGE BRIDGE (MV3 SAFE)
