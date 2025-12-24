@@ -79,9 +79,9 @@
   
   // Performance optimization constants
   const PERFORMANCE_LIMITS = {
-    MAX_RESPONSE_SIZE: 100000,      // Skip network extraction for responses >100KB
-    MAX_WEBSOCKET_SIZE: 50000,      // Skip WebSocket extraction for messages >50KB
-    NETWORK_EXTRACT_THROTTLE: 1000  // Throttle network extraction to once per second
+    MAX_RESPONSE_SIZE: 100 * 1024,      // 100KB - Skip network extraction for large responses
+    MAX_WEBSOCKET_SIZE: 50 * 1024,      // 50KB - Skip WebSocket extraction for large messages
+    NETWORK_EXTRACT_THROTTLE: 1000      // 1 second - Throttle network extraction interval
   };
 
   // Injetar wpp-hooks.js no contexto da página
@@ -1773,14 +1773,16 @@
       processedText = processedText.substring(1);
     }
     
-    // Try to detect and fix ISO-8859-1 to UTF-8 issues
+    // Detect replacement characters indicating encoding issues
     try {
       // If text contains replacement character (�), try to decode as Latin-1
       if (processedText.includes('�')) {
-        console.warn('[WHL] Possível erro de encoding detectado no CSV');
+        whlLog.warn('Possível erro de encoding detectado no CSV - caracteres especiais podem estar corrompidos');
+        // Try to fix common encoding issues
+        processedText = processedText.normalize('NFKD');
       }
     } catch (e) {
-      console.warn('[WHL] Erro ao verificar encoding:', e);
+      whlLog.warn('Erro ao verificar encoding:', e);
     }
     
     const lines = processedText.replace(/\r/g,'').split('\n').filter(l=>l.trim().length);
@@ -2711,12 +2713,12 @@
     
     const isValid = expectedSuffix === chatSuffix;
     
-    console.log('[WHL] Comparação de números:');
-    console.log('[WHL]   Esperado (normalizado):', normalizedExpected);
-    console.log('[WHL]   Chat (normalizado):', normalizedChat);
-    console.log('[WHL]   Sufixo esperado:', expectedSuffix);
-    console.log('[WHL]   Sufixo do chat:', chatSuffix);
-    console.log('[WHL]   Validação:', isValid ? '✅ VÁLIDO' : '❌ INVÁLIDO');
+    whlLog.debug('Comparação de números:');
+    whlLog.debug('  Esperado (normalizado):', normalizedExpected);
+    whlLog.debug('  Chat (normalizado):', normalizedChat);
+    whlLog.debug('  Sufixo esperado:', expectedSuffix);
+    whlLog.debug('  Sufixo do chat:', chatSuffix);
+    whlLog.debug('  Validação:', isValid ? '✅ VÁLIDO' : '❌ INVÁLIDO');
     
     return isValid;
   }
