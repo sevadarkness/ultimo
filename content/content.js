@@ -1404,10 +1404,6 @@
             <div style="display:grid;grid-template-columns:repeat(8,1fr);gap:6px;max-height:200px;overflow-y:auto"></div>
           </div>
           
-          <button id="whlSaveMessage" class="iconbtn primary" style="width:100%; margin-top:8px;">
-            💾 Salvar Mensagem
-          </button>
-
           <div style="margin-top:10px">
             <div class="muted">📸 Selecionar imagem (será enviada automaticamente)</div>
             <div class="row" style="margin-top:6px">
@@ -1417,6 +1413,10 @@
             <input id="whlImage" type="file" accept="image/*" style="display:none" />
             <div class="tiny" id="whlImageHint" style="margin-top:6px"></div>
           </div>
+          
+          <button id="whlSaveMessage" class="iconbtn primary" style="width:100%; margin-top:8px;">
+            💾 Salvar Mensagem
+          </button>
 
           <div class="card" style="margin-top:10px">
             <div class="title" style="font-size:13px">📱 Preview (WhatsApp)</div>
@@ -4110,7 +4110,7 @@
     }
     // Selector health
     const sh = document.getElementById('whlSelectorHealth');
-    if (sh) sh.innerHTML = state.selectorHealth?.ok ? '✅ Seletores OK' : `⚠️ Seletores: ${(state.selectorHealth?.issues||[]).join(', ')}`;
+    if (sh) sh.innerHTML = '';
 
 
     // Update status badge

@@ -65,15 +65,6 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
-  // Help link
-  const helpLink = document.getElementById('helpLink');
-  if (helpLink) {
-    helpLink.onclick = (e) => {
-      e.preventDefault();
-      chrome.tabs.create({ url: 'https://github.com/sevadarkness/ultimo' });
-    };
-  }
-
   // Check status and update UI
   checkStatus();
   
