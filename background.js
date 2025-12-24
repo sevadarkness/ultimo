@@ -2,7 +2,7 @@
 'use strict';
 
 // ===== LOGGING =====
-const WHL_DEBUG = false; // Background script doesn't have access to localStorage at startup
+const WHL_DEBUG = false; // Script de background não tem acesso ao localStorage no início
 const whlLog = {
   debug: (...args) => { if (WHL_DEBUG) console.log('[WHL DEBUG]', ...args); },
   info: (...args) => { if (WHL_DEBUG) console.log('[WHL]', ...args); },
@@ -10,17 +10,17 @@ const whlLog = {
   error: (...args) => console.error('[WHL]', ...args)
 };
 
-// Verify Chrome APIs are available
+// Verificar se as APIs do Chrome estão disponíveis
 if (typeof chrome === 'undefined' || !chrome.runtime) {
     whlLog.error('Chrome APIs not available');
 }
 
-// Global error handler
+// Manipulador global de erros
 self.addEventListener('error', (event) => {
     whlLog.error('Global error:', event.error);
 });
 
-// Unhandled promise rejection handler
+// Manipulador de rejeições de promises não tratadas
 self.addEventListener('unhandledrejection', (event) => {
     whlLog.error('Unhandled promise rejection:', event.reason);
 });
@@ -160,11 +160,11 @@ let campaignState = {
   currentIndex: 0
 };
 
-// Initialize worker state on installation
+// Inicializar estado do worker na instalação
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.get(['workerTabId', 'campaignQueue', 'campaignState'], (data) => {
     if (data.workerTabId) {
-      // Check if the tab still exists
+      // Verificar se a aba ainda existe
       chrome.tabs.get(data.workerTabId, (tab) => {
         if (chrome.runtime.lastError || !tab) {
           workerTabId = null;
@@ -179,16 +179,16 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
-// Enhanced message listener for worker management
+// Ouvinte de mensagens aprimorado para gerenciamento do worker
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
-  // Check if tab is worker
+  // Verificar se a aba é worker
   if (message.action === 'CHECK_IF_WORKER') {
     sendResponse({ isWorker: sender.tab?.id === workerTabId });
     return true;
   }
   
-  // Worker ready
+  // Worker pronto
   if (message.action === 'WORKER_READY') {
     whlLog.info('Worker tab ready');
     if (campaignState.isRunning && !campaignState.isPaused) {
@@ -197,28 +197,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
-  // Worker status update
+  // Atualização de status do worker
   if (message.action === 'WORKER_STATUS') {
     whlLog.info('Worker status:', message.status);
     notifyPopup({ action: 'WORKER_STATUS_UPDATE', status: message.status });
     return true;
   }
   
-  // Worker error
+  // Erro do worker
   if (message.action === 'WORKER_ERROR') {
     whlLog.error('Worker error:', message.error);
     notifyPopup({ action: 'WORKER_ERROR', error: message.error });
     return true;
   }
   
-  // Start campaign via worker
+  // Iniciar campanha via worker
   if (message.action === 'START_CAMPAIGN_WORKER') {
     const { queue, config } = message;
     startCampaign(queue, config).then(sendResponse);
     return true;
   }
   
-  // Pause campaign
+  // Pausar campanha
   if (message.action === 'PAUSE_CAMPAIGN') {
     campaignState.isPaused = true;
     saveCampaignState();
@@ -226,7 +226,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
-  // Resume campaign
+  // Retomar campanha
   if (message.action === 'RESUME_CAMPAIGN') {
     campaignState.isPaused = false;
     saveCampaignState();
@@ -235,7 +235,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
-  // Stop campaign
+  // Parar campanha
   if (message.action === 'STOP_CAMPAIGN') {
     campaignState.isRunning = false;
     campaignState.isPaused = false;
@@ -244,7 +244,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
-  // Get campaign status
+  // Obter status da campanha
   if (message.action === 'GET_CAMPAIGN_STATUS') {
     sendResponse({
       ...campaignState,
@@ -268,7 +268,7 @@ async function startCampaign(queue, config) {
   
   saveCampaignState();
   
-  // Start processing directly
+  // Iniciar processamento diretamente
   processNextInQueue();
   
   return { success: true };
@@ -302,7 +302,7 @@ async function sendMessageToWhatsApp(phone, text, imageData = null) {
     }
 }
 
-// Helper: timeout para evitar travas
+// Auxiliar: timeout para evitar travas
 function withTimeout(promise, ms = 45000) {
   let t;
   const timeout = new Promise((_, rej) => 
@@ -335,7 +335,7 @@ async function processNextInQueue() {
   
   whlLog.info(`Processando ${current.phone} (${campaignState.currentIndex + 1}/${campaignQueue.length})`);
   
-  // Update status to "sending"
+  // Atualizar status para "enviando"
   current.status = 'sending';
   saveCampaignState();
   notifyPopup({ action: 'CAMPAIGN_PROGRESS', current: campaignState.currentIndex, total: campaignQueue.length });

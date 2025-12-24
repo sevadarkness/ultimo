@@ -1,6 +1,6 @@
 // content/worker-content.js
-// WhatsApp Group Contact Extractor
-// FINAL — headless + cache + fallback + LID fix
+// Extrator de Contatos de Grupos do WhatsApp
+// FINAL — headless + cache + fallback + correção LID
 // COMPATÍVEL COM TODOS OS BUILDS (loadParticipants opcional)
 
 (() => {

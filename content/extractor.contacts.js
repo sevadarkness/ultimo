@@ -98,10 +98,10 @@
   // ===== HELPER FUNCTIONS FOR WHATSAPP STORE =====
   function waitForWA() {
     return new Promise(resolve => {
-      // Wait for WHL_Store from bridge (not window.Store directly due to CSP)
+      // Aguardar WHL_Store do bridge (não window.Store diretamente devido ao CSP)
       if (window.WHL_Store) return resolve();
       
-      // Listen for bridge ready event
+      // Escutar evento de bridge pronto
       const handleBridgeReady = () => {
         window.removeEventListener('WHL_STORE_READY', handleBridgeReady);
         resolve();
