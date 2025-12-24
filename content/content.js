@@ -10,7 +10,7 @@
   const isWorkerTab = urlParams.has('whl_worker') || window.location.href.includes('whl_worker=true');
   
   if (isWorkerTab) {
-    console.log('[WHL] This is the worker tab, UI disabled');
+    if (WHL_DEBUG) console.log('[WHL] This is the worker tab, UI disabled');
     // Worker content script will handle this tab
     return;
   }
@@ -1785,7 +1785,7 @@
         hintEl.style.color = '#4ade80';
       }
     } catch (err) {
-      console.error('[WHL] Erro ao exportar CSV:', err);
+      whlLog.error('Erro ao exportar CSV:', err);
       if (hintEl) {
         hintEl.textContent = '❌ Erro ao exportar CSV';
         hintEl.style.color = '#ef4444';
@@ -1832,7 +1832,7 @@
         statusEl.style.color = '#4ade80';
       }
     } catch (err) {
-      console.error('[WHL] Erro ao exportar CSV:', err);
+      whlLog.error('Erro ao exportar CSV:', err);
       if (statusEl) {
         statusEl.textContent = '❌ Erro ao exportar CSV';
         statusEl.style.color = '#ef4444';
@@ -2025,28 +2025,28 @@
    */
   async function typeMessageInField(text, humanLike = true) {
     if (!text || !text.trim()) {
-      console.log('[WHL] ⚠️ Texto vazio, pulando digitação');
+      whlLog.debug('Texto vazio, pulando digitação');
       return true;
     }
     
-    console.log('[WHL] ⌨️ Digitando texto:', text.substring(0, 50) + '...');
-    console.log('[WHL] Modo:', humanLike ? 'Humanizado 🧑' : 'Rápido ⚡');
+    whlLog.debug('Digitando texto:', text.substring(0, 50) + '...');
+    whlLog.debug('Modo:', humanLike ? 'Humanizado 🧑' : 'Rápido ⚡');
     
     // Aguardar campo com mais tentativas
     let msgInput = null;
     for (let i = 0; i < 20; i++) {
       msgInput = getMessageInputField();
       if (msgInput) break;
-      console.log(`[WHL] Aguardando campo... tentativa ${i+1}/20`);
+      whlLog.debug(`Aguardando campo... tentativa ${i+1}/20`);
       await new Promise(r => setTimeout(r, 500));
     }
     
     if (!msgInput) {
-      console.log('[WHL] ❌ Campo de mensagem não encontrado');
+      whlLog.error('Campo de mensagem não encontrado');
       return false;
     }
     
-    console.log('[WHL] ✅ Campo encontrado');
+    whlLog.debug('Campo encontrado');
     
     // Focar
     msgInput.focus();
@@ -2059,7 +2059,7 @@
     
     if (humanLike) {
       // DIGITAÇÃO HUMANIZADA - caractere por caractere com delays variáveis
-      console.log('[WHL] 🧑 Digitando com aspecto humano...');
+      whlLog.debug('Digitando com aspecto humano...');
       
       for (let i = 0; i < text.length; i++) {
         const char = text[i];
@@ -2111,10 +2111,10 @@
         await new Promise(r => setTimeout(r, delay));
       }
       
-      console.log('[WHL] ✅ Digitação humanizada concluída');
+      whlLog.debug('Digitação humanizada concluída');
     } else {
       // DIGITAÇÃO RÁPIDA - processar linha por linha para preservar \n
-      console.log('[WHL] ⚡ Digitação rápida...');
+      whlLog.debug('Digitação rápida...');
       
       // Dividir texto em linhas e processar cada uma
       const lines = text.split('\n');
@@ -2146,7 +2146,7 @@
     await new Promise(r => setTimeout(r, 300));
     
     const ok = msgInput.textContent.trim().length > 0;
-    console.log('[WHL]', ok ? '✅ Texto digitado com sucesso' : '❌ Falha na digitação');
+    whlLog.debug(ok ? 'Texto digitado com sucesso' : 'Falha na digitação');
     return ok;
   }
 
@@ -2187,15 +2187,15 @@
     const cleanNumber = String(numero).replace(/\D/g, '');
     
     if (!cleanNumber) {
-      console.log('[WHL] ❌ Número inválido');
+      whlLog.error('Número inválido');
       return { success: false, error: 'Número inválido' };
     }
     
     // URL APENAS com o número - NUNCA colocar texto na URL
     let url = `https://web.whatsapp.com/send?phone=${cleanNumber}`;
     
-    console.log('[WHL] 🔗 Navegando para:', url);
-    console.log('[WHL] Mensagem será digitada manualmente após chat abrir');
+    whlLog.debug('Navegando para:', url);
+    whlLog.debug('Mensagem será digitada manualmente após chat abrir');
     
     // Salvar estado antes de navegar (para retomar após reload)
     const st = await getState();
@@ -2229,7 +2229,7 @@
     if (okButton) {
       const messageField = getMessageInputField();
       if (!messageField) {
-        console.log('[WHL] ❌ Popup de erro detectado (botão OK sem campo de mensagem)');
+        whlLog.debug('Popup de erro detectado (botão OK sem campo de mensagem)');
         return true;
       }
     }
@@ -2250,7 +2250,7 @@
     if (okButton) {
       okButton.click();
       await new Promise(r => setTimeout(r, 500));
-      console.log('[WHL] ✅ Popup de erro fechado');
+      whlLog.debug('Popup de erro fechado');
       return true;
     }
     return false;
@@ -2261,13 +2261,13 @@
    * ATUALIZADO: Usa getMessageInputField() e lógica de erro corrigida
    */
   async function waitForChatToOpen(timeout = 15000) {
-    console.log('[WHL] Aguardando chat abrir...');
+    whlLog.debug('Aguardando chat abrir...');
     const start = Date.now();
     
     while (Date.now() - start < timeout) {
       const messageField = getMessageInputField();
       if (messageField) {
-        console.log('[WHL] ✅ Chat aberto - campo de mensagem encontrado');
+        whlLog.debug('Chat aberto - campo de mensagem encontrado');
         return true;
       }
       
@@ -2275,14 +2275,14 @@
       const okButton = [...document.querySelectorAll('button')]
         .find(b => b.innerText.trim().toUpperCase() === 'OK');
       if (okButton && !getMessageInputField()) {
-        console.log('[WHL] ❌ Popup de erro detectado');
+        whlLog.debug('Popup de erro detectado');
         return false;
       }
       
       await new Promise(r => setTimeout(r, 500));
     }
     
-    console.log('[WHL] ⚠️ Timeout aguardando chat abrir');
+    whlLog.warn('Timeout aguardando chat abrir');
     return false;
   }
 
@@ -2346,7 +2346,7 @@
     // FALLBACK: Clicar no botão de enviar
     const sendButton = findSendButton();
     if (sendButton) {
-      console.log('[WHL] 🔘 Clicando no botão de enviar (fallback)');
+      whlLog.debug('Clicando no botão de enviar (fallback)');
       sendButton.click();
     }
     
@@ -2359,7 +2359,7 @@
    * Nota: Nome mantido como clickSendButton() por compatibilidade, mas agora usa ENTER
    */
   async function clickSendButton() {
-    console.log('[WHL] 📤 Enviando mensagem via tecla ENTER...');
+    whlLog.debug('Enviando mensagem via tecla ENTER...');
     
     // Aguardar um pouco para garantir que o chat está carregado
     await new Promise(r => setTimeout(r, 500));
@@ -2368,24 +2368,24 @@
     const msgInput = getMessageInputField();
     
     if (msgInput) {
-      console.log('[WHL] ✅ Campo de mensagem encontrado');
+      whlLog.debug('Campo de mensagem encontrado');
       
       // Enviar tecla ENTER usando helper
       await sendEnterKey(msgInput);
-      console.log('[WHL] ✅ Tecla ENTER enviada');
+      whlLog.debug('Tecla ENTER enviada');
       
       // Verificar se mensagem foi enviada
       const checkInput = getMessageInputField();
       if (!checkInput || checkInput.textContent.trim().length === 0) {
-        console.log('[WHL] ✅ Mensagem enviada com sucesso!');
+        whlLog.debug('Mensagem enviada com sucesso!');
         return { success: true };
       }
       
-      console.log('[WHL] ⚠️ Mensagem ainda presente no campo');
+      whlLog.warn('Mensagem ainda presente no campo');
       return { success: true, warning: 'Não foi possível verificar se mensagem foi enviada' };
     }
     
-    console.log('[WHL] ❌ Campo de mensagem não encontrado');
+    whlLog.error('Campo de mensagem não encontrado');
     return { success: false, error: 'Campo de mensagem não encontrado' };
   }
 
@@ -2400,7 +2400,7 @@
 
     if (okBtn) {
       okBtn.click();
-      console.log('[WHL] ✅ Popup de número inválido fechado');
+      whlLog.debug('Popup de número inválido fechado');
       return true;
     }
     return false;
@@ -2434,7 +2434,7 @@
     }
 
     const inserted = (element.textContent || '').length > 0;
-    console.log('[WHL] Texto inserido:', inserted ? '✅' : '❌', String(text || '').substring(0, 20));
+    whlLog.debug('Texto inserido:', inserted ? '✅' : '❌', String(text || '').substring(0, 20));
     return inserted;
   }
   
@@ -2501,11 +2501,11 @@
    * Não mais usa busca via DOM
    */
   async function sendMessageViaURL(phoneNumber, message) {
-    console.log('[WHL] ████████████████████████████████████████');
-    console.log('[WHL] ███ ENVIANDO MENSAGEM VIA URL ███');
-    console.log('[WHL] ████████████████████████████████████████');
-    console.log('[WHL] Para:', phoneNumber);
-    console.log('[WHL] Mensagem:', message ? message.substring(0, 50) + '...' : '(sem texto)');
+    whlLog.debug('════════════════════════════════════════');
+    whlLog.debug('███ ENVIANDO MENSAGEM VIA URL ███');
+    whlLog.debug('════════════════════════════════════════');
+    whlLog.debug('Para:', phoneNumber);
+    whlLog.debug('Mensagem:', message ? message.substring(0, 50) + '...' : '(sem texto)');
     
     const st = await getState();
     const hasImage = !!st.imageData;

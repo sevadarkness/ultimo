@@ -5,6 +5,15 @@
  */
 
 window.whl_hooks_main = () => {
+    // ===== DEBUG LOGGING SYSTEM =====
+    const WHL_DEBUG = localStorage.getItem('whl_debug') === 'true' || false;
+    const whlLog = {
+        debug: (...args) => { if (WHL_DEBUG) console.log('[WHL Hooks DEBUG]', ...args); },
+        info: (...args) => console.log('[WHL Hooks]', ...args),
+        warn: (...args) => console.warn('[WHL Hooks]', ...args),
+        error: (...args) => console.error('[WHL Hooks]', ...args)
+    };
+    
     // ===== HELPER FUNCTIONS FOR GROUP MEMBER EXTRACTION =====
     function safeRequire(name) {
         try {
@@ -85,7 +94,7 @@ window.whl_hooks_main = () => {
     // PR #76 ULTRA: Resolução de LID ULTRA (7 campos + 5 variações de ID)
     async function resolveContactPhoneUltra(participantId, collections) {
         if (!collections?.ContactCollection) {
-            console.warn('[WHL] ContactCollection não disponível');
+            whlLog.warn('ContactCollection não disponível');
             return null;
         }
 
@@ -123,7 +132,7 @@ window.whl_hooks_main = () => {
                         if (!num) continue;
                         const clean = String(num).replace(/\D/g, '');
                         if (isValidPhone(clean)) {
-                            console.log(`[WHL] ✅ LID resolvido: ${String(participantId).substring(0, 30)}... → ${clean}`);
+                            whlLog.debug(`LID resolvido: ${String(participantId).substring(0, 30)}... → ${clean}`);
                             return clean;
                         }
                     }
@@ -133,7 +142,7 @@ window.whl_hooks_main = () => {
             }
         }
 
-        console.warn(`[WHL] ⚠️ Não foi possível resolver: ${String(participantId).substring(0, 30)}...`);
+        whlLog.warn(`Não foi possível resolver: ${String(participantId).substring(0, 30)}...`);
         return null;
     }
     
@@ -185,7 +194,7 @@ window.whl_hooks_main = () => {
                 BlocklistCollection: BlocklistCollection?.BlocklistCollection || null
             };
         } catch (e) {
-            console.warn('[WHL Hooks] Módulos não disponíveis ainda:', e.message);
+            whlLog.warn('Módulos não disponíveis ainda:', e.message);
             return null;
         }
     }
