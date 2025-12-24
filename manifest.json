@@ -35,6 +35,10 @@
         "https://api.whatsapp.com/*"
       ],
       "js": [
+        "content/utils/constants.js",
+        "content/utils/logger.js",
+        "content/utils/phone-validator.js",
+        "content/utils/selectors.js",
         "content/worker-content.js",
         "content/content.js"
       ],
