@@ -1,33 +1,23 @@
 // ===== STRICT MODE AND ERROR HANDLING =====
 'use strict';
 
-// ===== LOGGING =====
-const WHL_DEBUG = false; // Script de background não tem acesso ao localStorage no início
-const whlLog = {
-  debug: (...args) => { if (WHL_DEBUG) console.log('[WHL DEBUG]', ...args); },
-  info: (...args) => { if (WHL_DEBUG) console.log('[WHL]', ...args); },
-  warn: (...args) => console.warn('[WHL]', ...args),
-  error: (...args) => console.error('[WHL]', ...args)
-};
-
-// Verificar se as APIs do Chrome estão disponíveis
+// Verify Chrome APIs are available
 if (typeof chrome === 'undefined' || !chrome.runtime) {
-    whlLog.error('Chrome APIs not available');
+    console.error('[WHL Background] Chrome APIs not available');
 }
 
-// Manipulador global de erros
+// Global error handler
 self.addEventListener('error', (event) => {
-    whlLog.error('Global error:', event.error);
+    console.error('[WHL Background] Global error:', event.error);
 });
 
-// Manipulador de rejeições de promises não tratadas
+// Unhandled promise rejection handler
 self.addEventListener('unhandledrejection', (event) => {
-    whlLog.error('Unhandled promise rejection:', event.reason);
+    console.error('[WHL Background] Unhandled promise rejection:', event.reason);
 });
 
 // ===== CONFIGURATION CONSTANTS =====
-const SEND_MESSAGE_TIMEOUT_MS = 60000; // 60 seconds timeout for message sending (aumentado de 45s)
-const MAX_RETRY_ATTEMPTS = 3; // Número máximo de tentativas em caso de falha
+const SEND_MESSAGE_TIMEOUT_MS = 45000; // 45 seconds timeout for message sending
 
 const NetSniffer = {
   phones: new Set(),
@@ -54,9 +44,7 @@ const NetSniffer = {
         });
       }
       this.detect(det.url);
-    } catch (e) {
-      whlLog.warn('Erro ao processar requisição:', e.message);
-    }
+    }catch{}
   },
   resp(det) {
     if (this.phones.size) {
@@ -64,38 +52,16 @@ const NetSniffer = {
         if(tabs[0]){
           chrome.tabs.sendMessage(tabs[0].id,{type:'netPhones',phones:Array.from(this.phones)})
             .catch(err => {
-              whlLog.debug('Não foi possível enviar phones para content script:', err.message);
+              console.log('[NetSniffer] Não foi possível enviar phones para content script:', err.message);
             });
         }
       });
     }
   },
-  isLikelyTimestamp(num) {
-    // Timestamps são muito longos (13 dígitos para milissegundos)
-    if (num.length === 13) return true;
-    // Timestamps de segundos Unix começam com 1 e têm 10 dígitos (ex: 1700000000)
-    if (num.length === 10 && num.startsWith('1')) {
-      const n = parseInt(num, 10);
-      // Unix timestamps razoáveis: entre 2000 (946684800) e 2100 (4102444800)
-      if (n > 946684800 && n < 4102444800) return true;
-    }
-    return false;
-  },
   detect(t) {
     if (!t) return;
-    // Prioridade 1: Números com @c.us (máxima confiança)
-    for (let m of t.matchAll(/(\d{10,15})@c\.us/g)) {
-      this.phones.add(m[1]);
-    }
-    // Prioridade 2: Números soltos - com validação mais rigorosa
-    for (let m of t.matchAll(/\b\d{10,15}\b/g)) {
-      const num = m[0];
-      // Rejeitar timestamps e números muito longos
-      if (this.isLikelyTimestamp(num)) continue;
-      // Rejeitar números muito curtos (menos de 10 dígitos)
-      if (num.length < 10) continue;
-      this.phones.add(num);
-    }
+    for (let m of t.matchAll(/(\d{10,15})@c\.us/g)) this.phones.add(m[1]);
+    for (let m of t.matchAll(/\b\d{10,15}\b/g)) this.phones.add(m[0]);
   }
 };
 NetSniffer.init();
@@ -160,11 +126,11 @@ let campaignState = {
   currentIndex: 0
 };
 
-// Inicializar estado do worker na instalação
+// Initialize worker state on installation
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.get(['workerTabId', 'campaignQueue', 'campaignState'], (data) => {
     if (data.workerTabId) {
-      // Verificar se a aba ainda existe
+      // Check if the tab still exists
       chrome.tabs.get(data.workerTabId, (tab) => {
         if (chrome.runtime.lastError || !tab) {
           workerTabId = null;
@@ -179,46 +145,46 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
-// Ouvinte de mensagens aprimorado para gerenciamento do worker
+// Enhanced message listener for worker management
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
-  // Verificar se a aba é worker
+  // Check if tab is worker
   if (message.action === 'CHECK_IF_WORKER') {
     sendResponse({ isWorker: sender.tab?.id === workerTabId });
     return true;
   }
   
-  // Worker pronto
+  // Worker ready
   if (message.action === 'WORKER_READY') {
-    whlLog.info('Worker tab ready');
+    console.log('[WHL Background] Worker tab ready');
     if (campaignState.isRunning && !campaignState.isPaused) {
       processNextInQueue();
     }
     return true;
   }
   
-  // Atualização de status do worker
+  // Worker status update
   if (message.action === 'WORKER_STATUS') {
-    whlLog.info('Worker status:', message.status);
+    console.log('[WHL Background] Worker status:', message.status);
     notifyPopup({ action: 'WORKER_STATUS_UPDATE', status: message.status });
     return true;
   }
   
-  // Erro do worker
+  // Worker error
   if (message.action === 'WORKER_ERROR') {
-    whlLog.error('Worker error:', message.error);
+    console.error('[WHL Background] Worker error:', message.error);
     notifyPopup({ action: 'WORKER_ERROR', error: message.error });
     return true;
   }
   
-  // Iniciar campanha via worker
+  // Start campaign via worker
   if (message.action === 'START_CAMPAIGN_WORKER') {
     const { queue, config } = message;
     startCampaign(queue, config).then(sendResponse);
     return true;
   }
   
-  // Pausar campanha
+  // Pause campaign
   if (message.action === 'PAUSE_CAMPAIGN') {
     campaignState.isPaused = true;
     saveCampaignState();
@@ -226,7 +192,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
-  // Retomar campanha
+  // Resume campaign
   if (message.action === 'RESUME_CAMPAIGN') {
     campaignState.isPaused = false;
     saveCampaignState();
@@ -235,7 +201,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
-  // Parar campanha
+  // Stop campaign
   if (message.action === 'STOP_CAMPAIGN') {
     campaignState.isRunning = false;
     campaignState.isPaused = false;
@@ -244,7 +210,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
-  // Obter status da campanha
+  // Get campaign status
   if (message.action === 'GET_CAMPAIGN_STATUS') {
     sendResponse({
       ...campaignState,
@@ -256,7 +222,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function startCampaign(queue, config) {
-  whlLog.info('Starting campaign with', queue.length, 'contacts');
+  console.log('[WHL Background] Starting campaign with', queue.length, 'contacts');
   
   campaignQueue = queue;
   campaignState = {
@@ -268,7 +234,7 @@ async function startCampaign(queue, config) {
   
   saveCampaignState();
   
-  // Iniciar processamento diretamente
+  // Start processing directly
   processNextInQueue();
   
   return { success: true };
@@ -302,7 +268,7 @@ async function sendMessageToWhatsApp(phone, text, imageData = null) {
     }
 }
 
-// Auxiliar: timeout para evitar travas
+// Helper: timeout para evitar travas
 function withTimeout(promise, ms = 45000) {
   let t;
   const timeout = new Promise((_, rej) => 
@@ -317,7 +283,7 @@ async function processNextInQueue() {
   }
   
   if (campaignState.currentIndex >= campaignQueue.length) {
-    whlLog.info('🎉 Campanha finalizada!');
+    console.log('[WHL Background] 🎉 Campanha finalizada!');
     campaignState.isRunning = false;
     saveCampaignState();
     notifyPopup({ action: 'CAMPAIGN_COMPLETED' });
@@ -333,9 +299,9 @@ async function processNextInQueue() {
     return;
   }
   
-  whlLog.info(`Processando ${current.phone} (${campaignState.currentIndex + 1}/${campaignQueue.length})`);
+  console.log(`[WHL Background] Processando ${current.phone} (${campaignState.currentIndex + 1}/${campaignQueue.length})`);
   
-  // Atualizar status para "enviando"
+  // Update status to "sending"
   current.status = 'sending';
   saveCampaignState();
   notifyPopup({ action: 'CAMPAIGN_PROGRESS', current: campaignState.currentIndex, total: campaignQueue.length });
@@ -361,11 +327,11 @@ async function processNextInQueue() {
   // Atualizar status SEMPRE
   if (result && result.success) {
     current.status = 'sent';
-    whlLog.info(`✅ Enviado para ${current.phone}`);
+    console.log(`[WHL Background] ✅ Enviado para ${current.phone}`);
   } else {
     current.status = 'failed';
     current.error = result?.error || 'Unknown error';
-    whlLog.info(`❌ Falha: ${current.phone} - ${current.error}`);
+    console.log(`[WHL Background] ❌ Falha: ${current.phone} - ${current.error}`);
   }
   
   // Move to next
@@ -385,7 +351,7 @@ async function processNextInQueue() {
   const maxDelay = campaignState.config?.delayMax || 8000;
   const delay = Math.floor(Math.random() * (maxDelay - minDelay)) + minDelay;
   
-  whlLog.info(`Waiting ${delay}ms before next...`);
+  console.log(`[WHL Background] Waiting ${delay}ms before next...`);
   
   setTimeout(() => {
     processNextInQueue();
@@ -408,7 +374,7 @@ function notifyPopup(message) {
 // Cleanup when tab is closed
 chrome.tabs.onRemoved.addListener((tabId) => {
   if (tabId === workerTabId) {
-    whlLog.info('Worker tab was closed');
+    console.log('[WHL Background] Worker tab was closed');
     workerTabId = null;
     chrome.storage.local.remove('workerTabId');
     
