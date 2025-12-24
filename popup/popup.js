@@ -24,9 +24,9 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       await chrome.tabs.sendMessage(tab.id, { type: 'WHL_TOGGLE_PANEL' }).catch(() => {});
-      // Give it time to open, then switch to extract tab
+      // Give it time to open, then switch to extrator tab
       setTimeout(async () => {
-        await chrome.tabs.sendMessage(tab.id, { type: 'WHL_SWITCH_TAB', tab: 'extract' }).catch(() => {});
+        await chrome.tabs.sendMessage(tab.id, { type: 'WHL_SWITCH_TAB', tab: 'extrator' }).catch(() => {});
       }, 300);
     };
   }
