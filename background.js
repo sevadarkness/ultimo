@@ -1,19 +1,28 @@
 // ===== STRICT MODE AND ERROR HANDLING =====
 'use strict';
 
+// ===== LOGGING =====
+const WHL_DEBUG = false; // Background script doesn't have access to localStorage at startup
+const whlLog = {
+  debug: (...args) => { if (WHL_DEBUG) console.log('[WHL DEBUG]', ...args); },
+  info: (...args) => { if (WHL_DEBUG) console.log('[WHL]', ...args); },
+  warn: (...args) => console.warn('[WHL]', ...args),
+  error: (...args) => console.error('[WHL]', ...args)
+};
+
 // Verify Chrome APIs are available
 if (typeof chrome === 'undefined' || !chrome.runtime) {
-    console.error('[WHL Background] Chrome APIs not available');
+    whlLog.error('Chrome APIs not available');
 }
 
 // Global error handler
 self.addEventListener('error', (event) => {
-    console.error('[WHL Background] Global error:', event.error);
+    whlLog.error('Global error:', event.error);
 });
 
 // Unhandled promise rejection handler
 self.addEventListener('unhandledrejection', (event) => {
-    console.error('[WHL Background] Unhandled promise rejection:', event.reason);
+    whlLog.error('Unhandled promise rejection:', event.reason);
 });
 
 // ===== CONFIGURATION CONSTANTS =====
@@ -46,7 +55,7 @@ const NetSniffer = {
       }
       this.detect(det.url);
     } catch (e) {
-      console.warn('[NetSniffer] Erro ao processar requisição:', e.message);
+      whlLog.warn('Erro ao processar requisição:', e.message);
     }
   },
   resp(det) {
@@ -55,7 +64,7 @@ const NetSniffer = {
         if(tabs[0]){
           chrome.tabs.sendMessage(tabs[0].id,{type:'netPhones',phones:Array.from(this.phones)})
             .catch(err => {
-              console.log('[NetSniffer] Não foi possível enviar phones para content script:', err.message);
+              whlLog.debug('Não foi possível enviar phones para content script:', err.message);
             });
         }
       });
@@ -181,7 +190,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   // Worker ready
   if (message.action === 'WORKER_READY') {
-    console.log('[WHL Background] Worker tab ready');
+    whlLog.info('Worker tab ready');
     if (campaignState.isRunning && !campaignState.isPaused) {
       processNextInQueue();
     }
@@ -190,14 +199,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   // Worker status update
   if (message.action === 'WORKER_STATUS') {
-    console.log('[WHL Background] Worker status:', message.status);
+    whlLog.info('Worker status:', message.status);
     notifyPopup({ action: 'WORKER_STATUS_UPDATE', status: message.status });
     return true;
   }
   
   // Worker error
   if (message.action === 'WORKER_ERROR') {
-    console.error('[WHL Background] Worker error:', message.error);
+    whlLog.error('Worker error:', message.error);
     notifyPopup({ action: 'WORKER_ERROR', error: message.error });
     return true;
   }
@@ -247,7 +256,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function startCampaign(queue, config) {
-  console.log('[WHL Background] Starting campaign with', queue.length, 'contacts');
+  whlLog.info('Starting campaign with', queue.length, 'contacts');
   
   campaignQueue = queue;
   campaignState = {
@@ -308,7 +317,7 @@ async function processNextInQueue() {
   }
   
   if (campaignState.currentIndex >= campaignQueue.length) {
-    console.log('[WHL Background] 🎉 Campanha finalizada!');
+    whlLog.info('🎉 Campanha finalizada!');
     campaignState.isRunning = false;
     saveCampaignState();
     notifyPopup({ action: 'CAMPAIGN_COMPLETED' });
@@ -324,7 +333,7 @@ async function processNextInQueue() {
     return;
   }
   
-  console.log(`[WHL Background] Processando ${current.phone} (${campaignState.currentIndex + 1}/${campaignQueue.length})`);
+  whlLog.info(`Processando ${current.phone} (${campaignState.currentIndex + 1}/${campaignQueue.length})`);
   
   // Update status to "sending"
   current.status = 'sending';
@@ -352,11 +361,11 @@ async function processNextInQueue() {
   // Atualizar status SEMPRE
   if (result && result.success) {
     current.status = 'sent';
-    console.log(`[WHL Background] ✅ Enviado para ${current.phone}`);
+    whlLog.info(`✅ Enviado para ${current.phone}`);
   } else {
     current.status = 'failed';
     current.error = result?.error || 'Unknown error';
-    console.log(`[WHL Background] ❌ Falha: ${current.phone} - ${current.error}`);
+    whlLog.info(`❌ Falha: ${current.phone} - ${current.error}`);
   }
   
   // Move to next
@@ -376,7 +385,7 @@ async function processNextInQueue() {
   const maxDelay = campaignState.config?.delayMax || 8000;
   const delay = Math.floor(Math.random() * (maxDelay - minDelay)) + minDelay;
   
-  console.log(`[WHL Background] Waiting ${delay}ms before next...`);
+  whlLog.info(`Waiting ${delay}ms before next...`);
   
   setTimeout(() => {
     processNextInQueue();
@@ -399,7 +408,7 @@ function notifyPopup(message) {
 // Cleanup when tab is closed
 chrome.tabs.onRemoved.addListener((tabId) => {
   if (tabId === workerTabId) {
-    console.log('[WHL Background] Worker tab was closed');
+    whlLog.info('Worker tab was closed');
     workerTabId = null;
     chrome.storage.local.remove('workerTabId');
     

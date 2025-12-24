@@ -213,7 +213,7 @@ window.whl_hooks_main = () => {
         try {
             const modules = getModules();
             if (!modules || !modules.ChatCollection) {
-                console.error('[WHL] ChatCollection não disponível');
+                whlLog.error(' ChatCollection não disponível');
                 return { success: false, error: 'Módulos não disponíveis', contacts: [], count: 0 };
             }
             
@@ -247,7 +247,7 @@ window.whl_hooks_main = () => {
                 count: uniqueContatos.length 
             };
         } catch (e) {
-            console.error('[WHL] Erro ao extrair contatos:', e);
+            whlLog.error(' Erro ao extrair contatos:', e);
             return { 
                 success: false, 
                 error: e.message, 
@@ -261,7 +261,7 @@ window.whl_hooks_main = () => {
     function extrairGrupos() {
         const modules = getModules();
         if (!modules || !modules.ChatCollection) {
-            console.warn('[WHL Hooks] ChatCollection não disponível');
+            whlLog.warn('[WHL Hooks] ChatCollection não disponível');
             return { success: false, groups: [], error: 'Módulos não carregados' };
         }
         
@@ -275,10 +275,10 @@ window.whl_hooks_main = () => {
                     participants: g.groupMetadata?.participants?.length || 0
                 }));
             
-            console.log('[WHL Hooks] Grupos extraídos:', grupos.length);
+            whlLog.debug('[WHL Hooks] Grupos extraídos:', grupos.length);
             return { success: true, groups: grupos, count: grupos.length };
         } catch (e) {
-            console.error('[WHL Hooks] Erro ao extrair grupos:', e);
+            whlLog.error('[WHL Hooks] Erro ao extrair grupos:', e);
             return { success: false, groups: [], error: e.message };
         }
     }
@@ -298,10 +298,10 @@ window.whl_hooks_main = () => {
                 .map(m => m.id.user || (typeof m.id._serialized === 'string' ? m.id._serialized.replace('@c.us', '') : ''))
                 .filter(n => /^\d{8,15}$/.test(n));
             
-            console.log('[WHL Hooks] Arquivados extraídos:', arquivados.length);
+            whlLog.debug('[WHL Hooks] Arquivados extraídos:', arquivados.length);
             return { success: true, archived: [...new Set(arquivados)], count: arquivados.length };
         } catch (e) {
-            console.error('[WHL Hooks] Erro ao extrair arquivados:', e);
+            whlLog.error('[WHL Hooks] Erro ao extrair arquivados:', e);
             return { success: false, archived: [], error: e.message };
         }
     }
@@ -325,10 +325,10 @@ window.whl_hooks_main = () => {
                 })
                 .filter(n => n && /^\d{8,15}$/.test(n));
             
-            console.log('[WHL Hooks] Bloqueados extraídos:', bloqueados.length);
+            whlLog.debug('[WHL Hooks] Bloqueados extraídos:', bloqueados.length);
             return { success: true, blocked: [...new Set(bloqueados)], count: bloqueados.length };
         } catch (e) {
-            console.error('[WHL Hooks] Erro ao extrair bloqueados:', e);
+            whlLog.error('[WHL Hooks] Erro ao extrair bloqueados:', e);
             return { success: false, blocked: [], error: e.message };
         }
     }
@@ -371,7 +371,7 @@ window.whl_hooks_main = () => {
      * Combina API e DOM para máxima cobertura
      */
     async function extrairArquivadosBloqueadosDOM() {
-        console.log('[WHL] Iniciando extração de arquivados/bloqueados via DOM...');
+        whlLog.info(' Iniciando extração de arquivados/bloqueados via DOM...');
         
         const result = { archived: [], blocked: [] };
         
@@ -386,9 +386,9 @@ window.whl_hooks_main = () => {
                 .map(c => c.id._serialized.replace('@c.us', ''))
                 .filter(n => /^\d{8,15}$/.test(n));
             
-            console.log('[WHL] Arquivados via API:', result.archived.length);
+            whlLog.info(' Arquivados via API:', result.archived.length);
         } catch (e) {
-            console.warn('[WHL] Erro ao extrair arquivados via API:', e);
+            whlLog.warn(' Erro ao extrair arquivados via API:', e);
         }
         
         // Bloqueados via BlocklistCollection
@@ -400,9 +400,9 @@ window.whl_hooks_main = () => {
                 .map(c => c.id?._serialized?.replace('@c.us', '') || c.id?.user || '')
                 .filter(n => /^\d{8,15}$/.test(n));
             
-            console.log('[WHL] Bloqueados via API:', result.blocked.length);
+            whlLog.info(' Bloqueados via API:', result.blocked.length);
         } catch (e) {
-            console.warn('[WHL] Erro ao extrair bloqueados via API:', e);
+            whlLog.warn(' Erro ao extrair bloqueados via API:', e);
         }
         
         return result;
@@ -413,7 +413,7 @@ window.whl_hooks_main = () => {
      * NÃO CAUSA RELOAD!
      */
     async function enviarMensagemAPI(phone, mensagem) {
-        console.log('[WHL] 📨 Enviando TEXTO para', phone);
+        whlLog.info(' 📨 Enviando TEXTO para', phone);
         
         try {
             var WF = require('WAWebWidFactory');
@@ -427,7 +427,7 @@ window.whl_hooks_main = () => {
             // Não fazer nenhuma sanitização no texto
             var textoOriginal = mensagem; // Manter \n intacto
             
-            console.log('[WHL] Texto com quebras:', JSON.stringify(textoOriginal));
+            whlLog.info(' Texto com quebras:', JSON.stringify(textoOriginal));
 
             var wid = WF.createWid(phone + '@c.us');
             var chat = CC.ChatCollection.get(wid);
@@ -457,13 +457,13 @@ window.whl_hooks_main = () => {
                     await chat.reload();
                 }
             } catch (e) {
-                console.warn('[WHL] Não foi possível sincronizar chat:', e);
+                whlLog.warn(' Não foi possível sincronizar chat:', e);
             }
             
-            console.log('[WHL] ✅ TEXTO enviado:', result);
+            whlLog.info(' ✅ TEXTO enviado:', result);
             return { success: true, result: result };
         } catch (error) {
-            console.error('[WHL] ❌ Erro ao enviar TEXTO:', error);
+            whlLog.error(' ❌ Erro ao enviar TEXTO:', error);
             return { success: false, error: error.message };
         }
     }
@@ -491,7 +491,7 @@ window.whl_hooks_main = () => {
      * Funciona com legenda (caption)
      */
     async function enviarImagemDOM(base64Image, caption) {
-        console.log('[WHL] 🖼️ Enviando IMAGEM...');
+        whlLog.info(' 🖼️ Enviando IMAGEM...');
         
         try {
             var response = await fetch(base64Image);
@@ -499,7 +499,7 @@ window.whl_hooks_main = () => {
 
             var input = acharCompose();
             if (!input) {
-                console.error('[WHL] ❌ Campo de composição não encontrado');
+                whlLog.error(' ❌ Campo de composição não encontrado');
                 return { success: false, error: 'INPUT_NOT_FOUND' };
             }
 
@@ -519,11 +519,11 @@ window.whl_hooks_main = () => {
             if (!captionInput) {
                 // Only error if we actually need to add a caption
                 if (caption) {
-                    console.error('[WHL] ❌ Campo de caption não encontrado');
+                    whlLog.error(' ❌ Campo de caption não encontrado');
                     return { success: false, error: 'CAPTION_INPUT_NOT_FOUND' };
                 }
                 // No caption needed and no input found - try to send anyway
-                console.warn('[WHL] ⚠️ Campo de caption não encontrado, mas sem caption para adicionar');
+                whlLog.warn(' ⚠️ Campo de caption não encontrado, mas sem caption para adicionar');
             } else {
                 if (caption) {
                     captionInput.focus();
@@ -551,7 +551,7 @@ window.whl_hooks_main = () => {
                             document.execCommand('insertText', false, lines[i]);
                         }
                     }
-                    console.log('[WHL] 📝 Caption adicionado (com quebras preservadas):', caption);
+                    whlLog.info(' 📝 Caption adicionado (com quebras preservadas):', caption);
                 }
 
                 await new Promise(r => setTimeout(r, TIMEOUTS.CAPTION_INPUT_WAIT));
@@ -559,10 +559,10 @@ window.whl_hooks_main = () => {
                 pressEnter(captionInput);
             }
             
-            console.log('[WHL] ✅ IMAGEM enviada!');
+            whlLog.info(' ✅ IMAGEM enviada!');
             return { success: true };
         } catch (error) {
-            console.error('[WHL] ❌ Erro ao enviar IMAGEM:', error);
+            whlLog.error(' ❌ Erro ao enviar IMAGEM:', error);
             return { success: false, error: error.message };
         }
     }
@@ -573,7 +573,7 @@ window.whl_hooks_main = () => {
      * @returns {Promise<boolean>} - true se chat foi aberto
      */
     async function abrirChatPorNumero(phone) {
-        console.log('[WHL] 📱 Abrindo chat para:', phone);
+        whlLog.info(' 📱 Abrindo chat para:', phone);
         
         try {
             const WF = require('WAWebWidFactory');
@@ -597,7 +597,7 @@ window.whl_hooks_main = () => {
                     return true;
                 }
             } catch (e) {
-                console.log('[WHL] CMD não disponível, tentando método alternativo...');
+                whlLog.info(' CMD não disponível, tentando método alternativo...');
             }
             
             // FALLBACK: Simular clique no contato ou usar URL
@@ -620,7 +620,7 @@ window.whl_hooks_main = () => {
             
             return true;
         } catch (e) {
-            console.error('[WHL] Erro ao abrir chat:', e);
+            whlLog.error(' Erro ao abrir chat:', e);
             return false;
         }
     }
@@ -632,12 +632,12 @@ window.whl_hooks_main = () => {
      * @param {string} caption - Legenda opcional
      */
     async function enviarImagemParaNumero(phone, base64Image, caption) {
-        console.log('[WHL] 🖼️ Enviando IMAGEM para número:', phone);
+        whlLog.info(' 🖼️ Enviando IMAGEM para número:', phone);
         
         // PASSO 1: Abrir o chat do número correto
         const chatAberto = await abrirChatPorNumero(phone);
         if (!chatAberto) {
-            console.error('[WHL] ❌ Não foi possível abrir chat para', phone);
+            whlLog.error(' ❌ Não foi possível abrir chat para', phone);
             return { success: false, error: 'CHAT_NOT_OPENED' };
         }
         
@@ -652,7 +652,7 @@ window.whl_hooks_main = () => {
      * Envia TEXTO + IMAGEM combinados
      */
     async function enviarMensagemCompleta(phone, texto, base64Image, caption) {
-        console.log('[WHL] 🚀 Enviando mensagem completa para', phone);
+        whlLog.info(' 🚀 Enviando mensagem completa para', phone);
         
         var results = { texto: null, imagem: null };
         
@@ -677,7 +677,7 @@ window.whl_hooks_main = () => {
      * @returns {Promise<{success: boolean, confirmed: boolean, reason?: string}>}
      */
     async function aguardarConfirmacaoVisual(mensagemEnviada, timeout = 10000) {
-        console.log('[WHL] ⏳ Aguardando confirmação visual no DOM...');
+        whlLog.info(' ⏳ Aguardando confirmação visual no DOM...');
         
         const startTime = Date.now();
         const textoParaBuscar = mensagemEnviada.substring(0, 50); // Primeiros 50 chars
@@ -710,11 +710,11 @@ window.whl_hooks_main = () => {
                             );
                             
                             if (ticks) {
-                                console.log('[WHL] ✅ Confirmação visual: Imagem apareceu no chat com tick!');
+                                whlLog.info(' ✅ Confirmação visual: Imagem apareceu no chat com tick!');
                                 return { success: true, confirmed: true };
                             }
                             
-                            console.log('[WHL] 📝 Imagem encontrada, aguardando tick...');
+                            whlLog.info(' 📝 Imagem encontrada, aguardando tick...');
                         }
                     } else {
                         // Verificar se a mensagem apareceu (comparar início do texto)
@@ -729,24 +729,24 @@ window.whl_hooks_main = () => {
                             );
                             
                             if (ticks) {
-                                console.log('[WHL] ✅ Confirmação visual: Mensagem apareceu no chat com tick!');
+                                whlLog.info(' ✅ Confirmação visual: Mensagem apareceu no chat com tick!');
                                 return { success: true, confirmed: true };
                             }
                             
                             // Se encontrou a mensagem mas sem tick ainda, aguardar mais um pouco
-                            console.log('[WHL] 📝 Mensagem encontrada, aguardando tick...');
+                            whlLog.info(' 📝 Mensagem encontrada, aguardando tick...');
                         }
                     }
                 }
             } catch (e) {
-                console.warn('[WHL] Erro ao verificar confirmação visual:', e);
+                whlLog.warn(' Erro ao verificar confirmação visual:', e);
             }
             
             // Verificar a cada 500ms
             await new Promise(r => setTimeout(r, 500));
         }
         
-        console.warn('[WHL] ⚠️ Timeout: Mensagem não confirmada visualmente após', timeout, 'ms');
+        whlLog.warn(' ⚠️ Timeout: Mensagem não confirmada visualmente após', timeout, 'ms');
         return { success: false, confirmed: false, reason: 'TIMEOUT' };
     }
 
@@ -834,7 +834,7 @@ window.whl_hooks_main = () => {
             messageCache.delete(firstKey);
         }
         
-        console.log('[WHL Cache] Mensagem cacheada:', body.substring(0, 30), 'IDs:', ids.length);
+        whlLog.debug('[WHL Cache] Mensagem cacheada:', body.substring(0, 30), 'IDs:', ids.length);
     }
     
     /**
@@ -859,7 +859,7 @@ window.whl_hooks_main = () => {
             timestamp: Date.now()
         };
         
-        console.log('[WHL Recover] ✏️ Salvando mensagem editada:', entrada);
+        whlLog.debug('[WHL Recover] ✏️ Salvando mensagem editada:', entrada);
         
         historicoRecover.push(entrada);
         
@@ -880,14 +880,14 @@ window.whl_hooks_main = () => {
             const dataToSave = JSON.stringify(historicoRecover);
             const sizeKB = (new Blob([dataToSave]).size / 1024).toFixed(2);
             localStorage.setItem('whl_recover_history', dataToSave);
-            console.log(`[WHL Recover] Histórico salvo: ${historicoRecover.length} mensagens, ${sizeKB}KB`);
+            whlLog.debug(`[WHL Recover] Histórico salvo: ${historicoRecover.length} mensagens, ${sizeKB}KB`);
         } catch(e) {
-            console.error('[WHL Recover] Erro ao salvar (limite excedido?)', e);
+            whlLog.error('[WHL Recover] Erro ao salvar (limite excedido?)', e);
             historicoRecover = historicoRecover.slice(-FALLBACK_RECOVER_MESSAGES);
             try {
                 localStorage.setItem('whl_recover_history', JSON.stringify(historicoRecover));
             } catch(e2) {
-                console.error('[WHL Recover] Falha crítica ao salvar histórico', e2);
+                whlLog.error('[WHL Recover] Falha crítica ao salvar histórico', e2);
             }
         }
         
@@ -898,7 +898,7 @@ window.whl_hooks_main = () => {
             total: historicoRecover.length
         }, '*');
         
-        console.log(`[WHL Recover] Mensagem editada de ${entrada.from}: ${entrada.body.substring(0, 50)}...`);
+        whlLog.debug(`[WHL Recover] Mensagem editada de ${entrada.from}: ${entrada.body.substring(0, 50)}...`);
     }
 
     function salvarMensagemRecuperada(msg) {
@@ -921,7 +921,7 @@ window.whl_hooks_main = () => {
                 if (cached && cached.body) {
                     body = cached.body;
                     if (!from && cached.from) from = cached.from;
-                    console.log('[WHL Recover] ✅ Conteúdo recuperado do cache:', body.substring(0, 50));
+                    whlLog.debug('[WHL Recover] ✅ Conteúdo recuperado do cache:', body.substring(0, 50));
                     break;
                 }
             }
@@ -940,7 +940,7 @@ window.whl_hooks_main = () => {
             timestamp: Date.now()
         };
         
-        console.log('[WHL Recover] 📝 Salvando:', entrada);
+        whlLog.debug('[WHL Recover] 📝 Salvando:', entrada);
         
         historicoRecover.push(entrada);
         
@@ -964,15 +964,15 @@ window.whl_hooks_main = () => {
             const dataToSave = JSON.stringify(historicoRecover);
             const sizeKB = (new Blob([dataToSave]).size / 1024).toFixed(2);
             localStorage.setItem('whl_recover_history', dataToSave);
-            console.log(`[WHL Recover] Histórico salvo: ${historicoRecover.length} mensagens, ${sizeKB}KB`);
+            whlLog.debug(`[WHL Recover] Histórico salvo: ${historicoRecover.length} mensagens, ${sizeKB}KB`);
         } catch(e) {
-            console.error('[WHL Recover] Erro ao salvar (limite excedido?)', e);
+            whlLog.error('[WHL Recover] Erro ao salvar (limite excedido?)', e);
             // If storage fails, remove oldest half and retry
             historicoRecover = historicoRecover.slice(-FALLBACK_RECOVER_MESSAGES);
             try {
                 localStorage.setItem('whl_recover_history', JSON.stringify(historicoRecover));
             } catch(e2) {
-                console.error('[WHL Recover] Falha crítica ao salvar histórico', e2);
+                whlLog.error('[WHL Recover] Falha crítica ao salvar histórico', e2);
             }
         }
         
@@ -983,7 +983,7 @@ window.whl_hooks_main = () => {
             total: historicoRecover.length
         }, '*');
         
-        console.log(`[WHL Recover] Mensagem recuperada de ${entrada.from}: ${entrada.body.substring(0, 50)}...`);
+        whlLog.debug(`[WHL Recover] Mensagem recuperada de ${entrada.from}: ${entrada.body.substring(0, 50)}...`);
     }
 
     function tryRequireModule(moduleNames) {
@@ -1013,7 +1013,7 @@ window.whl_hooks_main = () => {
             super.register();
             
             if (!MODULES.PROCESS_RENDERABLE_MESSAGES) {
-                console.warn('[WHL Hooks] PROCESS_RENDERABLE_MESSAGES module not available');
+                whlLog.warn('[WHL Hooks] PROCESS_RENDERABLE_MESSAGES module not available');
                 return;
             }
             
@@ -1025,7 +1025,7 @@ window.whl_hooks_main = () => {
             };
             
             RenderableMessageHook.originalProcess = this.original_function;
-            console.log('[WHL Hooks] RenderableMessageHook registered');
+            whlLog.debug('[WHL Hooks] RenderableMessageHook registered');
         }
         
         static handle_message(message) {
@@ -1042,7 +1042,7 @@ window.whl_hooks_main = () => {
             
             // Check if protocolMessageKey exists before accessing
             if (!message.protocolMessageKey) {
-                console.warn('[WHL Hooks] protocolMessageKey not found in revoked message');
+                whlLog.warn('[WHL Hooks] protocolMessageKey not found in revoked message');
                 return false;
             }
             
@@ -1062,7 +1062,7 @@ window.whl_hooks_main = () => {
                     }
                 }, '*');
             } catch (e) {
-                console.warn('[WHL Hooks] recover postMessage failed', e);
+                whlLog.warn('[WHL Hooks] recover postMessage failed', e);
             }
             
             // Transformar mensagem apagada em mensagem visível
@@ -1085,7 +1085,7 @@ window.whl_hooks_main = () => {
             super.register();
             
             if (!MODULES.PROCESS_EDIT_MESSAGE) {
-                console.warn('[WHL Hooks] PROCESS_EDIT_MESSAGE module not available');
+                whlLog.warn('[WHL Hooks] PROCESS_EDIT_MESSAGE module not available');
                 return;
             }
             
@@ -1100,7 +1100,7 @@ window.whl_hooks_main = () => {
             
             MODULES.PROCESS_EDIT_MESSAGE.processEditProtocolMsg = MODULES.PROCESS_EDIT_MESSAGE.processEditProtocolMsgs;
             EditMessageHook.originalEdit = this.original_function;
-            console.log('[WHL Hooks] EditMessageHook registered');
+            whlLog.debug('[WHL Hooks] EditMessageHook registered');
         }
         
         static handle_edited_message(message, arg1, arg2) {
@@ -1167,7 +1167,7 @@ window.whl_hooks_main = () => {
             MSG_MODELS: tryRequireModule(WA_MODULES.MSG_MODELS),
         };
         
-        console.log('[WHL Hooks] Modules initialized:', {
+        whlLog.debug('[WHL Hooks] Modules initialized:', {
             PROCESS_EDIT_MESSAGE: !!MODULES.PROCESS_EDIT_MESSAGE,
             PROCESS_RENDERABLE_MESSAGES: !!MODULES.PROCESS_RENDERABLE_MESSAGES,
             QUERY_GROUP: !!MODULES.QUERY_GROUP,
@@ -1188,11 +1188,11 @@ window.whl_hooks_main = () => {
             try {
                 hook.register();
             } catch (e) {
-                console.error(`[WHL Hooks] Error registering ${name}:`, e);
+                whlLog.error(`[WHL Hooks] Error registering ${name}:`, e);
             }
         }
         
-        console.log('[WHL Hooks] ✅ Hooks registrados com sucesso!');
+        whlLog.debug('[WHL Hooks] ✅ Hooks registrados com sucesso!');
     };
     
     /**
@@ -1205,7 +1205,7 @@ window.whl_hooks_main = () => {
             const ChatCollection = CC?.ChatCollection;
             
             if (!ChatCollection || !ChatCollection.getModelsArray) {
-                console.warn('[WHL] ChatCollection não disponível para grupos');
+                whlLog.warn(' ChatCollection não disponível para grupos');
                 return { success: false, groups: [] };
             }
             
@@ -1218,10 +1218,10 @@ window.whl_hooks_main = () => {
                     participants: g.groupMetadata?.participants?.length || 0
                 }));
             
-            console.log(`[WHL] ${grupos.length} grupos encontrados via require()`);
+            whlLog.debug(`[WHL] ${grupos.length} grupos encontrados via require()`);
             return { success: true, groups: grupos };
         } catch (error) {
-            console.error('[WHL] Erro ao carregar grupos:', error);
+            whlLog.error(' Erro ao carregar grupos:', error);
             return { success: false, error: error.message, groups: [] };
         }
     }
@@ -1236,7 +1236,7 @@ window.whl_hooks_main = () => {
                 // Testar se módulos do WhatsApp estão disponíveis
                 // Use constant for consistency
                 if (require(WA_MODULES.PROCESS_RENDERABLE_MESSAGES)) {
-                    console.log('[WHL Hooks] WhatsApp modules detected, starting...');
+                    whlLog.debug('[WHL Hooks] WhatsApp modules detected, starting...');
                     start();
                     return;
                 }
@@ -1248,7 +1248,7 @@ window.whl_hooks_main = () => {
             await new Promise(r => setTimeout(r, 100));
         }
         
-        console.warn('[WHL Hooks] ⚠️ Módulos não encontrados após', maxAttempts, 'tentativas, iniciando mesmo assim...');
+        whlLog.warn('[WHL Hooks] ⚠️ Módulos não encontrados após', maxAttempts, 'tentativas, iniciando mesmo assim...');
         start();
     };
 
@@ -1265,7 +1265,7 @@ window.whl_hooks_main = () => {
     async function openChatDirect(phoneNumber) {
         try {
             if (!MODULES.WID_FACTORY || !MODULES.CHAT_COLLECTION) {
-                console.warn('[WHL Hooks] Módulos necessários não disponíveis para openChatDirect');
+                whlLog.warn('[WHL Hooks] Módulos necessários não disponíveis para openChatDirect');
                 return false;
             }
             
@@ -1281,7 +1281,7 @@ window.whl_hooks_main = () => {
             }
             return false;
         } catch (error) {
-            console.error('[WHL Hooks] Erro ao abrir chat:', error);
+            whlLog.error('[WHL Hooks] Erro ao abrir chat:', error);
             return false;
         }
     }
@@ -1295,7 +1295,7 @@ window.whl_hooks_main = () => {
     async function sendMessageDirect(phoneNumber, text) {
         try {
             if (!MODULES.WID_FACTORY || !MODULES.CHAT_COLLECTION) {
-                console.warn('[WHL Hooks] Módulos necessários não disponíveis para sendMessageDirect');
+                whlLog.warn('[WHL Hooks] Módulos necessários não disponíveis para sendMessageDirect');
                 return false;
             }
             
@@ -1304,19 +1304,19 @@ window.whl_hooks_main = () => {
             
             if (!chat) {
                 // Criar novo chat se não existir
-                console.log('[WHL Hooks] Chat não encontrado, criando novo...');
+                whlLog.debug('[WHL Hooks] Chat não encontrado, criando novo...');
                 chat = await MODULES.CHAT_COLLECTION.add(wid);
             }
             
             if (chat && chat.sendMessage) {
                 await chat.sendMessage(text);
-                console.log('[WHL Hooks] ✅ Mensagem enviada via API para', phoneNumber);
+                whlLog.debug('[WHL Hooks] ✅ Mensagem enviada via API para', phoneNumber);
                 return true;
             }
             
             return false;
         } catch (error) {
-            console.error('[WHL Hooks] Erro ao enviar mensagem:', error);
+            whlLog.error('[WHL Hooks] Erro ao enviar mensagem:', error);
             return false;
         }
     }
@@ -1331,7 +1331,7 @@ window.whl_hooks_main = () => {
     async function sendImageDirect(phoneNumber, imageDataUrl, caption = '') {
         try {
             if (!MODULES.WID_FACTORY || !MODULES.CHAT_COLLECTION) {
-                console.warn('[WHL Hooks] Módulos necessários não disponíveis para sendImageDirect');
+                whlLog.warn('[WHL Hooks] Módulos necessários não disponíveis para sendImageDirect');
                 return false;
             }
             
@@ -1339,7 +1339,7 @@ window.whl_hooks_main = () => {
             let chat = await MODULES.CHAT_COLLECTION.find(wid);
             
             if (!chat) {
-                console.log('[WHL Hooks] Chat não encontrado para envio de imagem');
+                whlLog.debug('[WHL Hooks] Chat não encontrado para envio de imagem');
                 return false;
             }
             
@@ -1354,26 +1354,26 @@ window.whl_hooks_main = () => {
                 
                 // Validar que sendMessage aceita mídia
                 if (!chat.sendMessage || typeof chat.sendMessage !== 'function') {
-                    console.warn('[WHL Hooks] chat.sendMessage não disponível');
+                    whlLog.warn('[WHL Hooks] chat.sendMessage não disponível');
                     return false;
                 }
                 
                 // Enviar com caption
                 try {
                     await chat.sendMessage(mediaData, { caption });
-                    console.log('[WHL Hooks] ✅ Imagem enviada via API para', phoneNumber);
+                    whlLog.debug('[WHL Hooks] ✅ Imagem enviada via API para', phoneNumber);
                     return true;
                 } catch (sendError) {
-                    console.error('[WHL Hooks] Erro ao chamar sendMessage com mídia:', sendError);
+                    whlLog.error('[WHL Hooks] Erro ao chamar sendMessage com mídia:', sendError);
                     return false;
                 }
             } else {
                 // Fallback: tentar envio simples se MEDIA_PREP não disponível
-                console.log('[WHL Hooks] MEDIA_PREP não disponível, usando fallback');
+                whlLog.debug('[WHL Hooks] MEDIA_PREP não disponível, usando fallback');
                 return false;
             }
         } catch (error) {
-            console.error('[WHL Hooks] Erro ao enviar imagem:', error);
+            whlLog.error('[WHL Hooks] Erro ao enviar imagem:', error);
             return false;
         }
     }
@@ -1388,7 +1388,7 @@ window.whl_hooks_main = () => {
     async function sendWithTypingIndicator(phoneNumber, text, typingDuration = 2000) {
         try {
             if (!MODULES.WID_FACTORY || !MODULES.CHAT_COLLECTION) {
-                console.warn('[WHL Hooks] Módulos necessários não disponíveis');
+                whlLog.warn('[WHL Hooks] Módulos necessários não disponíveis');
                 return false;
             }
             
@@ -1419,10 +1419,10 @@ window.whl_hooks_main = () => {
                 await chat.presence.update('available');
             }
             
-            console.log('[WHL Hooks] ✅ Mensagem enviada com indicador de digitação');
+            whlLog.debug('[WHL Hooks] ✅ Mensagem enviada com indicador de digitação');
             return true;
         } catch (error) {
-            console.error('[WHL Hooks] Erro ao enviar com typing indicator:', error);
+            whlLog.error('[WHL Hooks] Erro ao enviar com typing indicator:', error);
             return false;
         }
     }
@@ -1478,14 +1478,14 @@ window.whl_hooks_main = () => {
                 });
             }
             
-            console.log('[WHL Hooks] ✅ Extração direta concluída:', {
+            whlLog.debug('[WHL Hooks] ✅ Extração direta concluída:', {
                 normal: result.normal.length,
                 archived: result.archived.length,
                 blocked: result.blocked.length,
                 groups: result.groups.length
             });
         } catch (error) {
-            console.error('[WHL Hooks] Erro ao extrair contatos:', error);
+            whlLog.error('[WHL Hooks] Erro ao extrair contatos:', error);
         }
         
         return result;
@@ -1503,11 +1503,11 @@ window.whl_hooks_main = () => {
                 const contacts = ContactC?.ContactCollection?.getModelsArray?.() || [];
                 if (contacts.length > 0) {
                     const contatos = contacts.map(contact => contact.id.user || contact.id._serialized?.replace('@c.us', ''));
-                    console.log('[WHL] ✅ Extração via WAWebContactCollection:', contatos.length);
+                    whlLog.info(' ✅ Extração via WAWebContactCollection:', contatos.length);
                     return { success: true, contacts: contatos, method: 'WAWebContactCollection' };
                 }
             } catch(e) {
-                console.log('[WHL] Método ContactCollection falhou:', e.message);
+                whlLog.info(' Método ContactCollection falhou:', e.message);
             }
             
             // Método 2: via ChatCollection require
@@ -1518,16 +1518,16 @@ window.whl_hooks_main = () => {
                     const contatos = chats
                         .filter(c => !c.isGroup && (c.id._serialized?.endsWith('@c.us') || c.id?.user))
                         .map(c => c.id.user || c.id._serialized?.replace('@c.us', ''));
-                    console.log('[WHL] ✅ Extração via WAWebChatCollection:', contatos.length);
+                    whlLog.info(' ✅ Extração via WAWebChatCollection:', contatos.length);
                     return { success: true, contacts: contatos, method: 'WAWebChatCollection' };
                 }
             } catch(e) {
-                console.log('[WHL] Método ChatCollection falhou:', e.message);
+                whlLog.info(' Método ChatCollection falhou:', e.message);
             }
             
             return { success: false, error: 'Nenhum método disponível' };
         } catch (error) {
-            console.error('[WHL] Erro na extração instantânea:', error);
+            whlLog.error(' Erro na extração instantânea:', error);
             return { success: false, error: error.message };
         }
     }
@@ -1544,16 +1544,16 @@ window.whl_hooks_main = () => {
                 const blocklist = BC?.BlocklistCollection?.getModelsArray?.() || [];
                 if (blocklist.length > 0) {
                     const bloqueados = blocklist.map(c => c.id.user || c.id._serialized?.replace('@c.us', ''));
-                    console.log('[WHL] ✅ Bloqueados via WAWebBlocklistCollection:', bloqueados.length);
+                    whlLog.info(' ✅ Bloqueados via WAWebBlocklistCollection:', bloqueados.length);
                     return { success: true, blocked: bloqueados };
                 }
             } catch(e) {
-                console.log('[WHL] Método BlocklistCollection falhou:', e.message);
+                whlLog.info(' Método BlocklistCollection falhou:', e.message);
             }
             
             return { success: false, error: 'Blocklist não disponível' };
         } catch (error) {
-            console.error('[WHL] Erro ao extrair bloqueados:', error);
+            whlLog.error(' Erro ao extrair bloqueados:', error);
             return { success: false, error: error.message };
         }
     }
@@ -1581,10 +1581,10 @@ window.whl_hooks_main = () => {
      * @returns {Promise<Object>} Resultado com membros extraídos e estatísticas
      */
     async function extractGroupMembersUltra(groupId) {
-        console.log('[WHL] ═══════════════════════════════════════════');
-        console.log('[WHL] 🚀 ULTRA MODE: Iniciando extração híbrida');
-        console.log('[WHL] 📱 Grupo:', groupId);
-        console.log('[WHL] ═══════════════════════════════════════════');
+        whlLog.info(' ═══════════════════════════════════════════');
+        whlLog.info(' 🚀 ULTRA MODE: Iniciando extração híbrida');
+        whlLog.info(' 📱 Grupo:', groupId);
+        whlLog.info(' ═══════════════════════════════════════════');
         
         // PR #78: Timeout de 30 segundos
         const TIMEOUT = 30000;
@@ -1598,7 +1598,7 @@ window.whl_hooks_main = () => {
                 timeoutPromise
             ]);
         } catch (e) {
-            console.error('[WHL] Erro na extração (timeout ou exceção):', e.message);
+            whlLog.error(' Erro na extração (timeout ou exceção):', e.message);
             return { 
                 success: false, 
                 error: e.message, 
@@ -1619,7 +1619,7 @@ window.whl_hooks_main = () => {
      * PR #78: Função interna separada para permitir timeout
      */
     async function extractGroupMembersUltraInternal(groupId) {
-        console.log('[WHL] Iniciando extração interna...');
+        whlLog.info(' Iniciando extração interna...');
 
         const results = {
             members: new Map(), // Map<número, {fonte, confiança, tentativas}>
@@ -1639,7 +1639,7 @@ window.whl_hooks_main = () => {
             const clean = String(num).replace(/\D/g, '');
             
             if (!isValidPhone(clean)) {
-                console.warn(`[WHL] ❌ Número inválido rejeitado: ${num}`);
+                whlLog.warn(`[WHL] ❌ Número inválido rejeitado: ${num}`);
                 return false;
             }
 
@@ -1753,13 +1753,13 @@ window.whl_hooks_main = () => {
             }
 
         } catch (e) {
-            console.error('[WHL] Erro na FASE 1/2:', e.message);
+            whlLog.error(' Erro na FASE 1/2:', e.message);
         }
 
         // FASE 3: DOM FALLBACK (se poucos números)
         if (results.members.size < 3) {
             try {
-                console.log('[WHL] 📄 FASE 3: Ativando fallback DOM...');
+                whlLog.info(' 📄 FASE 3: Ativando fallback DOM...');
                 const domResult = await extractGroupContacts();
                 if (domResult.success && domResult.contacts) {
                     domResult.contacts.forEach(c => {
@@ -1767,7 +1767,7 @@ window.whl_hooks_main = () => {
                     });
                 }
             } catch (e) {
-                console.warn('[WHL] DOM fallback falhou:', e.message);
+                whlLog.warn(' DOM fallback falhou:', e.message);
             }
         }
 
@@ -1776,14 +1776,14 @@ window.whl_hooks_main = () => {
             .sort((a, b) => b[1].confidence - a[1].confidence)
             .map(([num]) => num);
 
-        console.log('[WHL] ═══════════════════════════════════════════');
-        console.log('[WHL] ✅ EXTRAÇÃO ULTRA CONCLUÍDA');
-        console.log(`[WHL] 📱 Total: ${finalMembers.length}`);
-        console.log(`[WHL] 🔹 API: ${results.stats.apiDirect}`);
-        console.log(`[WHL] 🔹 LID: ${results.stats.lidResolved}`);
-        console.log(`[WHL] 🔹 DOM: ${results.stats.domFallback}`);
-        console.log(`[WHL] ❌ Falhas: ${results.stats.failed}`);
-        console.log('[WHL] ═══════════════════════════════════════════');
+        whlLog.info(' ═══════════════════════════════════════════');
+        whlLog.info(' ✅ EXTRAÇÃO ULTRA CONCLUÍDA');
+        whlLog.debug(`[WHL] 📱 Total: ${finalMembers.length}`);
+        whlLog.debug(`[WHL] 🔹 API: ${results.stats.apiDirect}`);
+        whlLog.debug(`[WHL] 🔹 LID: ${results.stats.lidResolved}`);
+        whlLog.debug(`[WHL] 🔹 DOM: ${results.stats.domFallback}`);
+        whlLog.debug(`[WHL] ❌ Falhas: ${results.stats.failed}`);
+        whlLog.info(' ═══════════════════════════════════════════');
 
         return {
             success: true,
@@ -1806,13 +1806,13 @@ window.whl_hooks_main = () => {
      * Usa WAWebChatCollection e WAWebBlocklistCollection via require()
      */
     function extrairTudoInstantaneo() {
-        console.log('[WHL] 🚀 Iniciando extração instantânea via API interna...');
+        whlLog.info(' 🚀 Iniciando extração instantânea via API interna...');
         
         const normal = extrairContatos();
         const archived = extrairArquivados();
         const blocked = extrairBloqueados();
 
-        console.log(`[WHL] ✅ Extração completa: ${normal.count} normais, ${archived.count} arquivados, ${blocked.count} bloqueados`);
+        whlLog.debug(`[WHL] ✅ Extração completa: ${normal.count} normais, ${archived.count} arquivados, ${blocked.count} bloqueados`);
 
         return {
             success: true,
@@ -1887,19 +1887,19 @@ window.whl_hooks_main = () => {
         // PR #71: Listener para extrair membros por ID com código testado e validado
         if (type === 'WHL_EXTRACT_GROUP_MEMBERS_BY_ID') {
             const { groupId, requestId } = event.data;
-            console.log('[WHL] Recebido pedido de extração de membros:', groupId);
+            whlLog.info(' Recebido pedido de extração de membros:', groupId);
             
             (async () => {
                 try {
                     const result = await extractGroupMembers(groupId);
-                    console.log('[WHL] Enviando resultado:', result);
+                    whlLog.info(' Enviando resultado:', result);
                     window.postMessage({
                         type: 'WHL_EXTRACT_GROUP_MEMBERS_RESULT',
                         requestId,
                         ...result
                     }, '*');
                 } catch (error) {
-                    console.error('[WHL] Erro no listener:', error);
+                    whlLog.error(' Erro no listener:', error);
                     window.postMessage({
                         type: 'WHL_EXTRACT_GROUP_MEMBERS_RESULT',
                         requestId,
@@ -1919,11 +1919,11 @@ window.whl_hooks_main = () => {
         
         // RECOVER MESSAGES - Since hooks are automatic, just acknowledge
         if (type === 'WHL_RECOVER_ENABLE') {
-            console.log('[WHL Hooks] Recover is always enabled with hooks approach');
+            whlLog.debug('[WHL Hooks] Recover is always enabled with hooks approach');
         }
         
         if (type === 'WHL_RECOVER_DISABLE') {
-            console.log('[WHL Hooks] Note: Recover hooks cannot be disabled once loaded');
+            whlLog.debug('[WHL Hooks] Note: Recover hooks cannot be disabled once loaded');
         }
         
         // GET RECOVER HISTORY
@@ -1937,7 +1937,7 @@ window.whl_hooks_main = () => {
                         historicoRecover.push(...parsed);
                     }
                 } catch(e) {
-                    console.warn('[WHL] Erro ao carregar histórico:', e);
+                    whlLog.warn(' Erro ao carregar histórico:', e);
                 }
             }
             
@@ -1962,7 +1962,7 @@ window.whl_hooks_main = () => {
      * Método testado e validado pelo usuário - extrai 3 membros no teste
      */
     async function extractGroupContacts() {
-        console.log("[WHL] Iniciando extração de membros via DOM...");
+        whlLog.debug("[WHL] Iniciando extração de membros via DOM...");
 
         // Múltiplos seletores para máxima compatibilidade
         const possibleGroupSelectors = [
@@ -2333,10 +2333,10 @@ window.whl_hooks_main = () => {
                 if (/^\d{8,15}$/.test(id)) nums.add(id);
             });
 
-            console.log(`[WHL Hooks] Extração instantânea: ${nums.size} números`);
+            whlLog.debug(`[WHL Hooks] Extração instantânea: ${nums.size} números`);
             window.postMessage({ type: 'WHL_EXTRACT_INSTANT_RESULT', numbers: [...nums] }, '*');
         } catch (e) {
-            console.error('[WHL Hooks] Erro na extração instantânea:', e);
+            whlLog.error('[WHL Hooks] Erro na extração instantânea:', e);
             window.postMessage({ type: 'WHL_EXTRACT_INSTANT_ERROR', error: e.message }, '*');
         }
     });
@@ -2345,6 +2345,6 @@ window.whl_hooks_main = () => {
 // Executar apenas uma vez
 if (!window.whl_hooks_loaded) {
     window.whl_hooks_loaded = true;
-    console.log('[WHL Hooks] Initializing WPP Hooks...');
+    whlLog.debug('[WHL Hooks] Initializing WPP Hooks...');
     window.whl_hooks_main();
 }
