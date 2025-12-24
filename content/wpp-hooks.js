@@ -1508,7 +1508,7 @@ window.whl_hooks_main = () => {
                 const chats = CC?.ChatCollection?.getModelsArray?.() || MODULES.CHAT_COLLECTION?.models || [];
                 if (chats.length > 0) {
                     const contatos = chats
-                        .filter(c => !c.isGroup && (c.id._serialized?.endsWith('@c.us') || c.id?.user))
+                        .filter(c => c?.id?.server !== 'g.us' && (c.id._serialized?.endsWith('@c.us') || c.id?.user))
                         .map(c => c.id.user || c.id._serialized?.replace('@c.us', ''));
                     console.log('[WHL] ✅ Extração via WAWebChatCollection:', contatos.length);
                     return { success: true, contacts: contatos, method: 'WAWebChatCollection' };
