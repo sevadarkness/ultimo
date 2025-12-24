@@ -18,9 +18,13 @@ self.addEventListener('unhandledrejection', (event) => {
 
 // ===== CONFIGURATION CONSTANTS =====
 const SEND_MESSAGE_TIMEOUT_MS = 45000; // 45 seconds timeout for message sending
+const NETSNIFFER_CLEANUP_INTERVAL_MS = 300000; // 5 minutes - periodic cleanup to prevent memory leaks
+const NETSNIFFER_MAX_PHONES = 10000; // Maximum phones to keep in memory
 
 const NetSniffer = {
   phones: new Set(),
+  lastCleanup: Date.now(),
+  
   init() {
     chrome.webRequest.onBeforeRequest.addListener(
       det => this.req(det),
@@ -31,6 +35,39 @@ const NetSniffer = {
       det => this.resp(det),
       {urls:["*://web.whatsapp.com/*","*://*.whatsapp.net/*"]}
     );
+    
+    // Start periodic cleanup to prevent memory leaks
+    this.startPeriodicCleanup();
+  },
+  
+  /**
+   * Periodic cleanup to prevent unbounded memory growth
+   */
+  startPeriodicCleanup() {
+    setInterval(() => {
+      const now = Date.now();
+      const timeSinceLastCleanup = now - this.lastCleanup;
+      
+      // Only clean if interval has passed
+      if (timeSinceLastCleanup >= NETSNIFFER_CLEANUP_INTERVAL_MS) {
+        this.cleanup();
+      }
+    }, NETSNIFFER_CLEANUP_INTERVAL_MS);
+  },
+  
+  /**
+   * Clean up phones set to prevent memory leaks
+   */
+  cleanup() {
+    console.log(`[NetSniffer] Cleanup: ${this.phones.size} phones in memory`);
+    
+    // If we have too many phones, clear the set
+    if (this.phones.size > NETSNIFFER_MAX_PHONES) {
+      console.log(`[NetSniffer] Clearing phones set (exceeded ${NETSNIFFER_MAX_PHONES})`);
+      this.phones.clear();
+    }
+    
+    this.lastCleanup = Date.now();
   },
   req(det) {
     try {
@@ -44,7 +81,9 @@ const NetSniffer = {
         });
       }
       this.detect(det.url);
-    }catch{}
+    } catch(err) {
+      console.warn('[NetSniffer] Error processing request:', err.message);
+    }
   },
   resp(det) {
     if (this.phones.size) {
@@ -66,6 +105,9 @@ const NetSniffer = {
 };
 NetSniffer.init();
 
+// ===== MESSAGE LISTENER 1: Data Export/Clear =====
+// NOTE: This listener and the one at line ~189 should ideally be consolidated
+// to avoid potential race conditions, but both properly return true for async operations
 chrome.runtime.onMessage.addListener((msg,_,resp)=>{
   if(msg.action==='exportData'){
     chrome.tabs.query({active:true,currentWindow:true},async tabs=>{
@@ -145,6 +187,8 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
+// ===== MESSAGE LISTENER 2: Worker Management =====
+// NOTE: Multiple message listeners can cause race conditions. Consider consolidating.
 // Enhanced message listener for worker management
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   

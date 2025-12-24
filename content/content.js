@@ -146,7 +146,9 @@
         warning.textContent = '⚠️ Extensão atualizada! Recarregue a página (F5)';
         panel.prepend(warning);
       }
-    } catch {}
+    } catch (err) {
+      whlLog.caught('showExtensionInvalidatedWarning', err);
+    }
   }
 
   // ======= Validador e repositório dos telefones extraídos =======
@@ -278,7 +280,9 @@
           let id = c.id._serialized;
           if (id.endsWith('@c.us')) HarvesterStore.processPhone(id.replace('@c.us',''), HarvesterStore.ORIGINS.STORE, {nome: c.name});
         });
-      } catch(e) {}
+      } catch(e) {
+        whlLog.caught('fromStore', e);
+      }
     },
     fromGroup(chat) {
       try {
@@ -287,7 +291,9 @@
           let id = m.id._serialized;
           if (id.endsWith('@c.us')) HarvesterStore.processPhone(id.replace('@c.us',''), HarvesterStore.ORIGINS.GROUP, {isGroup:true});
         });
-      } catch{}
+      } catch(err) {
+        whlLog.caught('fromGroup', err);
+      }
     },
     observerChats() {
       let pane = document.querySelector('#pane-side');
@@ -304,7 +310,9 @@
       try {
         if (el.textContent) this.findPhones(el.textContent, HarvesterStore.ORIGINS.DOM);
         Array.from(el.querySelectorAll?.('span,div')).forEach(e => this.findPhones(e.textContent, HarvesterStore.ORIGINS.DOM));
-      } catch{}
+      } catch(err) {
+        whlLog.caught('extractElement', err);
+      }
     },
     findPhones(text, origin) {
       if (!text) return;
@@ -387,7 +395,9 @@
             if (v) this.findPhones(v, HarvesterStore.ORIGINS.LS);
           }
         });
-      } catch{}
+      } catch(err) {
+        whlLog.caught('localStorageExtract', err);
+      }
     },
     async autoScroll() {
       let pane = document.querySelector('#pane-side');
