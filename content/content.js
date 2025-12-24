@@ -5022,11 +5022,14 @@ window.addEventListener('message', (e) => {
     
     if (btnExtractMembers) {
       btnExtractMembers.disabled = false;
-      btnExtractMembers.textContent = '💥 Extrair Membros';
+      btnExtractMembers.textContent = '📥 Extrair Membros';
     }
     
     if (e.data.success || e.data.members) {
       let members = e.data.members || [];
+      
+      console.log('[WHL] 📊 Membros recebidos da API:', members);
+      console.log('[WHL] 📊 Tipo:', typeof members, 'Comprimento:', members.length);
       
       // VALIDAÇÃO FINAL: Filtrar LIDs
       const validMembers = members.filter(num => {
@@ -5035,10 +5038,15 @@ window.addEventListener('message', (e) => {
           return false;
         }
         const clean = String(num).replace(/\D/g, '');
-        return /^\d{10,15}$/.test(clean);
+        const isValid = /^\d{10,15}$/.test(clean);
+        if (!isValid) {
+          console.warn('[WHL] ❌ Número inválido rejeitado:', num, 'clean:', clean);
+        }
+        return isValid;
       });
       
       console.log('[WHL] ✅ Números válidos:', validMembers.length);
+      console.log('[WHL] ✅ Números válidos lista:', validMembers);
       
       if (membersBox) membersBox.value = validMembers.join('\n');
       if (membersCount) membersCount.textContent = validMembers.length;
@@ -5047,6 +5055,8 @@ window.addEventListener('message', (e) => {
       if (e.data.stats) {
         const { apiDirect, lidResolved, domFallback, duplicates, failed } = e.data.stats;
         const total = apiDirect + lidResolved + domFallback;
+        
+        const successRate = total + failed > 0 ? Math.round((validMembers.length / (total + failed)) * 100) : 0;
         
         alert(
           `✅ ${validMembers.length} NÚMEROS REAIS extraídos!\n\n` +
@@ -5057,12 +5067,13 @@ window.addEventListener('message', (e) => {
           `♻️ Duplicatas: ${duplicates}\n` +
           `❌ Falhas: ${failed}\n` +
           `━━━━━━━━━━━━━━━━━━\n` +
-          `✅ Taxa: ${Math.round((validMembers.length / (total + failed)) * 100)}%`
+          `✅ Taxa: ${successRate}%`
         );
       } else {
         alert(`✅ ${validMembers.length} membros extraídos!`);
       }
     } else {
+      console.error('[WHL] ❌ Erro na extração:', e.data);
       alert('❌ Erro: ' + (e.data.error || 'Desconhecido'));
     }
   }
