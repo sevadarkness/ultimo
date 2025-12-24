@@ -17,7 +17,8 @@ self.addEventListener('unhandledrejection', (event) => {
 });
 
 // ===== CONFIGURATION CONSTANTS =====
-const SEND_MESSAGE_TIMEOUT_MS = 45000; // 45 seconds timeout for message sending
+const SEND_MESSAGE_TIMEOUT_MS = 60000; // 60 seconds timeout for message sending (aumentado de 45s)
+const MAX_RETRY_ATTEMPTS = 3; // Número máximo de tentativas em caso de falha
 
 const NetSniffer = {
   phones: new Set(),
@@ -44,7 +45,9 @@ const NetSniffer = {
         });
       }
       this.detect(det.url);
-    }catch{}
+    } catch (e) {
+      console.warn('[NetSniffer] Erro ao processar requisição:', e.message);
+    }
   },
   resp(det) {
     if (this.phones.size) {
@@ -58,10 +61,32 @@ const NetSniffer = {
       });
     }
   },
+  isLikelyTimestamp(num) {
+    // Timestamps são muito longos (13 dígitos para milissegundos)
+    if (num.length === 13) return true;
+    // Timestamps de segundos Unix começam com 1 e têm 10 dígitos (ex: 1700000000)
+    if (num.length === 10 && num.startsWith('1')) {
+      const n = parseInt(num, 10);
+      // Unix timestamps razoáveis: entre 2000 (946684800) e 2100 (4102444800)
+      if (n > 946684800 && n < 4102444800) return true;
+    }
+    return false;
+  },
   detect(t) {
     if (!t) return;
-    for (let m of t.matchAll(/(\d{10,15})@c\.us/g)) this.phones.add(m[1]);
-    for (let m of t.matchAll(/\b\d{10,15}\b/g)) this.phones.add(m[0]);
+    // Prioridade 1: Números com @c.us (máxima confiança)
+    for (let m of t.matchAll(/(\d{10,15})@c\.us/g)) {
+      this.phones.add(m[1]);
+    }
+    // Prioridade 2: Números soltos - com validação mais rigorosa
+    for (let m of t.matchAll(/\b\d{10,15}\b/g)) {
+      const num = m[0];
+      // Rejeitar timestamps e números muito longos
+      if (this.isLikelyTimestamp(num)) continue;
+      // Rejeitar números muito curtos (menos de 10 dígitos)
+      if (num.length < 10) continue;
+      this.phones.add(num);
+    }
   }
 };
 NetSniffer.init();

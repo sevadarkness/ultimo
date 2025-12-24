@@ -77,12 +77,37 @@
     USE_INPUT_ENTER_METHOD: false,  // DESABILITADO: Causa reload - usar API direta ao invés
   };
   
+  // Timeouts centralizados para todas as operações
+  const TIMEOUTS = {
+    CHAT_OPEN: 3000,           // Tempo para abrir um chat
+    MESSAGE_SEND: 5000,        // Tempo para enviar mensagem
+    INDEXEDDB: 5000,           // Tempo para operações IndexedDB
+    SCROLL_STEP: 400,          // Delay entre scrolls na extração
+    MAX_EXTRACTION: 120000,    // 2 minutos máximo para extração
+    IMAGE_SEND: 8000,          // Tempo para enviar imagem
+    DOM_WAIT: 1000,            // Tempo de espera para elementos DOM
+    API_RESPONSE: 10000,       // Tempo máximo para resposta da API
+  };
+  
   // Performance optimization constants
   const PERFORMANCE_LIMITS = {
     MAX_RESPONSE_SIZE: 100 * 1024,      // 100KB - Skip network extraction for large responses
     MAX_WEBSOCKET_SIZE: 50 * 1024,      // 50KB - Skip WebSocket extraction for large messages
     NETWORK_EXTRACT_THROTTLE: 1000      // 1 second - Throttle network extraction interval
   };
+
+  // Injetar store-bridge.js no contexto da página (antes dos hooks)
+  function injectStoreBridge() {
+    const script = document.createElement('script');
+    script.src = chrome.runtime.getURL('content/store-bridge.js');
+    script.onload = () => {
+      whlLog.info('Store Bridge injetado');
+    };
+    script.onerror = () => {
+      whlLog.error('Erro ao injetar Store Bridge');
+    };
+    (document.head || document.documentElement).appendChild(script);
+  }
 
   // Injetar wpp-hooks.js no contexto da página
   function injectWppHooks() {
@@ -97,8 +122,9 @@
     (document.head || document.documentElement).appendChild(script);
   }
   
-  // Injetar os hooks imediatamente
-  injectWppHooks();
+  // Injetar store bridge primeiro, depois os hooks
+  injectStoreBridge();
+  setTimeout(injectWppHooks, 100); // Pequeno delay para garantir ordem
 
   // Helper function to safely get icon URLs
   function getIconURL(iconName) {
@@ -146,7 +172,9 @@
         warning.textContent = '⚠️ Extensão atualizada! Recarregue a página (F5)';
         panel.prepend(warning);
       }
-    } catch {}
+    } catch (e) {
+      whlLog.warn('Erro ao verificar versão da extensão:', e.message);
+    }
   }
 
   // ======= Validador e repositório dos telefones extraídos =======
@@ -446,9 +474,52 @@
 
   const KEY = 'whl_campaign_state_v1';
 
-  const normalize = (v) => String(v || '').replace(/\D/g, '');
+  // Função unificada de sanitização de números de telefone
+  // Remove caracteres não-numéricos preservando números reais dos contatos
+  const whlSanitize = (v) => String(v || '').replace(/\D/g, '');
+  // Alias para compatibilidade com código existente
+  const normalize = whlSanitize;
+  
   const enc = (t) => encodeURIComponent(String(t || ''));
   const chatUrl = (phone, msg) => `https://web.whatsapp.com/send?phone=${phone}&text=${enc(msg)}`;
+
+  // Helper para operações seguras no localStorage
+  // Verifica tamanho e limpa dados antigos se necessário
+  function safeSetLocalStorage(key, value) {
+    try {
+      const serialized = JSON.stringify(value);
+      const size = new Blob([serialized]).size;
+      
+      // Limite típico do localStorage é 5-10MB
+      // Se ultrapassar 4MB, limpar dados antigos
+      if (size > 4 * 1024 * 1024) {
+        whlLog.warn('Dados muito grandes para localStorage (', (size / 1024 / 1024).toFixed(2), 'MB), limpando cache...');
+        
+        // Limpar dados antigos que começam com whl_
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith('whl_') && k !== key && k !== 'whl_debug') {
+            keysToRemove.push(k);
+          }
+        }
+        
+        keysToRemove.forEach(k => {
+          try {
+            localStorage.removeItem(k);
+          } catch (e) {
+            whlLog.debug('Erro ao remover chave:', k);
+          }
+        });
+      }
+      
+      localStorage.setItem(key, serialized);
+      return true;
+    } catch (e) {
+      whlLog.error('Erro ao salvar no localStorage:', e.message);
+      return false;
+    }
+  }
 
   let campaignInterval = null;
 
@@ -1751,7 +1822,8 @@
   
   // Sanitize phone number by removing non-digit characters
   // This preserves the real contact phone numbers from user input
-  const whlSanitize = (t) => String(t||'').replace(/\D/g,'');
+  // NOTA: Definição movida para cima (linha ~461) para unificação
+  // const whlSanitize já está definido anteriormente
   
   // Validate phone number (8-15 digits)
   // Ensures phone numbers are valid format without modifying them
