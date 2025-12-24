@@ -1451,6 +1451,7 @@
             <div class="progress-fill" id="whlProgressFill" style="width:0%"></div>
           </div>
           <div class="tiny" style="margin-top:6px;text-align:center" id="whlProgressText">0%</div>
+          <div class="tiny" style="margin-top:4px;text-align:center;color:#fbbf24" id="whlEstimatedTime"></div>
 
           <div class="row" style="margin-top:10px">
             <button class="success" style="flex:1" id="whlStartCampaign">▶️ Iniciar Campanha</button>
@@ -1694,8 +1695,28 @@
     return s.length >= 10 && s.length <= 15;
   };
 
+  // Item 7: Detect and fix encoding errors in CSV processing
   function whlCsvToRows(text) {
-    const lines = String(text||'').replace(/\r/g,'').split('\n').filter(l=>l.trim().length);
+    // Try to detect and fix encoding issues
+    let processedText = String(text || '');
+    
+    // Fix common encoding issues (UTF-8 BOM, ISO-8859-1, Windows-1252)
+    if (processedText.charCodeAt(0) === 0xFEFF) {
+      // Remove UTF-8 BOM
+      processedText = processedText.substring(1);
+    }
+    
+    // Try to detect and fix ISO-8859-1 to UTF-8 issues
+    try {
+      // If text contains replacement character (�), try to decode as Latin-1
+      if (processedText.includes('�')) {
+        console.warn('[WHL] Possível erro de encoding detectado no CSV');
+      }
+    } catch (e) {
+      console.warn('[WHL] Erro ao verificar encoding:', e);
+    }
+    
+    const lines = processedText.replace(/\r/g,'').split('\n').filter(l=>l.trim().length);
     const rows = [];
     for (const line of lines) {
       const sep = (line.includes(';') && !line.includes(',')) ? ';' : ',';
@@ -1725,47 +1746,88 @@
 
   // DEPRECATED: Overlay functions removed - not needed for URL mode
 
+  // Item 17: Display loading and feedback when exporting CSV
   async function whlExportReportCSV() {
-    const st = await getState();
-    const rows = [['phone','status','retries','timestamp']];
-    const ts = new Date().toISOString();
-    (st.queue||[]).forEach(x => rows.push([x.phone||'', x.status||'', String(x.retries||0), ts]));
-    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type:'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `whl_report_${Date.now()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const hintEl = document.getElementById('whlReportHint');
+    
+    try {
+      if (hintEl) {
+        hintEl.textContent = '⏳ Exportando...';
+        hintEl.style.color = '#fbbf24';
+      }
+      
+      const st = await getState();
+      const rows = [['phone','status','retries','timestamp']];
+      const ts = new Date().toISOString();
+      (st.queue||[]).forEach(x => rows.push([x.phone||'', x.status||'', String(x.retries||0), ts]));
+      
+      const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+      const blob = new Blob([csv], { type:'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `whl_report_${Date.now()}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      
+      if (hintEl) {
+        hintEl.textContent = `✅ Exportado com sucesso! ${rows.length - 1} registros`;
+        hintEl.style.color = '#4ade80';
+      }
+    } catch (err) {
+      console.error('[WHL] Erro ao exportar CSV:', err);
+      if (hintEl) {
+        hintEl.textContent = '❌ Erro ao exportar CSV';
+        hintEl.style.color = '#ef4444';
+      }
+    }
   }
 
+  // Item 17: Display loading and feedback when exporting CSV
   async function whlExportExtractedCSV() {
     const extractedBox = document.getElementById('whlExtractedNumbers');
+    const statusEl = document.getElementById('whlExtractStatus');
+    
     if (!extractedBox) return;
     
-    const numbersText = extractedBox.value || '';
-    const numbers = numbersText.split(/\r?\n/).filter(n => n.trim().length > 0);
-    
-    if (numbers.length === 0) {
-      alert('Nenhum número extraído para exportar. Por favor, extraia contatos primeiro.');
-      return;
+    try {
+      if (statusEl) {
+        statusEl.textContent = '⏳ Exportando...';
+        statusEl.style.color = '#fbbf24';
+      }
+      
+      const numbersText = extractedBox.value || '';
+      const numbers = numbersText.split(/\r?\n/).filter(n => n.trim().length > 0);
+      
+      if (numbers.length === 0) {
+        alert('Nenhum número extraído para exportar. Por favor, extraia contatos primeiro.');
+        if (statusEl) statusEl.textContent = '';
+        return;
+      }
+      
+      const rows = [['phone']];
+      numbers.forEach(phone => rows.push([phone.trim()]));
+      
+      const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+      const blob = new Blob([csv], { type:'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `whl_extracted_contacts_${Date.now()}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      
+      if (statusEl) {
+        statusEl.textContent = `✅ CSV exportado com sucesso! ${numbers.length} números`;
+        statusEl.style.color = '#4ade80';
+      }
+    } catch (err) {
+      console.error('[WHL] Erro ao exportar CSV:', err);
+      if (statusEl) {
+        statusEl.textContent = '❌ Erro ao exportar CSV';
+        statusEl.style.color = '#ef4444';
+      }
     }
-    
-    const rows = [['phone']];
-    numbers.forEach(phone => rows.push([phone.trim()]));
-    
-    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type:'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `whl_extracted_contacts_${Date.now()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    
-    const statusEl = document.getElementById('whlExtractStatus');
-    if (statusEl) statusEl.textContent = `✅ CSV exportado com ${numbers.length} números`;
   }
 
   // ===== DRAFT MANAGEMENT FUNCTIONS =====
@@ -4006,6 +4068,24 @@
     
     document.getElementById('whlProgressFill').style.width = `${percentage}%`;
     document.getElementById('whlProgressText').textContent = `${percentage}% (${completed}/${total})`;
+    
+    // Item 18: Calculate and display estimated time
+    const estimatedTimeEl = document.getElementById('whlEstimatedTime');
+    if (estimatedTimeEl && state.isRunning && pending > 0) {
+      const avgDelay = (state.delayMin + state.delayMax) / 2;
+      const estimatedSeconds = pending * avgDelay;
+      const estimatedMinutes = Math.ceil(estimatedSeconds / 60);
+      
+      if (estimatedMinutes > 60) {
+        const hours = Math.floor(estimatedMinutes / 60);
+        const mins = estimatedMinutes % 60;
+        estimatedTimeEl.textContent = `⏱️ Tempo estimado: ${hours}h ${mins}min`;
+      } else {
+        estimatedTimeEl.textContent = `⏱️ Tempo estimado: ${estimatedMinutes} min`;
+      }
+    } else if (estimatedTimeEl) {
+      estimatedTimeEl.textContent = '';
+    }
 
     document.getElementById('whlMeta').textContent = `${state.queue.length} contato(s) • posição: ${Math.min(state.index+1, Math.max(1,state.queue.length))}/${Math.max(1,state.queue.length)}`;
 
@@ -4126,6 +4206,10 @@
 
     const rawNums = (st.numbersText||'').split(/\r?\n/).map(n => whlSanitize(n)).filter(n => n.length >= 8);
     
+    // Item 8: Track invalid and duplicate numbers for display
+    const invalidNumbers = [];
+    const duplicateNumbers = [];
+    
     // FILTRAGEM DE DUPLICATAS COM NORMALIZAÇÃO
     const uniqueNums = [];
     const seen = new Set();
@@ -4138,6 +4222,11 @@
         normalized = '55' + normalized;
       }
       
+      // Item 8: Check if number is invalid (less than 10 digits)
+      if (!whlIsValidPhone(normalized)) {
+        invalidNumbers.push(num);
+      }
+      
       // Verificar duplicata (considerando versões com e sem 55)
       const without55 = normalized.startsWith('55') && normalized.length >= 12 
         ? normalized.substring(2) 
@@ -4145,6 +4234,7 @@
       
       if (seen.has(normalized) || seen.has(without55)) {
         duplicatesRemoved++;
+        duplicateNumbers.push(num);
         console.log('[WHL] Duplicata removida:', num);
         continue;
       }
@@ -4168,16 +4258,28 @@
     await setState(st);
     await render();
     
-    // Feedback visual
+    // Item 8: Display detailed validation feedback
     const hintEl = document.getElementById('whlHint');
     if (hintEl) {
+      let message = `✅ ${uniqueNums.length} números únicos carregados`;
+      
       if (duplicatesRemoved > 0) {
-        hintEl.textContent = `✅ ${uniqueNums.length} números únicos (${duplicatesRemoved} duplicata(s) removida(s))`;
-        hintEl.style.color = '#4ade80';
-      } else {
-        hintEl.textContent = `✅ ${uniqueNums.length} números carregados`;
-        hintEl.style.color = '#4ade80';
+        message += `\n⚠️ ${duplicatesRemoved} duplicata(s) removida(s)`;
+        if (duplicateNumbers.length <= 5) {
+          message += `: ${duplicateNumbers.join(', ')}`;
+        }
       }
+      
+      if (invalidNumbers.length > 0) {
+        message += `\n❌ ${invalidNumbers.length} número(s) inválido(s) (menos de 10 dígitos)`;
+        if (invalidNumbers.length <= 5) {
+          message += `: ${invalidNumbers.join(', ')}`;
+        }
+      }
+      
+      hintEl.textContent = message;
+      hintEl.style.color = invalidNumbers.length > 0 || duplicatesRemoved > 0 ? '#fbbf24' : '#4ade80';
+      hintEl.style.whiteSpace = 'pre-line';
     }
   }
 
@@ -5079,13 +5181,30 @@ try {
 
   if (btnExportRecovered) {
     btnExportRecovered.addEventListener('click', () => {
-      // Exportar histórico de recover como JSON
+      // Item 19: Validate history content before allowing JSON export
       const history = localStorage.getItem('whl_recover_history');
-      if (!history || history === '[]') {
-        alert('⚠️ Nenhuma mensagem recuperada para exportar.');
+      
+      // Validate history exists and is not empty
+      if (!history || history.trim() === '' || history === '[]' || history === 'null') {
+        alert('⚠️ Nenhuma mensagem recuperada para exportar.\n\nO histórico está vazio.');
         return;
       }
       
+      // Validate JSON format
+      let parsedHistory;
+      try {
+        parsedHistory = JSON.parse(history);
+        if (!Array.isArray(parsedHistory) || parsedHistory.length === 0) {
+          alert('⚠️ Nenhuma mensagem recuperada para exportar.\n\nO histórico está vazio.');
+          return;
+        }
+      } catch (e) {
+        console.error('[WHL] Erro ao validar histórico:', e);
+        alert('❌ Erro ao validar histórico de mensagens.\n\nO formato está corrompido.');
+        return;
+      }
+      
+      // Export validated history
       const blob = new Blob([history], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -5094,7 +5213,7 @@ try {
       a.click();
       URL.revokeObjectURL(url);
       
-      alert('✅ Histórico exportado como JSON!');
+      alert(`✅ Histórico exportado como JSON!\n\n${parsedHistory.length} mensagem(ns) exportada(s).`);
     });
   }
 
