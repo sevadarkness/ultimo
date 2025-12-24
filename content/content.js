@@ -483,6 +483,44 @@
   const enc = (t) => encodeURIComponent(String(t || ''));
   const chatUrl = (phone, msg) => `https://web.whatsapp.com/send?phone=${phone}&text=${enc(msg)}`;
 
+  // Helper para operações seguras no localStorage
+  // Verifica tamanho e limpa dados antigos se necessário
+  function safeSetLocalStorage(key, value) {
+    try {
+      const serialized = JSON.stringify(value);
+      const size = new Blob([serialized]).size;
+      
+      // Limite típico do localStorage é 5-10MB
+      // Se ultrapassar 4MB, limpar dados antigos
+      if (size > 4 * 1024 * 1024) {
+        whlLog.warn('Dados muito grandes para localStorage (', (size / 1024 / 1024).toFixed(2), 'MB), limpando cache...');
+        
+        // Limpar dados antigos que começam com whl_
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith('whl_') && k !== key && k !== 'whl_debug') {
+            keysToRemove.push(k);
+          }
+        }
+        
+        keysToRemove.forEach(k => {
+          try {
+            localStorage.removeItem(k);
+          } catch (e) {
+            whlLog.debug('Erro ao remover chave:', k);
+          }
+        });
+      }
+      
+      localStorage.setItem(key, serialized);
+      return true;
+    } catch (e) {
+      whlLog.error('Erro ao salvar no localStorage:', e.message);
+      return false;
+    }
+  }
+
   let campaignInterval = null;
 
   async function getState() {
