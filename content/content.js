@@ -10,7 +10,7 @@
   const isWorkerTab = urlParams.has('whl_worker') || window.location.href.includes('whl_worker=true');
   
   // Item 20: Minimize console log pollution based on environment
-  const WHL_DEBUG = localStorage.getItem('whl_debug') === 'true' || false;
+  const WHL_DEBUG = localStorage.getItem('whl_debug') === 'true';
   
   if (isWorkerTab) {
     if (WHL_DEBUG) console.log('[WHL] This is the worker tab, UI disabled');
@@ -2605,10 +2605,10 @@
 
   // Função para validar que o chat aberto corresponde ao número esperado
   async function validateOpenChat(expectedPhone) {
-    console.log('[WHL] ========================================');
-    console.log('[WHL] VALIDANDO CHAT ABERTO');
-    console.log('[WHL] Número esperado:', expectedPhone);
-    console.log('[WHL] ========================================');
+    whlLog.debug('========================================');
+    whlLog.debug('VALIDANDO CHAT ABERTO');
+    whlLog.debug('Número esperado:', expectedPhone);
+    whlLog.debug('========================================');
     
     // Normalizar o número esperado
     const normalizedExpected = normalize(expectedPhone);
@@ -2633,7 +2633,7 @@
           const nums = extractNumbersFromText(dataId);
           if (nums.length > 0) {
             chatNumber = nums[0];
-            console.log('[WHL] Número do chat encontrado via data-id:', chatNumber);
+            whlLog.debug('Número do chat encontrado via data-id:', chatNumber);
             break;
           }
         }
@@ -2648,7 +2648,7 @@
           const nums = extractNumbersFromText(titleEl.getAttribute('title'));
           if (nums.length > 0) {
             chatNumber = nums[0];
-            console.log('[WHL] Número do chat encontrado via title:', chatNumber);
+            whlLog.debug('Número do chat encontrado via title:', chatNumber);
           }
         }
         
@@ -2656,7 +2656,7 @@
           const nums = extractNumbersFromText(ariaLabelEl.getAttribute('aria-label'));
           if (nums.length > 0) {
             chatNumber = nums[0];
-            console.log('[WHL] Número do chat encontrado via aria-label:', chatNumber);
+            whlLog.debug('Número do chat encontrado via aria-label:', chatNumber);
           }
         }
       }
@@ -2668,7 +2668,7 @@
       const nums = extractNumbersFromText(url);
       if (nums.length > 0) {
         chatNumber = nums[0];
-        console.log('[WHL] Número do chat encontrado via URL:', chatNumber);
+        whlLog.debug('Número do chat encontrado via URL:', chatNumber);
       }
     }
     
@@ -2685,7 +2685,7 @@
             const nums = extractNumbersFromText(dataId);
             if (nums.length > 0) {
               chatNumber = nums[0];
-              console.log('[WHL] Número do chat encontrado via main panel data-id:', chatNumber);
+              whlLog.debug('Número do chat encontrado via main panel data-id:', chatNumber);
               break;
             }
           }
@@ -2694,8 +2694,8 @@
     }
     
     if (!chatNumber) {
-      console.log('[WHL] ⚠️ VALIDAÇÃO: Não foi possível determinar o número do chat aberto');
-      console.log('[WHL] ⚠️ VALIDAÇÃO INCONCLUSIVA: Prosseguindo com o envio (não bloqueante)');
+      whlLog.warn('VALIDAÇÃO: Não foi possível determinar o número do chat aberto');
+      whlLog.warn('VALIDAÇÃO INCONCLUSIVA: Prosseguindo com o envio (não bloqueante)');
       // Se não conseguimos validar, NÃO bloqueamos o envio - continuamos
       return true;
     }
@@ -2751,12 +2751,12 @@
   // Função para enviar via URL (FALLBACK) - NOTA: Não usado atualmente pois causa reload
   // Mantido para referência futura
   async function sendMessageViaUrl(phoneNumber, message) {
-    console.log('[WHL] ════════════════════════════════════════');
-    console.log('[WHL] ═══ ENVIANDO VIA URL (FALLBACK) ═══');
-    console.log('[WHL] ════════════════════════════════════════');
-    console.log('[WHL] ⚠️ NOTA: URL fallback não implementado pois causa reload de página');
-    console.log('[WHL] ⚠️ Isso quebraria o fluxo da campanha automática');
-    console.log('[WHL] 💡 Use a segunda tentativa DOM ou configure retry para números que falham');
+    whlLog.debug('════════════════════════════════════════');
+    whlLog.debug('═══ ENVIANDO VIA URL (FALLBACK) ═══');
+    whlLog.debug('════════════════════════════════════════');
+    whlLog.warn('NOTA: URL fallback não implementado pois causa reload de página');
+    whlLog.warn('Isso quebraria o fluxo da campanha automática');
+    whlLog.info('Use a segunda tentativa DOM ou configure retry para números que falham');
     
     return false;
   }
@@ -2792,13 +2792,13 @@
       const sendButton = getSendButton();
       
       if (messageInput && sendButton) {
-        console.log('[WHL] ✅ Chat carregado, pronto para enviar');
+        whlLog.debug('Chat carregado, pronto para enviar');
         return true;
       }
       
       // Log de debug
       if (Date.now() - start > 5000) {
-        console.log('[WHL] Aguardando chat carregar...', {
+        whlLog.debug('Aguardando chat carregar...', {
           messageInput: !!messageInput,
           sendButton: !!sendButton
         });
@@ -2807,7 +2807,7 @@
       await new Promise(r => setTimeout(r, 500));
     }
     
-    console.log('[WHL] ⚠️ Timeout aguardando chat carregar');
+    whlLog.warn('Timeout aguardando chat carregar');
     return false;
   }
 

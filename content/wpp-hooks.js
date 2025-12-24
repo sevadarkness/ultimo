@@ -6,7 +6,7 @@
 
 window.whl_hooks_main = () => {
     // ===== DEBUG LOGGING SYSTEM =====
-    const WHL_DEBUG = localStorage.getItem('whl_debug') === 'true' || false;
+            const WHL_DEBUG = localStorage.getItem('whl_debug') === 'true';
     const whlLog = {
         debug: (...args) => { if (WHL_DEBUG) console.log('[WHL Hooks DEBUG]', ...args); },
         info: (...args) => console.log('[WHL Hooks]', ...args),
@@ -210,7 +210,7 @@ window.whl_hooks_main = () => {
             }
             
             const models = modules.ChatCollection.getModelsArray() || [];
-            console.log('[WHL] Total de chats encontrados:', models.length);
+            whlLog.debug('Total de chats encontrados:', models.length);
             
             // Filtrar apenas contatos individuais (c.us)
             const contatos = models
@@ -231,7 +231,7 @@ window.whl_hooks_main = () => {
                 .filter(n => n && /^\d{10,15}$/.test(n));  // PR #78: Test cleaned value
             
             const uniqueContatos = [...new Set(contatos)];
-            console.log('[WHL] Contatos extraídos:', uniqueContatos.length);
+            whlLog.debug('Contatos extraídos:', uniqueContatos.length);
             
             return { 
                 success: true, 
