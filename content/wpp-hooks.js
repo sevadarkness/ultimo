@@ -1637,6 +1637,11 @@ window.whl_hooks_main = () => {
     async function extractGroupMembersUltraInternal(groupId) {
         console.log('[WHL] Iniciando extração interna...');
 
+        // Timeouts para prevenir travamento
+        const WAIT_COLLECTIONS_TIMEOUT = 5000; // 5 segundos
+        const LOAD_PARTICIPANTS_TIMEOUT = 3000; // 3 segundos
+        const API_TIMEOUT = 8000; // 8 segundos
+
         const results = {
             members: new Map(), // Map<número, {fonte, confiança, tentativas}>
             stats: {
@@ -1690,13 +1695,13 @@ window.whl_hooks_main = () => {
         };
 
         // FASE 1/2: API INTERNA (com timeout de 8 segundos)
-        console.log('[WHL] FASE 1/2: Tentando API interna (timeout 8s)...');
+        console.log('[WHL] FASE 1/2: Tentando API interna (timeout ' + (API_TIMEOUT / 1000) + 's)...');
         
         const apiPromise = (async () => {
             try {
                 const cols = await Promise.race([
                     waitForCollections(),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('waitForCollections timeout')), 5000))
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('waitForCollections timeout')), WAIT_COLLECTIONS_TIMEOUT))
                 ]);
                 
                 if (!cols) {
@@ -1723,7 +1728,7 @@ window.whl_hooks_main = () => {
                     try {
                         await Promise.race([
                             meta.loadParticipants(),
-                            new Promise((_, reject) => setTimeout(() => reject(new Error('loadParticipants timeout')), 3000))
+                            new Promise((_, reject) => setTimeout(() => reject(new Error('loadParticipants timeout')), LOAD_PARTICIPANTS_TIMEOUT))
                         ]);
                     } catch (e) {
                         console.warn('[WHL] loadParticipants falhou ou timeout:', e.message);
@@ -1788,9 +1793,9 @@ window.whl_hooks_main = () => {
         await Promise.race([
             apiPromise,
             new Promise(resolve => setTimeout(() => {
-                console.warn('[WHL] FASE 1/2 timeout (8s), pulando para DOM...');
+                console.warn('[WHL] FASE 1/2 timeout (' + (API_TIMEOUT / 1000) + 's), pulando para DOM...');
                 resolve();
-            }, 8000))
+            }, API_TIMEOUT))
         ]);
 
         // FASE 3: DOM SEMPRE (independente do resultado da API)
