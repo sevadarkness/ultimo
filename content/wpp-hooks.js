@@ -2057,6 +2057,10 @@ window.whl_hooks_main = () => {
         console.log('[WHL] Abrindo grupo para extração:', groupId);
         const sleep = (ms) => new Promise(r => setTimeout(r, ms));
         
+        // Constants
+        const CHAT_OPEN_DELAY = 1500; // Time to wait for chat to open
+        const MAX_DRAWER_SCROLL_ITERATIONS = 20; // Max scrolls for drawer
+        
         // Método 1: Encontrar o grupo na lista lateral e clicar
         const chatList = document.querySelector('#pane-side');
         if (!chatList) {
@@ -2064,16 +2068,16 @@ window.whl_hooks_main = () => {
             return false;
         }
         
-        // Procurar o elemento do grupo na lista
+        // Procurar o elemento do grupo na lista (com seletor mais específico)
         // O grupo pode ser identificado pelo data-id ou pelo ID serializado
-        const groupElements = chatList.querySelectorAll('[data-id]');
+        const groupElements = chatList.querySelectorAll('[data-testid="cell-frame-container"][data-id], [role="listitem"][data-id]');
         
         for (const el of groupElements) {
             const dataId = el.getAttribute('data-id');
             if (dataId && dataId.includes(groupId)) {
                 console.log('[WHL] Grupo encontrado na lista, clicando...');
                 el.click();
-                await sleep(1500); // Aguardar o chat abrir
+                await sleep(CHAT_OPEN_DELAY);
                 return true;
             }
         }
@@ -2081,13 +2085,15 @@ window.whl_hooks_main = () => {
         // Método 2: Procurar por título/nome do grupo (fallback)
         // Buscar elementos de chat e verificar se algum corresponde
         const allChats = chatList.querySelectorAll('[role="listitem"], [data-testid="cell-frame-container"]');
+        const groupIdPrefix = groupId.split('@')[0];
         
         for (const chat of allChats) {
-            // Verificar se o chat tem o groupId no HTML interno
-            if (chat.outerHTML.includes(groupId.split('@')[0])) {
-                console.log('[WHL] Grupo encontrado via HTML, clicando...');
+            // Verificar se o chat tem o groupId nos atributos primeiro (mais rápido)
+            const dataId = chat.getAttribute('data-id');
+            if (dataId && dataId.includes(groupIdPrefix)) {
+                console.log('[WHL] Grupo encontrado via atributo, clicando...');
                 chat.click();
-                await sleep(1500);
+                await sleep(CHAT_OPEN_DELAY);
                 return true;
             }
         }
@@ -2101,7 +2107,7 @@ window.whl_hooks_main = () => {
                     // Tentar métodos internos para abrir o chat
                     if (typeof chat.open === 'function') {
                         await chat.open();
-                        await sleep(1500);
+                        await sleep(CHAT_OPEN_DELAY);
                         return true;
                     }
                     
@@ -2112,7 +2118,7 @@ window.whl_hooks_main = () => {
                         const chatEl = document.querySelector(selector);
                         if (chatEl) {
                             chatEl.click();
-                            await sleep(1500);
+                            await sleep(CHAT_OPEN_DELAY);
                             return true;
                         }
                     }
@@ -2136,8 +2142,10 @@ window.whl_hooks_main = () => {
         // Allows spaces in format as shown in WhatsApp UI (e.g., "+55 21 99999-8888")
         const PHONE_BR_REGEX = /\+?55\s?\d{2}\s?\d{4,5}-?\d{4}/g;
         
-        // Maximum scroll loops before stopping (prevents infinite loops in large groups)
-        const MAX_SCROLL_LOOPS = 220;
+        // Constants for scroll and timing
+        const MAX_SCROLL_LOOPS = 220; // Maximum scroll loops before stopping (prevents infinite loops in large groups)
+        const MAX_DRAWER_SCROLL_ITERATIONS = 20; // Max scroll iterations for drawer members
+        const SCROLL_DELAY = 500; // Delay between scroll iterations
 
         // Normalize phone: remove spaces and hyphens, keep digits (+ will be removed by isBR check)
         const normalizePhone = (s) => s.replace(/\s+/g,'').replace(/[^\d+]/g,'');
@@ -2155,7 +2163,7 @@ window.whl_hooks_main = () => {
             if (!opened) {
                 console.warn('[WHL] DOM: Não foi possível abrir o grupo automaticamente. Tentando continuar...');
             }
-            await sleep(500);
+            await sleep(SCROLL_DELAY);
         }
 
         console.log('[WHL] DOM: abrindo Dados do grupo...');
@@ -2209,7 +2217,7 @@ window.whl_hooks_main = () => {
             if (verTudo) break;
 
             drawerScroller.scrollTop = drawerScroller.scrollHeight;
-            await sleep(500);
+            await sleep(SCROLL_DELAY);
         }
 
         if (!verTudo) {
@@ -2226,9 +2234,9 @@ window.whl_hooks_main = () => {
                 const membersContainer = membersSections[0].parentElement;
                 if (membersContainer && membersContainer.scrollHeight > membersContainer.clientHeight) {
                     console.log('[WHL] DOM: Scrollando container de membros no drawer...');
-                    for (let i = 0; i < 20; i++) {
+                    for (let i = 0; i < MAX_DRAWER_SCROLL_ITERATIONS; i++) {
                         membersContainer.scrollTop = membersContainer.scrollHeight;
-                        await sleep(500);
+                        await sleep(SCROLL_DELAY);
                     }
                 }
             }
