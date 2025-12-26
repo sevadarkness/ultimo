@@ -1646,16 +1646,11 @@ window.whl_hooks_main = () => {
             members: new Map(), // Map<número, {fonte, confiança, tentativas}>
             stats: {
                 apiDirect: 0,
-                lidResolved: 0,
                 domFallback: 0,
                 duplicates: 0,
                 failed: 0
             }
         };
-        
-        // OTIMIZAÇÃO: Track para prevenir loops infinitos em resolução de LID
-        const lidAttempts = new Map(); // Map<participantId, attemptCount>
-        const MAX_LID_ATTEMPTS = 1; // REDUZIDO de 3 para 1
 
         // Função para adicionar membro com scoring
         const addMember = (num, source, confidence) => {
@@ -1695,7 +1690,7 @@ window.whl_hooks_main = () => {
         };
 
         // FASE 1/2: API INTERNA (com timeout de 8 segundos)
-        console.log('[WHL] FASE 1/2: Tentando API interna (timeout ' + (API_TIMEOUT / 1000) + 's)...');
+        console.log(`[WHL] FASE 1/2: Tentando API interna (timeout ${API_TIMEOUT / 1000}s)...`);
         
         const apiPromise = (async () => {
             try {
@@ -1793,7 +1788,7 @@ window.whl_hooks_main = () => {
         await Promise.race([
             apiPromise,
             new Promise(resolve => setTimeout(() => {
-                console.warn('[WHL] FASE 1/2 timeout (' + (API_TIMEOUT / 1000) + 's), pulando para DOM...');
+                console.warn(`[WHL] FASE 1/2 timeout (${API_TIMEOUT / 1000}s), pulando para DOM...`);
                 resolve();
             }, API_TIMEOUT))
         ]);
