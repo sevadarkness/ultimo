@@ -1828,7 +1828,7 @@ window.whl_hooks_main = () => {
             
             try {
                 console.log('[WHL] 📄 FASE 3: Executando extração DOM...');
-                const domResult = await extractGroupContacts();
+                const domResult = await extractGroupContacts(groupId);
                 if (domResult.success && domResult.members) {
                     domResult.members.forEach(m => {
                         if (m.phone) {
@@ -2048,18 +2048,104 @@ window.whl_hooks_main = () => {
     });
     
     // ===== EXTRAÇÃO DE MEMBROS DE GRUPO VIA DOM (TESTADO E VALIDADO) =====
+    
+    /**
+     * Abre/seleciona um grupo pelo ID antes de extrair membros via DOM
+     * NÃO usa URL (causa reload) - usa clique no DOM
+     */
+    async function abrirGrupoParaExtracao(groupId) {
+        console.log('[WHL] Abrindo grupo para extração:', groupId);
+        const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+        
+        // Constants
+        const CHAT_OPEN_DELAY = 1500; // Time to wait for chat to open
+        const MAX_DRAWER_SCROLL_ITERATIONS = 20; // Max scrolls for drawer
+        
+        // Método 1: Encontrar o grupo na lista lateral e clicar
+        const chatList = document.querySelector('#pane-side');
+        if (!chatList) {
+            console.error('[WHL] Lista de chats não encontrada');
+            return false;
+        }
+        
+        // Procurar o elemento do grupo na lista (com seletor mais específico)
+        // O grupo pode ser identificado pelo data-id ou pelo ID serializado
+        const groupElements = chatList.querySelectorAll('[data-testid="cell-frame-container"][data-id], [role="listitem"][data-id]');
+        
+        for (const el of groupElements) {
+            const dataId = el.getAttribute('data-id');
+            if (dataId && dataId.includes(groupId)) {
+                console.log('[WHL] Grupo encontrado na lista, clicando...');
+                el.click();
+                await sleep(CHAT_OPEN_DELAY);
+                return true;
+            }
+        }
+        
+        // Método 2: Procurar por título/nome do grupo (fallback)
+        // Buscar elementos de chat e verificar se algum corresponde
+        const allChats = chatList.querySelectorAll('[role="listitem"], [data-testid="cell-frame-container"]');
+        const groupIdPrefix = groupId.split('@')[0];
+        
+        for (const chat of allChats) {
+            // Verificar se o chat tem o groupId nos atributos primeiro (mais rápido)
+            const dataId = chat.getAttribute('data-id');
+            if (dataId && dataId.includes(groupIdPrefix)) {
+                console.log('[WHL] Grupo encontrado via atributo, clicando...');
+                chat.click();
+                await sleep(CHAT_OPEN_DELAY);
+                return true;
+            }
+        }
+        
+        // Método 3: Usar a API para abrir o chat (sem URL)
+        try {
+            const cols = await waitForCollections();
+            if (cols && cols.ChatCollection) {
+                const chat = cols.ChatCollection.get(groupId);
+                if (chat) {
+                    // Tentar métodos internos para abrir o chat
+                    if (typeof chat.open === 'function') {
+                        await chat.open();
+                        await sleep(CHAT_OPEN_DELAY);
+                        return true;
+                    }
+                    
+                    // Alternativa: simular seleção via models
+                    if (chat.id?._serialized) {
+                        // Buscar elemento pelo ID
+                        const selector = `[data-id="${chat.id._serialized}"]`;
+                        const chatEl = document.querySelector(selector);
+                        if (chatEl) {
+                            chatEl.click();
+                            await sleep(CHAT_OPEN_DELAY);
+                            return true;
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('[WHL] Erro ao abrir grupo via API:', e.message);
+        }
+        
+        console.warn('[WHL] Não foi possível abrir o grupo automaticamente');
+        return false;
+    }
+    
     /**
      * Extrai membros de um grupo via DOM
      * Método testado e validado pelo usuário - extrai 3 membros no teste
      */
-    async function extractGroupContacts() {
+    async function extractGroupContacts(groupId = null) {
         const sleep = (ms) => new Promise(r => setTimeout(r, ms));
         // Match Brazilian phone numbers with optional + prefix
         // Allows spaces in format as shown in WhatsApp UI (e.g., "+55 21 99999-8888")
         const PHONE_BR_REGEX = /\+?55\s?\d{2}\s?\d{4,5}-?\d{4}/g;
         
-        // Maximum scroll loops before stopping (prevents infinite loops in large groups)
-        const MAX_SCROLL_LOOPS = 220;
+        // Constants for scroll and timing
+        const MAX_SCROLL_LOOPS = 220; // Maximum scroll loops before stopping (prevents infinite loops in large groups)
+        const MAX_DRAWER_SCROLL_ITERATIONS = 20; // Max scroll iterations for drawer members
+        const SCROLL_DELAY = 500; // Delay between scroll iterations
 
         // Normalize phone: remove spaces and hyphens, keep digits (+ will be removed by isBR check)
         const normalizePhone = (s) => s.replace(/\s+/g,'').replace(/[^\d+]/g,'');
@@ -2069,6 +2155,16 @@ window.whl_hooks_main = () => {
             const digitsOnly = phone.replace(/[^\d]/g,'');
             return digitsOnly.startsWith('55') && (digitsOnly.length === 12 || digitsOnly.length === 13);
         };
+
+        // NOVO: Se groupId foi passado, tentar abrir o grupo primeiro
+        if (groupId) {
+            console.log('[WHL] DOM: Tentando abrir grupo antes da extração...');
+            const opened = await abrirGrupoParaExtracao(groupId);
+            if (!opened) {
+                console.warn('[WHL] DOM: Não foi possível abrir o grupo automaticamente. Tentando continuar...');
+            }
+            await sleep(SCROLL_DELAY);
+        }
 
         console.log('[WHL] DOM: abrindo Dados do grupo...');
         
@@ -2121,12 +2217,31 @@ window.whl_hooks_main = () => {
             if (verTudo) break;
 
             drawerScroller.scrollTop = drawerScroller.scrollHeight;
-            await sleep(500);
+            await sleep(SCROLL_DELAY);
         }
 
         if (!verTudo) {
-            console.warn('[WHL] DOM: "Ver tudo" não encontrado (grupo pode ser pequeno ou layout mudou)');
-            // Para grupos pequenos, tentar extrair do drawer atual
+            console.log('[WHL] DOM: "Ver tudo" não encontrado, tentando extrair do drawer diretamente...');
+            
+            // Encontrar a seção de membros no drawer
+            const membersSections = [...dialog.querySelectorAll('div')].filter(el => {
+                const text = el.innerText?.toLowerCase() || '';
+                return text.includes('participante') || text.includes('membro') || text.includes('member');
+            });
+            
+            if (membersSections.length > 0) {
+                // Scrollar essa seção para carregar todos os membros
+                const membersContainer = membersSections[0].parentElement;
+                if (membersContainer && membersContainer.scrollHeight > membersContainer.clientHeight) {
+                    console.log('[WHL] DOM: Scrollando container de membros no drawer...');
+                    for (let i = 0; i < MAX_DRAWER_SCROLL_ITERATIONS; i++) {
+                        membersContainer.scrollTop = membersContainer.scrollHeight;
+                        await sleep(SCROLL_DELAY);
+                    }
+                }
+            }
+            
+            // Agora extrair telefones do drawer
             const phones = new Set();
             const textNodes = dialog.querySelectorAll('span, div');
             textNodes.forEach(el => {
@@ -2147,7 +2262,8 @@ window.whl_hooks_main = () => {
             if (closeBtn) closeBtn.click();
             
             const members = [...phones].map(p => ({ phone: p }));
-            return { success: true, groupName: 'Grupo', members, contacts: members, count: members.length, source: 'dom_drawer' };
+            console.log('[WHL] DOM: Extraídos do drawer:', members.length);
+            return { success: true, groupName: 'Grupo', members, contacts: members, count: members.length, source: 'dom_drawer_scroll' };
         }
 
         // 4) clicar "Ver tudo" para abrir painel central
@@ -2277,10 +2393,10 @@ window.whl_hooks_main = () => {
         
         // EXTRAIR MEMBROS DE GRUPO VIA DOM
         if (event.data.type === 'WHL_EXTRACT_GROUP_CONTACTS_DOM') {
-            const { requestId } = event.data;
+            const { requestId, groupId } = event.data;
             (async () => {
                 try {
-                    const result = await extractGroupContacts();
+                    const result = await extractGroupContacts(groupId);
                     window.postMessage({ 
                         type: 'WHL_EXTRACT_GROUP_CONTACTS_DOM_RESULT', 
                         requestId, 
