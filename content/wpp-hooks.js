@@ -1650,7 +1650,7 @@ window.whl_hooks_main = () => {
         
         // OTIMIZAÇÃO: Track para prevenir loops infinitos em resolução de LID
         const lidAttempts = new Map(); // Map<participantId, attemptCount>
-        const MAX_LID_ATTEMPTS = 3; // Máximo 3 tentativas por LID
+        const MAX_LID_ATTEMPTS = 1; // REDUZIDO de 3 para 1
 
         // Função para adicionar membro com scoring
         const addMember = (num, source, confidence) => {
@@ -1659,7 +1659,6 @@ window.whl_hooks_main = () => {
             const clean = String(num).replace(/\D/g, '');
             
             if (!isValidPhone(clean)) {
-                console.warn(`[WHL] ❌ Número inválido rejeitado: ${num}`);
                 return false;
             }
 
@@ -1690,158 +1689,140 @@ window.whl_hooks_main = () => {
             }
         };
 
-        // FASE 1: API INTERNA + METADATA
+        // FASE 1/2: API INTERNA (com timeout de 8 segundos)
+        console.log('[WHL] FASE 1/2: Tentando API interna (timeout 8s)...');
+        
+        const apiPromise = (async () => {
+            try {
+                const cols = await Promise.race([
+                    waitForCollections(),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('waitForCollections timeout')), 5000))
+                ]);
+                
+                if (!cols) {
+                    console.warn('[WHL] Collections não disponíveis');
+                    return;
+                }
+
+                console.log('[WHL] Collections obtidas, buscando grupo...');
+                const chat = cols.ChatCollection.get(groupId);
+                if (!chat || chat?.id?.server !== 'g.us') {
+                    console.warn('[WHL] Grupo não encontrado via API');
+                    return;
+                }
+
+                console.log('[WHL] Grupo encontrado, obtendo metadata...');
+                const meta = chat.groupMetadata;
+                if (!meta) {
+                    console.warn('[WHL] Metadata indisponível');
+                    return;
+                }
+
+                // loadParticipants (opcional, com timeout curto)
+                if (typeof meta.loadParticipants === 'function') {
+                    try {
+                        await Promise.race([
+                            meta.loadParticipants(),
+                            new Promise((_, reject) => setTimeout(() => reject(new Error('loadParticipants timeout')), 3000))
+                        ]);
+                    } catch (e) {
+                        console.warn('[WHL] loadParticipants falhou ou timeout:', e.message);
+                    }
+                }
+
+                // Obter participantes
+                let participants = [];
+                if (meta.participants?.toArray) {
+                    participants = meta.participants.toArray();
+                } else if (Array.isArray(meta.participants)) {
+                    participants = meta.participants;
+                } else if (meta.participants?.size) {
+                    participants = [...meta.participants.values()];
+                } else if (meta.participants?._models) {
+                    participants = Object.values(meta.participants._models);
+                }
+                
+                console.log('[WHL] Participantes encontrados:', participants.length);
+
+                // Processar participantes (SEM resolver LIDs - muito lento)
+                for (const p of participants) {
+                    const id = p.id;
+                    if (!id) continue;
+
+                    // MÉTODO 1: _serialized sem LID
+                    if (id._serialized && !id._serialized.includes('@lid') && !id._serialized.includes(':')) {
+                        const num = id._serialized.replace(/@c\.us|@s\.whatsapp\.net/g, '');
+                        if (addMember(num, 'apiDirect', 5)) continue;
+                    }
+
+                    // MÉTODO 2: Campo user sem LID
+                    if (id.user && !String(id.user).includes(':')) {
+                        if (addMember(id.user, 'apiDirect', 4)) continue;
+                    }
+
+                    // MÉTODO 3: phoneNumber do participante
+                    if (p.phoneNumber) {
+                        const clean = String(p.phoneNumber).replace(/\D/g, '');
+                        if (addMember(clean, 'apiDirect', 4)) continue;
+                    }
+
+                    // MÉTODO 4: Server c.us com user
+                    if (id.server === 'c.us' && id.user) {
+                        const cleanUser = String(id.user).replace(/\D/g, '');
+                        if (addMember(cleanUser, 'apiDirect', 3)) continue;
+                    }
+
+                    // NÃO tentar resolver LID aqui - muito lento
+                    // O DOM vai pegar esses números
+                    results.stats.failed++;
+                }
+                
+                console.log('[WHL] API extraiu:', results.stats.apiDirect, 'membros diretos');
+
+            } catch (e) {
+                console.error('[WHL] Erro na API:', e.message);
+            }
+        })();
+
+        // Timeout de 8 segundos para API
+        await Promise.race([
+            apiPromise,
+            new Promise(resolve => setTimeout(() => {
+                console.warn('[WHL] FASE 1/2 timeout (8s), pulando para DOM...');
+                resolve();
+            }, 8000))
+        ]);
+
+        // FASE 3: DOM SEMPRE (independente do resultado da API)
+        console.log('[WHL] ═══════════════════════════════════════════');
+        console.log('[WHL] 📄 FASE 3: Executando extração DOM...');
+        console.log('[WHL] ═══════════════════════════════════════════');
+        
         window.postMessage({
             type: 'WHL_EXTRACTION_PROGRESS',
             groupId: groupId,
-            phase: 'phase1',
-            message: 'Fase 1: Carregando API interna...',
-            progress: 10
+            phase: 'phase3',
+            message: 'Fase 3: Executando extração DOM...',
+            progress: 75
         }, window.location.origin);
         
         try {
-            const cols = await waitForCollections();
-            if (!cols) throw new Error('API interna indisponível');
-
-            const chat = cols.ChatCollection.get(groupId);
-            if (!chat || chat?.id?.server !== 'g.us') throw new Error('Grupo inválido');
-
-            const meta = chat.groupMetadata;
-            if (!meta) throw new Error('Metadata indisponível');
-
-            // Retry loadParticipants (3 tentativas)
-            let retries = 0;
-            while (retries < 3) {
-                try {
-                    if (typeof meta.loadParticipants === 'function') {
-                        await meta.loadParticipants();
-                        break;
-                    }
-                } catch (e) {
-                    retries++;
-                    await new Promise(r => setTimeout(r, 1000));
-                }
-            }
-
-            await new Promise(r => setTimeout(r, 800));
-
-            // Obter participantes
-            let participants = [];
-            if (meta.participants?.toArray) {
-                participants = meta.participants.toArray();
-            } else if (Array.isArray(meta.participants)) {
-                participants = meta.participants;
-            } else if (meta.participants?.size) {
-                participants = [...meta.participants.values()];
-            } else if (meta.participants?._models) {
-                participants = Object.values(meta.participants._models);
-            }
+            const domResult = await extractGroupContacts(groupId);
+            console.log('[WHL] DOM resultado:', domResult);
             
-            window.postMessage({
-                type: 'WHL_EXTRACTION_PROGRESS',
-                groupId: groupId,
-                phase: 'phase2',
-                message: `Fase 2: Processando ${participants.length} participantes...`,
-                progress: 25
-            }, window.location.origin);
-
-            // FASE 2: PROCESSAR CADA PARTICIPANTE (5 MÉTODOS + LID PREVENTION)
-            for (const p of participants) {
-                const id = p.id;
-                if (!id) continue;
-
-                let found = false;
-
-                // MÉTODO 1: _serialized sem LID
-                if (id._serialized && !id._serialized.includes('@lid') && !id._serialized.includes(':')) {
-                    const num = id._serialized.replace(/@c\.us|@s\.whatsapp\.net/g, '');
-                    if (addMember(num, 'apiDirect', 5)) {
-                        found = true;
-                        continue;
+            if (domResult.success && domResult.members) {
+                domResult.members.forEach(m => {
+                    if (m.phone) {
+                        const normalized = m.phone.replace(/[^\d]/g, '');
+                        addMember(normalized, 'domFallback', 3);
                     }
-                }
-
-                // MÉTODO 2: Campo user sem LID
-                if (!found && id.user && !String(id.user).includes(':')) {
-                    if (addMember(id.user, 'apiDirect', 4)) {
-                        found = true;
-                        continue;
-                    }
-                }
-
-                // MÉTODO 3: phoneNumber do participante
-                if (!found && p.phoneNumber) {
-                    const clean = String(p.phoneNumber).replace(/\D/g, '');
-                    if (addMember(clean, 'apiDirect', 4)) {
-                        found = true;
-                        continue;
-                    }
-                }
-
-                // MÉTODO 4: Server c.us com user
-                if (!found && id.server === 'c.us' && id.user) {
-                    const cleanUser = String(id.user).replace(/\D/g, '');
-                    if (addMember(cleanUser, 'apiDirect', 3)) {
-                        found = true;
-                        continue;
-                    }
-                }
-
-                // MÉTODO 5: ContactCollection - RESOLVE LID (COM PREVENÇÃO DE LOOPS)
-                if (!found || id._serialized?.includes('@lid') || String(id.user).includes(':')) {
-                    // OTIMIZAÇÃO: Verificar quantas tentativas já foram feitas para este LID
-                    const lidKey = id._serialized || String(id);
-                    const currentAttempts = lidAttempts.get(lidKey) || 0;
-                    
-                    if (currentAttempts >= MAX_LID_ATTEMPTS) {
-                        console.warn(`[WHL] ⚠️ Máximo de tentativas atingido para LID: ${lidKey.substring(0, 30)}...`);
-                        results.stats.failed++;
-                        continue;
-                    }
-                    
-                    lidAttempts.set(lidKey, currentAttempts + 1);
-                    
-                    const resolved = await resolveContactPhoneUltra(id._serialized || id, cols);
-                    if (resolved) {
-                        addMember(resolved, 'lidResolved', 5);
-                        found = true;
-                    } else {
-                        results.stats.failed++;
-                    }
-                }
+                });
+                console.log('[WHL] DOM extraiu:', domResult.members.length, 'telefones');
+            } else {
+                console.warn('[WHL] DOM não extraiu membros:', domResult.error || 'unknown');
             }
-
         } catch (e) {
-            console.error('[WHL] Erro na FASE 1/2:', e.message);
-        }
-
-        // FASE 3: DOM SEMPRE (não apenas fallback - API pode retornar apenas LIDs)
-        // Executar DOM sempre para garantir extração de telefones reais
-        {
-            window.postMessage({
-                type: 'WHL_EXTRACTION_PROGRESS',
-                groupId: groupId,
-                phase: 'phase3',
-                message: 'Fase 3: Executando extração DOM...',
-                progress: 75
-            }, window.location.origin);
-            
-            try {
-                console.log('[WHL] 📄 FASE 3: Executando extração DOM...');
-                const domResult = await extractGroupContacts(groupId);
-                if (domResult.success && domResult.members) {
-                    domResult.members.forEach(m => {
-                        if (m.phone) {
-                            // Normalizar: remover + e espaços para formato consistente
-                            const normalized = m.phone.replace(/[^\d]/g, '');
-                            addMember(normalized, 'domFallback', 3);
-                        }
-                    });
-                    console.log(`[WHL] DOM extraiu ${domResult.members.length} telefones`);
-                }
-            } catch (e) {
-                console.warn('[WHL] DOM extraction falhou:', e.message);
-            }
+            console.error('[WHL] DOM falhou:', e.message);
         }
 
         // RESULTADO FINAL
@@ -1858,12 +1839,11 @@ window.whl_hooks_main = () => {
             .map(([num]) => num);
 
         console.log('[WHL] ═══════════════════════════════════════════');
-        console.log('[WHL] ✅ EXTRAÇÃO ULTRA CONCLUÍDA');
-        console.log(`[WHL] 📱 Total: ${finalMembers.length}`);
-        console.log(`[WHL] 🔹 API: ${results.stats.apiDirect}`);
-        console.log(`[WHL] 🔹 LID: ${results.stats.lidResolved}`);
-        console.log(`[WHL] 🔹 DOM: ${results.stats.domFallback}`);
-        console.log(`[WHL] ❌ Falhas: ${results.stats.failed}`);
+        console.log('[WHL] ✅ EXTRAÇÃO CONCLUÍDA');
+        console.log('[WHL] 📱 Total:', finalMembers.length);
+        console.log('[WHL] 🔹 API:', results.stats.apiDirect);
+        console.log('[WHL] 🔹 DOM:', results.stats.domFallback);
+        console.log('[WHL] ❌ Falhas:', results.stats.failed);
         console.log('[WHL] ═══════════════════════════════════════════');
         
         // Notificar conclusão
