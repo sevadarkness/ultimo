@@ -1565,46 +1565,450 @@ window.whl_hooks_main = () => {
         }
     }
 
+    // ===== WhatsAppExtractor v4.0 (TESTADO E FUNCIONANDO) =====
+    // Módulo de extração de membros do WhatsApp - v4.0 (Virtual Scroll Fix)
+    const WhatsAppExtractor = {
+      
+      // Estado
+      state: {
+        isExtracting: false,
+        members: new Map(),
+        groupName: '',
+        debug: true
+      },
+
+      log(...args) {
+        if (this.state.debug) {
+          console.log('[WA Extractor]', ...args);
+        }
+      },
+
+      delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+      },
+
+      getGroupName() {
+        const mainHeader = document.querySelector('#main header');
+        if (mainHeader) {
+          const titleSpan = mainHeader.querySelector('span[title]');
+          if (titleSpan) {
+            const title = titleSpan.getAttribute('title');
+            if (title && !title.includes('+55') && title.length < 100) {
+              return title;
+            }
+          }
+          
+          const spans = mainHeader.querySelectorAll('span[dir="auto"]');
+          for (const span of spans) {
+            const text = span.textContent?.trim();
+            if (text && text.length < 50 && !text.includes('+55')) {
+              return text;
+            }
+          }
+        }
+        return 'Grupo';
+      },
+
+      async openGroupInfo() {
+        this.log('Tentando abrir info do grupo...');
+        
+        const header = document.querySelector('#main header');
+        if (!header) {
+          throw new Error('Header do chat não encontrado');
+        }
+
+        const clickable = header.querySelector('[role="button"]') || 
+                         header.querySelector('div[tabindex="0"]') ||
+                         header;
+        
+        clickable.click();
+        await this.delay(1500);
+        return true;
+      },
+
+      async clickSeeAllMembers() {
+        this.log('Procurando botão "Ver todos"...');
+        await this.delay(500);
+
+        const membersSections = document.querySelectorAll('div[role="button"]');
+        
+        for (const section of membersSections) {
+          const text = section.textContent || '';
+          if (/\d+\s*(membros|members)/i.test(text) || 
+              /ver tudo|see all|view all/i.test(text)) {
+            if (text.length < 500) {
+              section.click();
+              await this.delay(2000);
+              return true;
+            }
+          }
+        }
+
+        const allSpans = document.querySelectorAll('span');
+        for (const span of allSpans) {
+          const text = span.textContent?.toLowerCase().trim() || '';
+          if (text === 'ver tudo' || text === 'see all') {
+            const clickable = span.closest('[role="button"]') || span.closest('div[tabindex]') || span;
+            clickable.click();
+            await this.delay(2000);
+            return true;
+          }
+        }
+
+        return false;
+      },
+
+      findMembersModal() {
+        const dialogs = document.querySelectorAll('[role="dialog"]');
+        
+        for (const dialog of dialogs) {
+          const scrollables = dialog.querySelectorAll('div');
+          
+          for (const div of scrollables) {
+            const style = window.getComputedStyle(div);
+            const hasScroll = style.overflowY === 'auto' || style.overflowY === 'scroll';
+            
+            if (hasScroll && div.scrollHeight > div.clientHeight + 100) {
+              const items = div.querySelectorAll('[role="listitem"], [role="row"], [data-testid*="cell"]');
+              
+              if (items.length > 0) {
+                return { modal: dialog, scrollContainer: div };
+              }
+            }
+          }
+        }
+
+        return null;
+      },
+
+      extractMemberData(element) {
+        try {
+          const spans = element.querySelectorAll('span[title], span[dir="auto"]');
+          
+          let name = '';
+          let phone = '';
+          let isAdmin = false;
+
+          const fullText = element.textContent?.toLowerCase() || '';
+          isAdmin = fullText.includes('admin');
+
+          for (const span of spans) {
+            const title = span.getAttribute('title');
+            const text = (title || span.textContent || '').trim();
+            
+            if (!text || text.length < 2) continue;
+            
+            const lowerText = text.toLowerCase();
+            if (['admin', 'admin do grupo', 'você', 'you', 'online', 'offline', 
+                 'visto por último', 'last seen', 'pesquisar', 'search',
+                 'membros', 'members', 'participantes'].some(s => lowerText === s || lowerText.startsWith(s + ' '))) {
+              continue;
+            }
+
+            const cleanText = text.replace(/[\s\-()]/g, '');
+            if (/^\+?\d{10,}$/.test(cleanText)) {
+              phone = text;
+              if (!name) name = text;
+              continue;
+            }
+
+            if (!name && text.length >= 2 && text.length < 100) {
+              name = text;
+            }
+          }
+
+          if (!name) return null;
+
+          const key = phone || name;
+
+          return {
+            key: key,
+            name: name,
+            phone: phone || '',
+            isAdmin: isAdmin
+          };
+
+        } catch (error) {
+          return null;
+        }
+      },
+
+      isValidMember(name) {
+        if (!name || name.length < 2) return false;
+        
+        const invalidPatterns = [
+          /^(admin|você|you|pesquisar|search|ver tudo|see all)$/i,
+          /^(membros|members|participantes|participants)$/i,
+          /^(adicionar|add|sair|exit|denunciar|report)$/i,
+          /^\d+\s*(membros|members)$/i
+        ];
+        
+        for (const pattern of invalidPatterns) {
+          if (pattern.test(name.trim())) {
+            return false;
+          }
+        }
+        
+        return true;
+      },
+
+      extractVisibleMembers(container) {
+        const itemSelectors = [
+          '[role="listitem"]',
+          '[role="row"]',
+          '[data-testid="cell-frame-container"]',
+          '[data-testid="list-item"]'
+        ];
+
+        let memberElements = [];
+        
+        for (const selector of itemSelectors) {
+          const items = container.querySelectorAll(selector);
+          if (items.length > memberElements.length) {
+            memberElements = Array.from(items);
+          }
+        }
+
+        let newMembersCount = 0;
+
+        for (const element of memberElements) {
+          const memberData = this.extractMemberData(element);
+          
+          if (memberData && memberData.name && this.isValidMember(memberData.name)) {
+            if (!this.state.members.has(memberData.key)) {
+              this.state.members.set(memberData.key, {
+                name: memberData.name,
+                phone: memberData.phone,
+                isAdmin: memberData.isAdmin
+              });
+              newMembersCount++;
+            }
+          }
+        }
+
+        return newMembersCount;
+      },
+
+      async scrollAndCapture(modalInfo, onProgress) {
+        const { scrollContainer } = modalInfo;
+        
+        if (!scrollContainer) {
+          return;
+        }
+
+        this.state.members.clear();
+
+        const CONFIG = {
+          scrollStepPercent: 0.25,
+          delayBetweenScrolls: 400,
+          delayAfterCapture: 200,
+          maxScrollAttempts: 500,
+          noNewMembersLimit: 15,
+        };
+
+        let scrollAttempts = 0;
+        let noNewMembersCount = 0;
+        let lastMemberCount = 0;
+
+        scrollContainer.scrollTop = 0;
+        await this.delay(800);
+
+        this.extractVisibleMembers(scrollContainer);
+
+        while (scrollAttempts < CONFIG.maxScrollAttempts) {
+          const scrollStep = scrollContainer.clientHeight * CONFIG.scrollStepPercent;
+          
+          scrollContainer.scrollTop += scrollStep;
+          await this.delay(CONFIG.delayBetweenScrolls);
+
+          const newMembers = this.extractVisibleMembers(scrollContainer);
+          const totalMembers = this.state.members.size;
+
+          if (onProgress) {
+            onProgress({ loaded: totalMembers });
+          }
+
+          if (totalMembers > lastMemberCount) {
+            noNewMembersCount = 0;
+            lastMemberCount = totalMembers;
+            await this.delay(CONFIG.delayAfterCapture);
+          } else {
+            noNewMembersCount++;
+          }
+
+          const atBottom = scrollContainer.scrollTop + scrollContainer.clientHeight >= scrollContainer.scrollHeight - 20;
+          
+          if (atBottom) {
+            for (let i = 0; i < 3; i++) {
+              await this.delay(300);
+              this.extractVisibleMembers(scrollContainer);
+            }
+            break;
+          }
+
+          if (noNewMembersCount >= CONFIG.noNewMembersLimit) {
+            break;
+          }
+
+          scrollAttempts++;
+        }
+
+        // Varredura final
+        scrollContainer.scrollTop = 0;
+        await this.delay(500);
+
+        let finalSweepCount = 0;
+        while (scrollContainer.scrollTop + scrollContainer.clientHeight < scrollContainer.scrollHeight - 10) {
+          this.extractVisibleMembers(scrollContainer);
+          scrollContainer.scrollTop += scrollContainer.clientHeight * 0.5;
+          await this.delay(200);
+          finalSweepCount++;
+          if (finalSweepCount > 100) break;
+        }
+
+        this.extractVisibleMembers(scrollContainer);
+      },
+
+      async extractMembers(onProgress, onComplete, onError) {
+        try {
+          this.state.isExtracting = true;
+          this.state.members.clear();
+
+          this.state.groupName = this.getGroupName();
+
+          onProgress?.({ status: 'Abrindo informações do grupo...', count: 0 });
+
+          await this.openGroupInfo();
+          await this.delay(1500);
+
+          onProgress?.({ status: 'Expandindo lista de membros...', count: 0 });
+          await this.clickSeeAllMembers();
+          await this.delay(2000);
+
+          onProgress?.({ status: 'Localizando lista de membros...', count: 0 });
+          const modalInfo = this.findMembersModal();
+
+          if (!modalInfo) {
+            throw new Error('Modal de membros não encontrado');
+          }
+
+          onProgress?.({ status: 'Capturando membros...', count: 0 });
+          await this.scrollAndCapture(modalInfo, (data) => {
+            onProgress?.({ status: 'Capturando membros...', count: data.loaded });
+          });
+
+          this.state.isExtracting = false;
+
+          const membersArray = Array.from(this.state.members.values());
+
+          const result = {
+            groupName: this.state.groupName,
+            totalMembers: membersArray.length,
+            members: membersArray
+          };
+
+          onComplete?.(result);
+          return result;
+
+        } catch (error) {
+          this.state.isExtracting = false;
+          onError?.(error.message);
+          throw error;
+        }
+      }
+    };
+
+    window.WhatsAppExtractor = WhatsAppExtractor;
+
     /**
-     * PR #76 ULTRA: Extração híbrida ULTRA com scoring (taxa 95-98%)
-     * PR #78: Adicionado timeout de 30 segundos para evitar travamento
-     * Combina API interna + resolução de LID + DOM fallback
+     * WhatsAppExtractor v4.0 - Extração de membros de grupo (APENAS DOM)
+     * Substitui completamente o método antigo que retornava LIDs
      * @param {string} groupId - ID do grupo (_serialized)
-     * @returns {Promise<Object>} Resultado com membros extraídos e estatísticas
-     */
-    /**
-     * OTIMIZADO: Extração de membros de grupo com timeout agressivo e feedback visual
-     * Timeout reduzido de 30s para 15s para evitar congelamento do navegador
-     * Inclui notificações de progresso em tempo real
+     * @returns {Promise<Object>} Resultado com membros extraídos (números reais)
      */
     async function extractGroupMembersUltra(groupId) {
         console.log('[WHL] ═══════════════════════════════════════════');
-        console.log('[WHL] 🚀 ULTRA MODE: Iniciando extração híbrida');
+        console.log('[WHL] 🚀 WhatsAppExtractor v4.0: Iniciando extração DOM');
         console.log('[WHL] 📱 Grupo:', groupId);
         console.log('[WHL] ═══════════════════════════════════════════');
         
-        // OTIMIZAÇÃO: Timeout agressivo de 15 segundos (reduzido de 30s)
-        const TIMEOUT = 15000;
-        const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Timeout: extração demorou muito (15s)')), TIMEOUT)
-        );
-        
-        // Notificar início da extração
-        window.postMessage({
-            type: 'WHL_EXTRACTION_PROGRESS',
-            groupId: groupId,
-            phase: 'starting',
-            message: 'Iniciando extração...',
-            progress: 0
-        }, window.location.origin);
-        
         try {
-            return await Promise.race([
-                extractGroupMembersUltraInternal(groupId),
-                timeoutPromise
-            ]);
+            // PASSO 1: Abrir o chat do grupo na sidebar
+            console.log('[WHL] PASSO 1: Abrindo chat do grupo...');
+            const chatOpened = await abrirChatDoGrupo(groupId);
+            
+            if (!chatOpened) {
+                console.warn('[WHL] Não foi possível abrir o chat, tentando continuar...');
+            }
+            
+            await new Promise(r => setTimeout(r, 2000));
+            
+            // PASSO 2: Usar WhatsAppExtractor v4.0 para extrair membros
+            console.log('[WHL] PASSO 2: Iniciando WhatsAppExtractor.extractMembers()...');
+            
+            const result = await WhatsAppExtractor.extractMembers(
+                // onProgress
+                (progress) => {
+                    console.log('[WHL] Progresso:', progress.status, progress.count);
+                    window.postMessage({
+                        type: 'WHL_EXTRACTION_PROGRESS',
+                        groupId: groupId,
+                        phase: 'extracting',
+                        message: progress.status,
+                        progress: 50,
+                        currentCount: progress.count
+                    }, window.location.origin);
+                },
+                // onComplete
+                (result) => {
+                    console.log('[WHL] ✅ Extração concluída:', result.totalMembers, 'membros');
+                },
+                // onError
+                (error) => {
+                    console.error('[WHL] ❌ Erro na extração:', error);
+                }
+            );
+            
+            // PASSO 3: Converter resultado para formato compatível
+            const members = result.members.map(m => {
+                // Extrair apenas números reais (com telefone)
+                if (m.phone) {
+                    const cleaned = m.phone.replace(/[^\d]/g, '');
+                    return cleaned;
+                }
+                return null;
+            }).filter(Boolean);
+            
+            console.log('[WHL] ═══════════════════════════════════════════');
+            console.log('[WHL] ✅ EXTRAÇÃO CONCLUÍDA');
+            console.log('[WHL] 📱 Total de membros:', result.totalMembers);
+            console.log('[WHL] 📞 Números extraídos:', members.length);
+            console.log('[WHL] ═══════════════════════════════════════════');
+            
+            // Notificar conclusão
+            window.postMessage({
+                type: 'WHL_EXTRACTION_PROGRESS',
+                groupId: groupId,
+                phase: 'complete',
+                message: `Concluído: ${members.length} números extraídos`,
+                progress: 100,
+                currentCount: members.length
+            }, window.location.origin);
+            
+            return {
+                success: true,
+                members: members,
+                count: members.length,
+                groupName: result.groupName || 'Grupo',
+                // Manter estrutura de stats para compatibilidade
+                stats: {
+                    domExtractor: members.length,
+                    total: members.length
+                }
+            };
+            
         } catch (e) {
-            console.error('[WHL] Erro na extração (timeout ou exceção):', e.message);
+            console.error('[WHL] ❌ Erro na extração:', e.message);
             
             // Notificar erro
             window.postMessage({
@@ -1621,248 +2025,60 @@ window.whl_hooks_main = () => {
                 members: [], 
                 count: 0,
                 stats: {
-                    apiDirect: 0,
-                    lidResolved: 0,
-                    domFallback: 0,
-                    duplicates: 0,
-                    failed: 0
+                    domExtractor: 0,
+                    total: 0
                 }
             };
         }
     }
     
     /**
-     * OTIMIZADO: Função interna com progress tracking e prevenção de loops infinitos
+     * Abre o chat do grupo na sidebar antes de extrair
+     * @param {string} groupId - ID do grupo (_serialized)
+     * @returns {Promise<boolean>} - true se chat foi aberto
      */
-    async function extractGroupMembersUltraInternal(groupId) {
-        console.log('[WHL] Iniciando extração interna...');
-
-        // Timeouts para prevenir travamento
-        const WAIT_COLLECTIONS_TIMEOUT = 5000; // 5 segundos
-        const LOAD_PARTICIPANTS_TIMEOUT = 3000; // 3 segundos
-        const API_TIMEOUT = 8000; // 8 segundos
-
-        const results = {
-            members: new Map(), // Map<número, {fonte, confiança, tentativas}>
-            stats: {
-                apiDirect: 0,
-                domFallback: 0,
-                duplicates: 0,
-                failed: 0
-            }
-        };
-
-        // Função para adicionar membro com scoring
-        const addMember = (num, source, confidence) => {
-            if (!num) return false;
-            
-            const clean = String(num).replace(/\D/g, '');
-            
-            if (!isValidPhone(clean)) {
-                return false;
-            }
-
-            if (results.members.has(clean)) {
-                results.stats.duplicates++;
-                const existing = results.members.get(clean);
-                if (confidence > existing.confidence) {
-                    results.members.set(clean, { source, confidence, attempts: existing.attempts + 1 });
-                } else {
-                    existing.attempts++;
-                }
-                return false;
-            } else {
-                results.members.set(clean, { source, confidence, attempts: 1 });
-                results.stats[source]++;
-                
-                // OTIMIZAÇÃO: Notificar progresso a cada novo membro
-                window.postMessage({
-                    type: 'WHL_EXTRACTION_PROGRESS',
-                    groupId: groupId,
-                    phase: 'extracting',
-                    message: `Extraídos: ${results.members.size} membros`,
-                    progress: 50,
-                    currentCount: results.members.size
-                }, window.location.origin);
-                
+    async function abrirChatDoGrupo(groupId) {
+        const chatList = document.querySelector('#pane-side');
+        if (!chatList) {
+            console.warn('[WHL] Lista de chats não encontrada');
+            return false;
+        }
+        
+        // Método 1: Buscar por data-id
+        const allItems = chatList.querySelectorAll('[role="listitem"], [data-testid="cell-frame-container"]');
+        for (const item of allItems) {
+            const dataId = item.getAttribute('data-id') || '';
+            if (dataId.includes(groupId) || dataId.includes(groupId.split('@')[0])) {
+                item.click();
+                await new Promise(r => setTimeout(r, 2000));
                 return true;
             }
-        };
-
-        // FASE 1/2: API INTERNA (com timeout de 8 segundos)
-        console.log(`[WHL] FASE 1/2: Tentando API interna (timeout ${API_TIMEOUT / 1000}s)...`);
+        }
         
-        const apiPromise = (async () => {
-            try {
-                const cols = await Promise.race([
-                    waitForCollections(),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('waitForCollections timeout')), WAIT_COLLECTIONS_TIMEOUT))
-                ]);
-                
-                if (!cols) {
-                    console.warn('[WHL] Collections não disponíveis');
-                    return;
-                }
-
-                console.log('[WHL] Collections obtidas, buscando grupo...');
-                const chat = cols.ChatCollection.get(groupId);
-                if (!chat || chat?.id?.server !== 'g.us') {
-                    console.warn('[WHL] Grupo não encontrado via API');
-                    return;
-                }
-
-                console.log('[WHL] Grupo encontrado, obtendo metadata...');
-                const meta = chat.groupMetadata;
-                if (!meta) {
-                    console.warn('[WHL] Metadata indisponível');
-                    return;
-                }
-
-                // loadParticipants (opcional, com timeout curto)
-                if (typeof meta.loadParticipants === 'function') {
-                    try {
-                        await Promise.race([
-                            meta.loadParticipants(),
-                            new Promise((_, reject) => setTimeout(() => reject(new Error('loadParticipants timeout')), LOAD_PARTICIPANTS_TIMEOUT))
-                        ]);
-                    } catch (e) {
-                        console.warn('[WHL] loadParticipants falhou ou timeout:', e.message);
-                    }
-                }
-
-                // Obter participantes
-                let participants = [];
-                if (meta.participants?.toArray) {
-                    participants = meta.participants.toArray();
-                } else if (Array.isArray(meta.participants)) {
-                    participants = meta.participants;
-                } else if (meta.participants?.size) {
-                    participants = [...meta.participants.values()];
-                } else if (meta.participants?._models) {
-                    participants = Object.values(meta.participants._models);
-                }
-                
-                console.log('[WHL] Participantes encontrados:', participants.length);
-
-                // Processar participantes (SEM resolver LIDs - muito lento)
-                for (const p of participants) {
-                    const id = p.id;
-                    if (!id) continue;
-
-                    // MÉTODO 1: _serialized sem LID
-                    if (id._serialized && !id._serialized.includes('@lid') && !id._serialized.includes(':')) {
-                        const num = id._serialized.replace(/@c\.us|@s\.whatsapp\.net/g, '');
-                        if (addMember(num, 'apiDirect', 5)) continue;
-                    }
-
-                    // MÉTODO 2: Campo user sem LID
-                    if (id.user && !String(id.user).includes(':')) {
-                        if (addMember(id.user, 'apiDirect', 4)) continue;
-                    }
-
-                    // MÉTODO 3: phoneNumber do participante
-                    if (p.phoneNumber) {
-                        const clean = String(p.phoneNumber).replace(/\D/g, '');
-                        if (addMember(clean, 'apiDirect', 4)) continue;
-                    }
-
-                    // MÉTODO 4: Server c.us com user
-                    if (id.server === 'c.us' && id.user) {
-                        const cleanUser = String(id.user).replace(/\D/g, '');
-                        if (addMember(cleanUser, 'apiDirect', 3)) continue;
-                    }
-
-                    // NÃO tentar resolver LID aqui - muito lento
-                    // O DOM vai pegar esses números
-                    results.stats.failed++;
-                }
-                
-                console.log('[WHL] API extraiu:', results.stats.apiDirect, 'membros diretos');
-
-            } catch (e) {
-                console.error('[WHL] Erro na API:', e.message);
-            }
-        })();
-
-        // Timeout de 8 segundos para API
-        await Promise.race([
-            apiPromise,
-            new Promise(resolve => setTimeout(() => {
-                console.warn(`[WHL] FASE 1/2 timeout (${API_TIMEOUT / 1000}s), pulando para DOM...`);
-                resolve();
-            }, API_TIMEOUT))
-        ]);
-
-        // FASE 3: DOM SEMPRE (independente do resultado da API)
-        console.log('[WHL] ═══════════════════════════════════════════');
-        console.log('[WHL] 📄 FASE 3: Executando extração DOM...');
-        console.log('[WHL] ═══════════════════════════════════════════');
-        
-        window.postMessage({
-            type: 'WHL_EXTRACTION_PROGRESS',
-            groupId: groupId,
-            phase: 'phase3',
-            message: 'Fase 3: Executando extração DOM...',
-            progress: 75
-        }, window.location.origin);
-        
+        // Método 2: Usar API para abrir
         try {
-            const domResult = await extractGroupContacts(groupId);
-            console.log('[WHL] DOM resultado:', domResult);
-            
-            if (domResult.success && domResult.members) {
-                domResult.members.forEach(m => {
-                    if (m.phone) {
-                        const normalized = m.phone.replace(/[^\d]/g, '');
-                        addMember(normalized, 'domFallback', 3);
+            const cols = await waitForCollections();
+            if (cols && cols.ChatCollection) {
+                const chat = cols.ChatCollection.get(groupId);
+                if (chat) {
+                    // Tentar clicar no elemento DOM do chat
+                    if (chat.id?._serialized) {
+                        const selector = `[data-id="${chat.id._serialized}"]`;
+                        const chatEl = document.querySelector(selector);
+                        if (chatEl) {
+                            chatEl.click();
+                            await new Promise(r => setTimeout(r, 2000));
+                            return true;
+                        }
                     }
-                });
-                console.log('[WHL] DOM extraiu:', domResult.members.length, 'telefones');
-            } else {
-                console.warn('[WHL] DOM não extraiu membros:', domResult.error || 'unknown');
+                }
             }
         } catch (e) {
-            console.error('[WHL] DOM falhou:', e.message);
+            console.warn('[WHL] Erro ao abrir chat via API:', e.message);
         }
-
-        // RESULTADO FINAL
-        window.postMessage({
-            type: 'WHL_EXTRACTION_PROGRESS',
-            groupId: groupId,
-            phase: 'finalizing',
-            message: 'Finalizando extração...',
-            progress: 90
-        }, window.location.origin);
         
-        const finalMembers = [...results.members.entries()]
-            .sort((a, b) => b[1].confidence - a[1].confidence)
-            .map(([num]) => num);
-
-        console.log('[WHL] ═══════════════════════════════════════════');
-        console.log('[WHL] ✅ EXTRAÇÃO CONCLUÍDA');
-        console.log('[WHL] 📱 Total:', finalMembers.length);
-        console.log('[WHL] 🔹 API:', results.stats.apiDirect);
-        console.log('[WHL] 🔹 DOM:', results.stats.domFallback);
-        console.log('[WHL] ❌ Falhas:', results.stats.failed);
-        console.log('[WHL] ═══════════════════════════════════════════');
-        
-        // Notificar conclusão
-        window.postMessage({
-            type: 'WHL_EXTRACTION_PROGRESS',
-            groupId: groupId,
-            phase: 'complete',
-            message: `Concluído: ${finalMembers.length} membros extraídos`,
-            progress: 100,
-            currentCount: finalMembers.length
-        }, window.location.origin);
-
-        return {
-            success: true,
-            members: finalMembers,
-            count: finalMembers.length,
-            stats: results.stats,
-            groupName: await getGroupName(groupId)
-        };
+        console.warn('[WHL] Não foi possível encontrar o grupo na sidebar');
+        return false;
     }
     
     /**
@@ -2027,302 +2243,6 @@ window.whl_hooks_main = () => {
         }
     });
     
-    // ===== EXTRAÇÃO DE MEMBROS DE GRUPO VIA DOM (TESTADO E VALIDADO) =====
-    
-    /**
-     * Abre/seleciona um grupo pelo ID antes de extrair membros via DOM
-     * NÃO usa URL (causa reload) - usa clique no DOM
-     */
-    async function abrirGrupoParaExtracao(groupId) {
-        console.log('[WHL] Abrindo grupo para extração:', groupId);
-        const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-        
-        // Constants
-        const CHAT_OPEN_DELAY = 1500; // Time to wait for chat to open
-        const MAX_DRAWER_SCROLL_ITERATIONS = 20; // Max scrolls for drawer
-        
-        // Método 1: Encontrar o grupo na lista lateral e clicar
-        const chatList = document.querySelector('#pane-side');
-        if (!chatList) {
-            console.error('[WHL] Lista de chats não encontrada');
-            return false;
-        }
-        
-        // Procurar o elemento do grupo na lista (com seletor mais específico)
-        // O grupo pode ser identificado pelo data-id ou pelo ID serializado
-        const groupElements = chatList.querySelectorAll('[data-testid="cell-frame-container"][data-id], [role="listitem"][data-id]');
-        
-        for (const el of groupElements) {
-            const dataId = el.getAttribute('data-id');
-            if (dataId && dataId.includes(groupId)) {
-                console.log('[WHL] Grupo encontrado na lista, clicando...');
-                el.click();
-                await sleep(CHAT_OPEN_DELAY);
-                return true;
-            }
-        }
-        
-        // Método 2: Procurar por título/nome do grupo (fallback)
-        // Buscar elementos de chat e verificar se algum corresponde
-        const allChats = chatList.querySelectorAll('[role="listitem"], [data-testid="cell-frame-container"]');
-        const groupIdPrefix = groupId.split('@')[0];
-        
-        for (const chat of allChats) {
-            // Verificar se o chat tem o groupId nos atributos primeiro (mais rápido)
-            const dataId = chat.getAttribute('data-id');
-            if (dataId && dataId.includes(groupIdPrefix)) {
-                console.log('[WHL] Grupo encontrado via atributo, clicando...');
-                chat.click();
-                await sleep(CHAT_OPEN_DELAY);
-                return true;
-            }
-        }
-        
-        // Método 3: Usar a API para abrir o chat (sem URL)
-        try {
-            const cols = await waitForCollections();
-            if (cols && cols.ChatCollection) {
-                const chat = cols.ChatCollection.get(groupId);
-                if (chat) {
-                    // Tentar métodos internos para abrir o chat
-                    if (typeof chat.open === 'function') {
-                        await chat.open();
-                        await sleep(CHAT_OPEN_DELAY);
-                        return true;
-                    }
-                    
-                    // Alternativa: simular seleção via models
-                    if (chat.id?._serialized) {
-                        // Buscar elemento pelo ID
-                        const selector = `[data-id="${chat.id._serialized}"]`;
-                        const chatEl = document.querySelector(selector);
-                        if (chatEl) {
-                            chatEl.click();
-                            await sleep(CHAT_OPEN_DELAY);
-                            return true;
-                        }
-                    }
-                }
-            }
-        } catch (e) {
-            console.warn('[WHL] Erro ao abrir grupo via API:', e.message);
-        }
-        
-        console.warn('[WHL] Não foi possível abrir o grupo automaticamente');
-        return false;
-    }
-    
-    /**
-     * Extrai membros de um grupo via DOM
-     * Método testado e validado pelo usuário - extrai 3 membros no teste
-     */
-    async function extractGroupContacts(groupId = null) {
-        const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-        // Match Brazilian phone numbers with optional + prefix
-        // Allows spaces in format as shown in WhatsApp UI (e.g., "+55 21 99999-8888")
-        const PHONE_BR_REGEX = /\+?55\s?\d{2}\s?\d{4,5}-?\d{4}/g;
-        
-        // Constants for scroll and timing
-        const MAX_SCROLL_LOOPS = 220; // Maximum scroll loops before stopping (prevents infinite loops in large groups)
-        const MAX_DRAWER_SCROLL_ITERATIONS = 20; // Max scroll iterations for drawer members
-        const SCROLL_DELAY = 500; // Delay between scroll iterations
-
-        // Normalize phone: remove spaces and hyphens, keep digits (+ will be removed by isBR check)
-        const normalizePhone = (s) => s.replace(/\s+/g,'').replace(/[^\d+]/g,'');
-        
-        // Check if phone is valid Brazilian number (works with or without + prefix)
-        const isBR = (phone) => {
-            const digitsOnly = phone.replace(/[^\d]/g,'');
-            return digitsOnly.startsWith('55') && (digitsOnly.length === 12 || digitsOnly.length === 13);
-        };
-
-        // NOVO: Se groupId foi passado, tentar abrir o grupo primeiro
-        if (groupId) {
-            console.log('[WHL] DOM: Tentando abrir grupo antes da extração...');
-            const opened = await abrirGrupoParaExtracao(groupId);
-            if (!opened) {
-                console.warn('[WHL] DOM: Não foi possível abrir o grupo automaticamente. Tentando continuar...');
-            }
-            await sleep(SCROLL_DELAY);
-        }
-
-        console.log('[WHL] DOM: abrindo Dados do grupo...');
-        
-        // 1) abrir drawer de info do grupo (seletores robustos)
-        const possibleGroupSelectors = [
-            '[data-testid="group-info-drawer-link"]',
-            '[data-icon="info"]',
-            'span[data-icon="default-group"]',
-            '[title="Dados do grupo"]',
-            '[aria-label="Dados do grupo"]',
-            '.LwCwJ',
-            'header [role="button"]'
-        ];
-
-        let groupInfoButton = null;
-        for (const sel of possibleGroupSelectors) {
-            const el = document.querySelector(sel);
-            if (el) { groupInfoButton = el; break; }
-        }
-        
-        if (!groupInfoButton) {
-            console.error('[WHL] DOM: botão de Dados do grupo não encontrado');
-            return { success: false, error: 'GROUP_INFO_BUTTON_NOT_FOUND', members: [], count: 0 };
-        }
-
-        groupInfoButton.click();
-        await sleep(700);
-
-        // 2) achar drawer/dialog aberto
-        const dialog = document.querySelector('[role="dialog"]');
-        if (!dialog) {
-            console.error('[WHL] DOM: dialog de info do grupo não abriu');
-            return { success: false, error: 'DIALOG_NOT_OPENED', members: [], count: 0 };
-        }
-
-        // 3) rolar dentro do drawer até encontrar "Ver tudo"
-        const drawerScroller = [...dialog.querySelectorAll('div')]
-            .find(el => el.scrollHeight > el.clientHeight);
-
-        if (!drawerScroller) {
-            console.warn('[WHL] DOM: scroller do drawer não encontrado');
-            return { success: false, error: 'DRAWER_SCROLLER_NOT_FOUND', members: [], count: 0 };
-        }
-
-        let verTudo = null;
-        for (let i = 0; i < 12; i++) {
-            verTudo = [...dialog.querySelectorAll('div, span')]
-                .find(el => el.innerText?.trim().toLowerCase() === 'ver tudo');
-
-            if (verTudo) break;
-
-            drawerScroller.scrollTop = drawerScroller.scrollHeight;
-            await sleep(SCROLL_DELAY);
-        }
-
-        if (!verTudo) {
-            console.log('[WHL] DOM: "Ver tudo" não encontrado, tentando extrair do drawer diretamente...');
-            
-            // Encontrar a seção de membros no drawer
-            const membersSections = [...dialog.querySelectorAll('div')].filter(el => {
-                const text = el.innerText?.toLowerCase() || '';
-                return text.includes('participante') || text.includes('membro') || text.includes('member');
-            });
-            
-            if (membersSections.length > 0) {
-                // Scrollar essa seção para carregar todos os membros
-                const membersContainer = membersSections[0].parentElement;
-                if (membersContainer && membersContainer.scrollHeight > membersContainer.clientHeight) {
-                    console.log('[WHL] DOM: Scrollando container de membros no drawer...');
-                    for (let i = 0; i < MAX_DRAWER_SCROLL_ITERATIONS; i++) {
-                        membersContainer.scrollTop = membersContainer.scrollHeight;
-                        await sleep(SCROLL_DELAY);
-                    }
-                }
-            }
-            
-            // Agora extrair telefones do drawer
-            const phones = new Set();
-            const textNodes = dialog.querySelectorAll('span, div');
-            textNodes.forEach(el => {
-                const txt = el.innerText;
-                if (!txt) return;
-                const matches = txt.match(PHONE_BR_REGEX);
-                if (!matches) return;
-                for (const m of matches) {
-                    const p = normalizePhone(m);
-                    if (isBR(p)) phones.add(p);
-                }
-            });
-            
-            // Fechar drawer
-            const closeBtn = document.querySelector('[data-testid="btn-closer-drawer"]') ||
-                             document.querySelector('[data-icon="back"]') ||
-                             document.querySelector('span[data-icon="back"]');
-            if (closeBtn) closeBtn.click();
-            
-            const members = [...phones].map(p => ({ phone: p }));
-            console.log('[WHL] DOM: Extraídos do drawer:', members.length);
-            return { success: true, groupName: 'Grupo', members, contacts: members, count: members.length, source: 'dom_drawer_scroll' };
-        }
-
-        // 4) clicar "Ver tudo" para abrir painel central
-        console.log('[WHL] DOM: clicando "Ver tudo"...');
-        verTudo.click();
-        await sleep(900);
-
-        // 5) encontrar container central correto (preferir _ak9y; fallback = maior scrollHeight)
-        let container = [...document.querySelectorAll('div')]
-            .find(el => el.scrollHeight > el.clientHeight && el.className.includes('_ak9y'));
-
-        if (!container) {
-            const candidates = [...document.querySelectorAll('div')]
-                .filter(el => el.scrollHeight > el.clientHeight);
-            container = candidates.sort((a,b) => (b.scrollHeight - a.scrollHeight))[0];
-        }
-
-        if (!container) {
-            console.error('[WHL] DOM: container central não encontrado');
-            return { success: false, error: 'CONTAINER_NOT_FOUND', members: [], count: 0 };
-        }
-
-        console.log('[WHL] DOM: container encontrado, scrollHeight:', container.scrollHeight);
-
-        // 6) scroll REAL com coleta incremental (evita virtualização perder itens)
-        const phones = new Set();
-        let lastHeight = 0;
-        let stableRounds = 0;
-        let noNewRounds = 0;
-
-        for (let loop = 0; loop < MAX_SCROLL_LOOPS; loop++) {
-            // coleta incremental
-            const textNodes = container.querySelectorAll('span, div');
-            textNodes.forEach(el => {
-                const txt = el.innerText;
-                if (!txt) return;
-                const matches = txt.match(PHONE_BR_REGEX);
-                if (!matches) return;
-                for (const m of matches) {
-                    const p = normalizePhone(m);
-                    if (isBR(p)) phones.add(p);
-                }
-            });
-
-            const before = phones.size;
-
-            // scroll
-            container.scrollTop = container.scrollHeight;
-            await sleep(450);
-
-            // critério de parada
-            if (container.scrollHeight === lastHeight) stableRounds++;
-            else { stableRounds = 0; lastHeight = container.scrollHeight; }
-
-            if (phones.size === before) noNewRounds++;
-            else noNewRounds = 0;
-
-            if (stableRounds >= 3 && noNewRounds >= 3) break;
-            
-            // Log de progresso a cada 20 loops
-            if (loop % 20 === 0 && loop > 0) {
-                console.log(`[WHL] DOM: scroll ${loop}/${MAX_SCROLL_LOOPS}, telefones: ${phones.size}`);
-            }
-        }
-
-        console.log('[WHL] DOM: telefones BR extraídos:', phones.size);
-
-        // Fechar painel (tentar voltar)
-        const backBtn = document.querySelector('[data-testid="btn-closer-drawer"]') ||
-                        document.querySelector('[data-icon="back"]') ||
-                        document.querySelector('span[data-icon="back"]') ||
-                        document.querySelector('[aria-label="Voltar"]') ||
-                        document.querySelector('[aria-label="Fechar"]');
-        if (backBtn) backBtn.click();
-
-        const members = [...phones].map(p => ({ phone: p }));
-        return { success: true, groupName: 'Grupo', members, contacts: members, count: members.length, source: 'dom_viewall' };
-    }
-
     // ===== LISTENERS FOR SEND FUNCTIONS =====
     window.addEventListener('message', async (event) => {
         // Validate origin and source for security (prevent cross-frame attacks)
