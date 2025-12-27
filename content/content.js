@@ -1663,9 +1663,7 @@
           </select>
           
           <div class="row" style="margin-top:10px">
-            <button class="success" style="flex:1" id="whlExtractGroupMembers">📥 Extrair Membros</button>
-            <button style="width:150px" id="whlCopyGroupMembers">📋 Copiar</button>
-            <button style="width:150px" id="whlCopyGroupId">🆔 Copiar ID</button>
+            <button class="success" style="flex:1" id="whlExtractGroupMembers">📥 Extrair Contatos</button>
           </div>
           
           <div style="margin-top:10px">
@@ -4945,7 +4943,6 @@ try {
 try {
   const btnLoadGroups = document.getElementById('whlLoadGroups');
   const btnExtractGroupMembers = document.getElementById('whlExtractGroupMembers');
-  const btnCopyGroupMembers = document.getElementById('whlCopyGroupMembers');
   const btnExportGroupCsv = document.getElementById('whlExportGroupCsv');
   const groupsList = document.getElementById('whlGroupsList');
   const groupMembersBox = document.getElementById('whlGroupMembersNumbers');
@@ -4964,8 +4961,8 @@ try {
   }
 
   if (btnExtractGroupMembers && groupsList && groupMembersBox) {
-    btnExtractGroupMembers.addEventListener('click', () => {
-      // CORREÇÃO ISSUE 02: Usar o grupo SELECIONADO no dropdown/lista
+    btnExtractGroupMembers.addEventListener('click', async () => {
+      // Verificar se um grupo está selecionado
       const selectedGroupId = groupsList.value;
       if (!selectedGroupId) {
         alert('❌ Selecione um grupo primeiro!');
@@ -4973,9 +4970,9 @@ try {
       }
 
       btnExtractGroupMembers.disabled = true;
-      btnExtractGroupMembers.textContent = '⏳ Extraindo...';
+      btnExtractGroupMembers.textContent = '⏳ Abrindo grupo...';
       
-      // OTIMIZAÇÃO: Mostrar indicador de progresso e resetar
+      // Mostrar indicador de progresso
       const progressIndicator = document.getElementById('whlExtractionProgress');
       const progressBar = document.getElementById('whlExtractionProgressBar');
       const progressText = document.getElementById('whlExtractionProgressText');
@@ -4983,72 +4980,56 @@ try {
       
       if (progressIndicator && progressBar && progressText) {
         progressIndicator.classList.add('active');
-        progressBar.style.width = '0%';
-        progressText.textContent = 'Iniciando extração...';
+        progressBar.style.width = '10%';
+        progressText.textContent = 'Abrindo chat do grupo...';
         if (progressCount) {
           progressCount.textContent = '0 membros';
         }
       }
 
-      // CORREÇÃO: Usar o ID do grupo selecionado, NÃO o chat aberto
-      const requestId = Date.now().toString();
-      window.postMessage({ 
-        type: 'WHL_EXTRACT_GROUP_MEMBERS_BY_ID', 
-        groupId: selectedGroupId,
-        requestId: requestId 
-      }, '*');
-    });
-  }
-
-  if (btnCopyGroupMembers && groupMembersBox) {
-    btnCopyGroupMembers.addEventListener('click', async () => {
-      const numbers = groupMembersBox.value || '';
-      if (!numbers.trim()) {
-        alert('Nenhum número para copiar');
-        return;
-      }
-
       try {
-        await navigator.clipboard.writeText(numbers);
-        const originalText = btnCopyGroupMembers.textContent;
-        btnCopyGroupMembers.textContent = '✅ Copiado!';
-        setTimeout(() => {
-          btnCopyGroupMembers.textContent = originalText;
-        }, 2000);
-      } catch (err) {
-        console.error('[WHL] Erro ao copiar:', err);
-        alert('Erro ao copiar números');
-      }
-    });
-  }
-  
-  // Item 11: Add functionality to copy group IDs directly
-  const btnCopyGroupId = document.getElementById('whlCopyGroupId');
-  if (btnCopyGroupId) {
-    btnCopyGroupId.addEventListener('click', async () => {
-      const groupsList = document.getElementById('whlGroupsList');
-      const selectedOption = groupsList?.selectedOptions[0];
-      
-      if (!selectedOption || !selectedOption.dataset.groupId) {
-        alert('Por favor, selecione um grupo primeiro');
-        return;
-      }
-      
-      const groupId = selectedOption.dataset.groupId;
-      const groupName = selectedOption.dataset.groupName || '';
-      
-      try {
-        await navigator.clipboard.writeText(groupId);
-        const originalText = btnCopyGroupId.textContent;
-        btnCopyGroupId.textContent = '✅ Copiado!';
-        setTimeout(() => {
-          btnCopyGroupId.textContent = originalText;
-        }, 2000);
+        // NOVO FLUXO AUTOMATIZADO:
+        // 1. Abrir o chat do grupo (internamente)
+        console.log('[WHL] Abrindo chat do grupo:', selectedGroupId);
         
-        console.log(`[WHL] ID do grupo "${groupName}" copiado: ${groupId}`);
-      } catch (err) {
-        console.error('[WHL] Erro ao copiar ID do grupo:', err);
-        alert('Erro ao copiar ID do grupo');
+        // Atualizar progresso
+        if (progressText) {
+          progressText.textContent = 'Aguardando chat carregar...';
+        }
+        if (progressBar) {
+          progressBar.style.width = '30%';
+        }
+        
+        // 2. Aguardar um pouco para o chat carregar
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Atualizar progresso
+        btnExtractGroupMembers.textContent = '⏳ Extraindo contatos...';
+        if (progressText) {
+          progressText.textContent = 'Extraindo membros do grupo...';
+        }
+        if (progressBar) {
+          progressBar.style.width = '50%';
+        }
+        
+        // 3. Executar extração via WhatsAppExtractor
+        const requestId = Date.now().toString();
+        window.postMessage({ 
+          type: 'WHL_EXTRACT_GROUP_MEMBERS_BY_ID', 
+          groupId: selectedGroupId,
+          requestId: requestId 
+        }, '*');
+        
+      } catch (error) {
+        console.error('[WHL] Erro ao processar grupo:', error);
+        btnExtractGroupMembers.disabled = false;
+        btnExtractGroupMembers.textContent = '📥 Extrair Contatos';
+        
+        if (progressIndicator) {
+          progressIndicator.classList.remove('active');
+        }
+        
+        alert('❌ Erro ao processar grupo: ' + error.message);
       }
     });
   }
@@ -5200,7 +5181,7 @@ window.addEventListener('message', (e) => {
     
     if (btnExtractMembers) {
       btnExtractMembers.disabled = false;
-      btnExtractMembers.textContent = '📥 Extrair Membros';
+      btnExtractMembers.textContent = '📥 Extrair Contatos';
     }
     
     if (e.data.success || e.data.members) {
@@ -5293,7 +5274,7 @@ window.addEventListener('message', (e) => {
     const btnExtractGroupMembers = document.getElementById('whlExtractGroupMembers');
     if (btnExtractGroupMembers) {
       btnExtractGroupMembers.disabled = false;
-      btnExtractGroupMembers.textContent = '📥 Extrair Membros';
+      btnExtractGroupMembers.textContent = '📥 Extrair Contatos';
     }
     alert('❌ Erro ao extrair membros: ' + e.data.error);
   }
@@ -5303,7 +5284,7 @@ window.addEventListener('message', (e) => {
     const btnExtractGroupMembers = document.getElementById('whlExtractGroupMembers');
     if (btnExtractGroupMembers) {
       btnExtractGroupMembers.disabled = false;
-      btnExtractGroupMembers.textContent = '📥 Extrair Membros';
+      btnExtractGroupMembers.textContent = '📥 Extrair Contatos';
     }
     alert('Erro ao extrair membros: ' + e.data.error);
   }
