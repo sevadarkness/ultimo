@@ -2033,51 +2033,141 @@ window.whl_hooks_main = () => {
     }
     
     /**
-     * Abre o chat do grupo na sidebar antes de extrair
+     * Abre o chat do grupo usando API interna do WhatsApp
+     * Mais confiável que buscar na sidebar
      * @param {string} groupId - ID do grupo (_serialized)
      * @returns {Promise<boolean>} - true se chat foi aberto
      */
     async function abrirChatDoGrupo(groupId) {
-        const chatList = document.querySelector('#pane-side');
-        if (!chatList) {
-            console.warn('[WHL] Lista de chats não encontrada');
-            return false;
-        }
+        console.log('[WHL] Abrindo chat via API interna:', groupId);
         
-        // Método 1: Buscar por data-id
-        const allItems = chatList.querySelectorAll('[role="listitem"], [data-testid="cell-frame-container"]');
-        for (const item of allItems) {
-            const dataId = item.getAttribute('data-id') || '';
-            if (dataId.includes(groupId) || dataId.includes(groupId.split('@')[0])) {
-                item.click();
-                await new Promise(r => setTimeout(r, 2000));
-                return true;
-            }
-        }
-        
-        // Método 2: Usar API para abrir
         try {
-            const cols = await waitForCollections();
-            if (cols && cols.ChatCollection) {
-                const chat = cols.ChatCollection.get(groupId);
+            // Método 1: Usar CMD.openChatAt (mais confiável)
+            try {
+                const CMD = require('WAWebCmd');
+                const CC = require('WAWebChatCollection');
+                
+                const chat = CC?.ChatCollection?.get(groupId);
                 if (chat) {
-                    // Tentar clicar no elemento DOM do chat
-                    if (chat.id?._serialized) {
-                        const selector = `[data-id="${chat.id._serialized}"]`;
-                        const chatEl = document.querySelector(selector);
-                        if (chatEl) {
-                            chatEl.click();
+                    // Tentar openChatAt primeiro
+                    if (CMD && typeof CMD.openChatAt === 'function') {
+                        console.log('[WHL] Usando CMD.openChatAt...');
+                        await CMD.openChatAt(chat);
+                        await new Promise(r => setTimeout(r, 2000));
+                        
+                        // Verificar se o chat abriu (header deve mostrar o grupo)
+                        const header = document.querySelector('#main header');
+                        if (header) {
+                            console.log('[WHL] ✅ Chat aberto via CMD.openChatAt');
+                            return true;
+                        }
+                    }
+                    
+                    // Tentar openChatFromUnread
+                    if (CMD && typeof CMD.openChatFromUnread === 'function') {
+                        console.log('[WHL] Usando CMD.openChatFromUnread...');
+                        await CMD.openChatFromUnread(chat);
+                        await new Promise(r => setTimeout(r, 2000));
+                        return true;
+                    }
+                }
+            } catch (e) {
+                console.warn('[WHL] CMD methods failed:', e.message);
+            }
+            
+            // Método 2: Usar chat.open() se disponível
+            try {
+                const CC = require('WAWebChatCollection');
+                const chat = CC?.ChatCollection?.get(groupId);
+                
+                if (chat && typeof chat.open === 'function') {
+                    console.log('[WHL] Usando chat.open()...');
+                    await chat.open();
+                    await new Promise(r => setTimeout(r, 2000));
+                    return true;
+                }
+            } catch (e) {
+                console.warn('[WHL] chat.open() failed:', e.message);
+            }
+            
+            // Método 3: Usar setActive no ChatCollection
+            try {
+                const CC = require('WAWebChatCollection');
+                const chat = CC?.ChatCollection?.get(groupId);
+                
+                if (chat && CC?.ChatCollection?.setActive) {
+                    console.log('[WHL] Usando ChatCollection.setActive...');
+                    await CC.ChatCollection.setActive(chat);
+                    await new Promise(r => setTimeout(r, 2000));
+                    return true;
+                }
+            } catch (e) {
+                console.warn('[WHL] setActive failed:', e.message);
+            }
+            
+            // Método 4: Usar openChat via modelo
+            try {
+                const CC = require('WAWebChatCollection');
+                const chat = CC?.ChatCollection?.get(groupId);
+                
+                if (chat) {
+                    // Alguns builds têm select() ou activate()
+                    if (typeof chat.select === 'function') {
+                        await chat.select();
+                        await new Promise(r => setTimeout(r, 2000));
+                        return true;
+                    }
+                    
+                    if (typeof chat.activate === 'function') {
+                        await chat.activate();
+                        await new Promise(r => setTimeout(r, 2000));
+                        return true;
+                    }
+                }
+            } catch (e) {
+                console.warn('[WHL] Model methods failed:', e.message);
+            }
+            
+            // Método 5: Fallback - buscar na sidebar (último recurso)
+            console.log('[WHL] Tentando fallback: busca na sidebar...');
+            const chatList = document.querySelector('#pane-side');
+            if (chatList) {
+                const allItems = chatList.querySelectorAll('[role="listitem"], [data-testid="cell-frame-container"]');
+                const groupIdPrefix = groupId.split('@')[0];
+                
+                for (const item of allItems) {
+                    const dataId = item.getAttribute('data-id') || '';
+                    if (dataId.includes(groupId) || dataId.includes(groupIdPrefix)) {
+                        console.log('[WHL] Grupo encontrado na sidebar, clicando...');
+                        item.click();
+                        await new Promise(r => setTimeout(r, 2000));
+                        return true;
+                    }
+                }
+                
+                // Tentar scroll na sidebar para encontrar o grupo
+                for (let i = 0; i < 10; i++) {
+                    chatList.scrollTop += 500;
+                    await new Promise(r => setTimeout(r, 300));
+                    
+                    const items = chatList.querySelectorAll('[role="listitem"], [data-testid="cell-frame-container"]');
+                    for (const item of items) {
+                        const dataId = item.getAttribute('data-id') || '';
+                        if (dataId.includes(groupId) || dataId.includes(groupIdPrefix)) {
+                            console.log('[WHL] Grupo encontrado após scroll, clicando...');
+                            item.click();
                             await new Promise(r => setTimeout(r, 2000));
                             return true;
                         }
                     }
                 }
             }
+            
         } catch (e) {
-            console.warn('[WHL] Erro ao abrir chat via API:', e.message);
+            console.error('[WHL] Erro ao abrir chat:', e.message);
         }
         
-        console.warn('[WHL] Não foi possível encontrar o grupo na sidebar');
+        console.warn('[WHL] Não foi possível abrir o chat do grupo');
         return false;
     }
     
